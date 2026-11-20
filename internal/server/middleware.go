@@ -211,7 +211,7 @@ func limitBody(maxBytes int64) func(http.Handler) http.Handler {
 }
 
 // rateLimit applies a token bucket keyed on the real client IP.
-func (s *Server) rateLimit(l *Limiter, event string) func(http.Handler) http.Handler {
+func (s *Server) rateLimit(l RateLimiter, event string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := ClientIP(r.Context())

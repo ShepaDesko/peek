@@ -1,13 +1,17 @@
-// Package jobs runs the periodic work: purging expired secrets and trimming
-// the audit trail.
+// Package jobs runs the periodic work: purging expired secrets, trimming the
+// audit trail, and the housekeeping that keeps shared tables small.
 //
-// There is no Redis and no external scheduler. In a multi-node deployment the
-// database lock in Claim makes sure exactly one node runs a given tick.
+// There is no Redis and no external scheduler. Every tick is claimed through a
+// lock in the database, so a cluster behind a load balancer does the work once
+// rather than once per node.
 package jobs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/ShepaDesko/peek/internal/config"
@@ -26,10 +30,17 @@ type Runner struct {
 	// outlive its expiry by more than that.
 	PurgeInterval time.Duration
 	AuditInterval time.Duration
+
+	// holder identifies this node in the lock table.
+	holder string
 }
 
 // New builds a Runner.
 func New(cfg *config.Config, log *slog.Logger, st *store.Store, svc *secrets.Service) *Runner {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "node"
+	}
 	return &Runner{
 		cfg:           cfg,
 		log:           log,
@@ -37,6 +48,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, svc *secrets.Ser
 		secrets:       svc,
 		PurgeInterval: time.Minute,
 		AuditInterval: time.Hour,
+		holder:        host + "/" + strconv.Itoa(os.Getpid()),
 	}
 }
 
@@ -59,12 +71,27 @@ func (r *Runner) Run(ctx context.Context) {
 		case <-purge.C:
 			r.purgeOnce(ctx)
 		case <-audit.C:
-			r.trimAudit(ctx)
+			r.housekeeping(ctx)
 		}
 	}
 }
 
+// claim takes the lock for a job. The lease is deliberately shorter than the
+// interval, so a node that dies mid-job delays the next run by one tick at
+// most.
+func (r *Runner) claim(ctx context.Context, name string, lease time.Duration) bool {
+	ok, err := r.store.TryLock(ctx, name, r.holder, lease, time.Now())
+	if err != nil {
+		r.log.Error("cannot claim the job lock", "job", name, "error", err.Error())
+		return false
+	}
+	return ok
+}
+
 func (r *Runner) purgeOnce(ctx context.Context) {
+	if !r.claim(ctx, "purge-secrets", 45*time.Second) {
+		return
+	}
 	n, err := r.secrets.Purge(ctx)
 	if err != nil {
 		r.log.Error("purge expired secrets", "error", err.Error())
@@ -76,10 +103,20 @@ func (r *Runner) purgeOnce(ctx context.Context) {
 			OrgID: "default",
 			Event: store.EventPurged,
 			Detail: map[string]string{
-				"count": itoa(n),
+				"count": strconv.Itoa(n),
 			},
 		})
 	}
+}
+
+// housekeeping trims the audit trail and the shared rate-limit table.
+func (r *Runner) housekeeping(ctx context.Context) {
+	if !r.claim(ctx, "housekeeping", 30*time.Minute) {
+		return
+	}
+	r.trimAudit(ctx)
+	r.trimRateLimits(ctx)
+	r.trimSessions(ctx)
 }
 
 func (r *Runner) trimAudit(ctx context.Context) {
@@ -97,24 +134,30 @@ func (r *Runner) trimAudit(ctx context.Context) {
 	}
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
+func (r *Runner) trimRateLimits(ctx context.Context) {
+	n, err := r.store.PurgeRateLimits(ctx, 2*time.Hour, time.Now())
+	if err != nil {
+		r.log.Error("trim rate limits", "error", err.Error())
+		return
 	}
-	neg := n < 0
-	if neg {
-		n = -n
+	if n > 0 {
+		r.log.Debug("trimmed rate limit buckets", "removed", n)
 	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
+}
+
+func (r *Runner) trimSessions(ctx context.Context) {
+	n, err := r.store.PurgeExpiredSessions(ctx, time.Now())
+	if err != nil {
+		r.log.Error("trim sessions", "error", err.Error())
+		return
 	}
-	if neg {
-		i--
-		buf[i] = '-'
+	if n > 0 {
+		r.log.Info("removed expired sessions", "count", n)
 	}
-	return string(buf[i:])
+}
+
+// Describe returns a line for the logs at startup.
+func (r *Runner) Describe() string {
+	return fmt.Sprintf("purge every %s, housekeeping every %s, as %s",
+		r.PurgeInterval, r.AuditInterval, r.holder)
 }

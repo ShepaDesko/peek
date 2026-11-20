@@ -55,7 +55,7 @@ func (s *Store) Append(ctx context.Context, e AuditEvent) error {
 	}
 	_, err := s.exec(ctx, `INSERT INTO audit_events (org_id, secret_id, user_id, event, at, ip, user_agent, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		orDefault(e.OrgID, "default"), nullString(e.SecretID), nullString(e.UserID), e.Event,
+		orDefaultOrg(e.OrgID), nullString(e.SecretID), nullString(e.UserID), e.Event,
 		unix(at), nullString(e.IP), nullString(truncate(e.UserAgent, 512)), detail)
 	if err != nil {
 		return fmt.Errorf("store: append audit event: %w", err)
@@ -171,11 +171,13 @@ func (n *nullStr) Scan(value any) error {
 	return nil
 }
 
-func orDefault(v, fallback string) string {
-	if v == "" {
-		return fallback
+// orDefaultOrg returns the organisation to use, falling back to the single
+// organisation of a single-tenant instance.
+func orDefaultOrg(orgID string) string {
+	if orgID == "" {
+		return DefaultOrgID
 	}
-	return v
+	return orgID
 }
 
 func truncate(s string, n int) string {

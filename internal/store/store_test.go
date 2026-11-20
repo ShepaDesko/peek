@@ -11,16 +11,6 @@ import (
 	"github.com/ShepaDesko/peek/internal/store"
 )
 
-func open(t *testing.T) *store.Store {
-	t.Helper()
-	s, err := store.OpenMemory(context.Background())
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
-}
-
 type fixture struct {
 	id      string
 	read    []byte
@@ -75,304 +65,314 @@ func create(t *testing.T, s *store.Store, views int, ttl time.Duration) fixture 
 }
 
 func TestCreateMetaConsume(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	f := create(t, s, 1, time.Hour)
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		f := create(t, s, 1, time.Hour)
 
-	meta, err := s.Meta(ctx, f.id)
-	if err != nil {
-		t.Fatalf("meta: %v", err)
-	}
-	if meta.ViewsRemaining != 1 || !meta.RetrievalStep || meta.HasPassphrase {
-		t.Fatalf("unexpected metadata: %+v", meta)
-	}
+		meta, err := s.Meta(ctx, f.id)
+		if err != nil {
+			t.Fatalf("meta: %v", err)
+		}
+		if meta.ViewsRemaining != 1 || !meta.RetrievalStep || meta.HasPassphrase {
+			t.Fatalf("unexpected metadata: %+v", meta)
+		}
 
-	rev, err := s.Consume(ctx, f.id, f.read, time.Now())
-	if err != nil {
-		t.Fatalf("consume: %v", err)
-	}
-	if len(rev.Ciphertext) == 0 || !rev.Destroyed {
-		t.Fatalf("unexpected reveal: %+v", rev)
-	}
+		rev, err := s.Consume(ctx, f.id, f.read, time.Now())
+		if err != nil {
+			t.Fatalf("consume: %v", err)
+		}
+		if len(rev.Ciphertext) == 0 || !rev.Destroyed {
+			t.Fatalf("unexpected reveal: %+v", rev)
+		}
 
-	// Second read must fail, and the row must be gone for good.
-	if _, err := s.Consume(ctx, f.id, f.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("second consume error = %v, want ErrNotFound", err)
-	}
-	if _, err := s.Meta(ctx, f.id); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("meta after consume = %v, want ErrNotFound", err)
-	}
-	n, err := s.CountActive(ctx)
-	if err != nil || n != 0 {
-		t.Fatalf("active secrets = %d (err %v), want 0", n, err)
-	}
+		// Second read must fail, and the row must be gone for good.
+		if _, err := s.Consume(ctx, f.id, f.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("second consume error = %v, want ErrNotFound", err)
+		}
+		if _, err := s.Meta(ctx, f.id); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("meta after consume = %v, want ErrNotFound", err)
+		}
+		n, err := s.CountActive(ctx)
+		if err != nil || n != 0 {
+			t.Fatalf("active secrets = %d (err %v), want 0", n, err)
+		}
 
-	// The sender can still see what happened.
-	r, err := s.ReceiptStatus(ctx, f.id, f.receipt)
-	if err != nil {
-		t.Fatalf("receipt: %v", err)
-	}
-	if r.Status != store.StatusViewed || r.ViewsUsed != 1 {
-		t.Fatalf("unexpected receipt: %+v", r)
-	}
+		// The sender can still see what happened.
+		r, err := s.ReceiptStatus(ctx, f.id, f.receipt)
+		if err != nil {
+			t.Fatalf("receipt: %v", err)
+		}
+		if r.Status != store.StatusViewed || r.ViewsUsed != 1 {
+			t.Fatalf("unexpected receipt: %+v", r)
+		}
+	})
 }
 
 func TestWrongReadTokenConsumesNothing(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	f := create(t, s, 1, time.Hour)
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		f := create(t, s, 1, time.Hour)
 
-	wrong := make([]byte, len(f.read))
-	copy(wrong, f.read)
-	wrong[0] ^= 0xff
+		wrong := make([]byte, len(f.read))
+		copy(wrong, f.read)
+		wrong[0] ^= 0xff
 
-	if _, err := s.Consume(ctx, f.id, wrong, time.Now()); !errors.Is(err, store.ErrBadToken) {
-		t.Fatalf("consume with wrong token = %v, want ErrBadToken", err)
-	}
-	meta, err := s.Meta(ctx, f.id)
-	if err != nil {
-		t.Fatalf("meta: %v", err)
-	}
-	if meta.ViewsRemaining != 1 {
-		t.Fatalf("a wrong token consumed a view (remaining = %d)", meta.ViewsRemaining)
-	}
-	// The real token still works afterwards.
-	if _, err := s.Consume(ctx, f.id, f.read, time.Now()); err != nil {
-		t.Fatalf("consume after failure: %v", err)
-	}
+		if _, err := s.Consume(ctx, f.id, wrong, time.Now()); !errors.Is(err, store.ErrBadToken) {
+			t.Fatalf("consume with wrong token = %v, want ErrBadToken", err)
+		}
+		meta, err := s.Meta(ctx, f.id)
+		if err != nil {
+			t.Fatalf("meta: %v", err)
+		}
+		if meta.ViewsRemaining != 1 {
+			t.Fatalf("a wrong token consumed a view (remaining = %d)", meta.ViewsRemaining)
+		}
+		// The real token still works afterwards.
+		if _, err := s.Consume(ctx, f.id, f.read, time.Now()); err != nil {
+			t.Fatalf("consume after failure: %v", err)
+		}
+	})
 }
 
 func TestFailedAttemptsBurnTheSecret(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	f := create(t, s, 1, time.Hour)
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		f := create(t, s, 1, time.Hour)
 
-	for i := 1; i <= 4; i++ {
-		left, burned, err := s.RegisterFailedAttempt(ctx, f.id, time.Now())
+		for i := 1; i <= 4; i++ {
+			left, burned, err := s.RegisterFailedAttempt(ctx, f.id, time.Now())
+			if err != nil {
+				t.Fatalf("attempt %d: %v", i, err)
+			}
+			if burned {
+				t.Fatalf("burned after %d attempts, limit is 5", i)
+			}
+			if left != 5-i {
+				t.Fatalf("attempts left = %d, want %d", left, 5-i)
+			}
+		}
+		_, burned, err := s.RegisterFailedAttempt(ctx, f.id, time.Now())
 		if err != nil {
-			t.Fatalf("attempt %d: %v", i, err)
+			t.Fatal(err)
 		}
-		if burned {
-			t.Fatalf("burned after %d attempts, limit is 5", i)
+		if !burned {
+			t.Fatal("fifth wrong attempt did not burn the secret")
 		}
-		if left != 5-i {
-			t.Fatalf("attempts left = %d, want %d", left, 5-i)
+		if _, err := s.Consume(ctx, f.id, f.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("secret still readable after burn: %v", err)
 		}
-	}
-	_, burned, err := s.RegisterFailedAttempt(ctx, f.id, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !burned {
-		t.Fatal("fifth wrong attempt did not burn the secret")
-	}
-	if _, err := s.Consume(ctx, f.id, f.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("secret still readable after burn: %v", err)
-	}
-	r, err := s.ReceiptStatus(ctx, f.id, f.receipt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Status != store.StatusLocked {
-		t.Fatalf("status = %q, want locked", r.Status)
-	}
+		r, err := s.ReceiptStatus(ctx, f.id, f.receipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Status != store.StatusLocked {
+			t.Fatalf("status = %q, want locked", r.Status)
+		}
+	})
 }
 
 // TestSingleViewUnderConcurrency is the guarantee from section 12 of the spec:
 // fifty simultaneous reads of a one-view secret must yield exactly one success.
 func TestSingleViewUnderConcurrency(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	f := create(t, s, 1, time.Hour)
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		f := create(t, s, 1, time.Hour)
 
-	const readers = 50
-	var (
-		wg        sync.WaitGroup
-		mu        sync.Mutex
-		successes int
-		otherErrs []error
-	)
-	start := make(chan struct{})
-	for i := 0; i < readers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			_, err := s.Consume(ctx, f.id, f.read, time.Now())
-			mu.Lock()
-			defer mu.Unlock()
-			switch {
-			case err == nil:
-				successes++
-			case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrExhausted):
-			default:
-				otherErrs = append(otherErrs, err)
-			}
-		}()
-	}
-	close(start)
-	wg.Wait()
+		const readers = 50
+		var (
+			wg        sync.WaitGroup
+			mu        sync.Mutex
+			successes int
+			otherErrs []error
+		)
+		start := make(chan struct{})
+		for i := 0; i < readers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				_, err := s.Consume(ctx, f.id, f.read, time.Now())
+				mu.Lock()
+				defer mu.Unlock()
+				switch {
+				case err == nil:
+					successes++
+				case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrExhausted):
+				default:
+					otherErrs = append(otherErrs, err)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
 
-	if successes != 1 {
-		t.Fatalf("%d readers succeeded, want exactly 1", successes)
-	}
-	if len(otherErrs) > 0 {
-		t.Fatalf("unexpected errors: %v", otherErrs)
-	}
+		if successes != 1 {
+			t.Fatalf("%d readers succeeded, want exactly 1", successes)
+		}
+		if len(otherErrs) > 0 {
+			t.Fatalf("unexpected errors: %v", otherErrs)
+		}
+	})
 }
 
 func TestMultiViewSecret(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	f := create(t, s, 3, time.Hour)
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		f := create(t, s, 3, time.Hour)
 
-	for i := 3; i > 0; i-- {
-		rev, err := s.Consume(ctx, f.id, f.read, time.Now())
-		if err != nil {
-			t.Fatalf("view %d: %v", 4-i, err)
+		for i := 3; i > 0; i-- {
+			rev, err := s.Consume(ctx, f.id, f.read, time.Now())
+			if err != nil {
+				t.Fatalf("view %d: %v", 4-i, err)
+			}
+			if rev.ViewsRemaining != i-1 {
+				t.Fatalf("remaining = %d, want %d", rev.ViewsRemaining, i-1)
+			}
+			if rev.Destroyed != (i == 1) {
+				t.Fatalf("destroyed = %v at remaining %d", rev.Destroyed, i-1)
+			}
 		}
-		if rev.ViewsRemaining != i-1 {
-			t.Fatalf("remaining = %d, want %d", rev.ViewsRemaining, i-1)
+		if _, err := s.Consume(ctx, f.id, f.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("fourth read = %v, want ErrNotFound", err)
 		}
-		if rev.Destroyed != (i == 1) {
-			t.Fatalf("destroyed = %v at remaining %d", rev.Destroyed, i-1)
-		}
-	}
-	if _, err := s.Consume(ctx, f.id, f.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("fourth read = %v, want ErrNotFound", err)
-	}
+	})
 }
 
 func TestExpiryHidesAndPurges(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	f := create(t, s, 5, -time.Minute) // already expired
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		f := create(t, s, 5, -time.Minute) // already expired
 
-	if _, err := s.Meta(ctx, f.id); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("expired secret visible: %v", err)
-	}
-	if _, err := s.Consume(ctx, f.id, f.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("expired secret readable: %v", err)
-	}
-	n, err := s.PurgeExpired(ctx, time.Now())
-	if err != nil {
-		t.Fatalf("purge: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("purged %d secrets, want 1", n)
-	}
-	r, err := s.ReceiptStatus(ctx, f.id, f.receipt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Status != store.StatusExpired {
-		t.Fatalf("status = %q, want expired", r.Status)
-	}
+		if _, err := s.Meta(ctx, f.id); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("expired secret visible: %v", err)
+		}
+		if _, err := s.Consume(ctx, f.id, f.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("expired secret readable: %v", err)
+		}
+		n, err := s.PurgeExpired(ctx, time.Now())
+		if err != nil {
+			t.Fatalf("purge: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("purged %d secrets, want 1", n)
+		}
+		r, err := s.ReceiptStatus(ctx, f.id, f.receipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Status != store.StatusExpired {
+			t.Fatalf("status = %q, want expired", r.Status)
+		}
+	})
 }
 
 func TestBurnAndRecipientDelete(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
 
-	f := create(t, s, 2, time.Hour)
-	if err := s.Burn(ctx, f.id, f.receipt, time.Now()); err != nil {
-		t.Fatalf("burn: %v", err)
-	}
-	if _, err := s.Meta(ctx, f.id); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("burned secret still live: %v", err)
-	}
+		f := create(t, s, 2, time.Hour)
+		if err := s.Burn(ctx, f.id, f.receipt, time.Now()); err != nil {
+			t.Fatalf("burn: %v", err)
+		}
+		if _, err := s.Meta(ctx, f.id); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("burned secret still live: %v", err)
+		}
 
-	// A wrong receipt token must not destroy anything.
-	g := create(t, s, 2, time.Hour)
-	bad := append([]byte(nil), g.receipt...)
-	bad[1] ^= 0xff
-	if err := s.Burn(ctx, g.id, bad, time.Now()); !errors.Is(err, store.ErrBadToken) {
-		t.Fatalf("burn with wrong token = %v, want ErrBadToken", err)
-	}
-	if _, err := s.Meta(ctx, g.id); err != nil {
-		t.Fatalf("secret destroyed by a wrong token: %v", err)
-	}
+		// A wrong receipt token must not destroy anything.
+		g := create(t, s, 2, time.Hour)
+		bad := append([]byte(nil), g.receipt...)
+		bad[1] ^= 0xff
+		if err := s.Burn(ctx, g.id, bad, time.Now()); !errors.Is(err, store.ErrBadToken) {
+			t.Fatalf("burn with wrong token = %v, want ErrBadToken", err)
+		}
+		if _, err := s.Meta(ctx, g.id); err != nil {
+			t.Fatalf("secret destroyed by a wrong token: %v", err)
+		}
 
-	// Recipient deletion is refused unless the sender allowed it.
-	if err := s.DeleteByRecipient(ctx, g.id, g.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("recipient deletion allowed although not permitted: %v", err)
-	}
+		// Recipient deletion is refused unless the sender allowed it.
+		if err := s.DeleteByRecipient(ctx, g.id, g.read, time.Now()); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("recipient deletion allowed although not permitted: %v", err)
+		}
+	})
 }
 
 func TestMigrationsAreIdempotent(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	if err := s.Migrate(ctx); err != nil {
-		t.Fatalf("second migrate: %v", err)
-	}
-	applied, pending, err := s.MigrationStatus(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(applied) == 0 || len(pending) != 0 {
-		t.Fatalf("applied = %v, pending = %v", applied, pending)
-	}
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		if err := s.Migrate(ctx); err != nil {
+			t.Fatalf("second migrate: %v", err)
+		}
+		applied, pending, err := s.MigrationStatus(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(applied) == 0 || len(pending) != 0 {
+			t.Fatalf("applied = %v, pending = %v", applied, pending)
+		}
+	})
 }
 
 func TestAudit(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	f := create(t, s, 1, time.Hour)
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		f := create(t, s, 1, time.Hour)
 
-	for _, ev := range []string{store.EventCreated, store.EventPageViewed, store.EventRevealed} {
-		if err := s.Append(ctx, store.AuditEvent{
-			OrgID: "default", SecretID: f.id, Event: ev, IP: "203.0.113.7", UserAgent: "test",
-		}); err != nil {
-			t.Fatalf("append %s: %v", ev, err)
+		for _, ev := range []string{store.EventCreated, store.EventPageViewed, store.EventRevealed} {
+			if err := s.Append(ctx, store.AuditEvent{
+				OrgID: "default", SecretID: f.id, Event: ev, IP: "203.0.113.7", UserAgent: "test",
+			}); err != nil {
+				t.Fatalf("append %s: %v", ev, err)
+			}
 		}
-	}
-	events, err := s.ListAudit(ctx, store.AuditFilter{SecretID: f.id})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 3 {
-		t.Fatalf("got %d events, want 3", len(events))
-	}
-	if events[0].IP != "203.0.113.7" || events[0].SecretID != f.id {
-		t.Fatalf("unexpected event: %+v", events[0])
-	}
+		events, err := s.ListAudit(ctx, store.AuditFilter{SecretID: f.id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) != 3 {
+			t.Fatalf("got %d events, want 3", len(events))
+		}
+		if events[0].IP != "203.0.113.7" || events[0].SecretID != f.id {
+			t.Fatalf("unexpected event: %+v", events[0])
+		}
 
-	filtered, err := s.ListAudit(ctx, store.AuditFilter{Event: store.EventRevealed})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(filtered) != 1 {
-		t.Fatalf("filtered = %d, want 1", len(filtered))
-	}
+		filtered, err := s.ListAudit(ctx, store.AuditFilter{Event: store.EventRevealed})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(filtered) != 1 {
+			t.Fatalf("filtered = %d, want 1", len(filtered))
+		}
 
-	if got := store.AnonymizeIP("203.0.113.7"); got != "203.0.113.0/24" {
-		t.Fatalf("AnonymizeIP(v4) = %q", got)
-	}
-	if got := store.AnonymizeIP("2001:db8:1234:5678::1"); got != "2001:db8:1234::/48" {
-		t.Fatalf("AnonymizeIP(v6) = %q", got)
-	}
+		if got := store.AnonymizeIP("203.0.113.7"); got != "203.0.113.0/24" {
+			t.Fatalf("AnonymizeIP(v4) = %q", got)
+		}
+		if got := store.AnonymizeIP("2001:db8:1234:5678::1"); got != "2001:db8:1234::/48" {
+			t.Fatalf("AnonymizeIP(v6) = %q", got)
+		}
 
-	removed, err := s.PurgeAudit(ctx, time.Nanosecond, time.Now().Add(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if removed != 3 {
-		t.Fatalf("purged %d audit rows, want 3", removed)
-	}
+		removed, err := s.PurgeAudit(ctx, time.Nanosecond, time.Now().Add(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if removed != 3 {
+			t.Fatalf("purged %d audit rows, want 3", removed)
+		}
+	})
 }
 
 func TestDuplicateIDRejected(t *testing.T) {
-	s := open(t)
-	ctx := context.Background()
-	f := create(t, s, 1, time.Hour)
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		f := create(t, s, 1, time.Hour)
 
-	err := s.Create(ctx, store.NewSecret{
-		ID: f.id, OrgID: "default", Kind: "text", Ciphertext: []byte("x"),
-		ReadTokenHash: f.read, ReceiptTokenHash: f.receipt,
-		KDF:      pcrypto.KDFParams{Salt: []byte("0123456789abcdef"), MemoryKiB: 19456, Iterations: 2, Parallelism: 1},
-		ViewsMax: 1, MaxFailedAttempts: 5, ExpiresAt: time.Now().Add(time.Hour),
+		err := s.Create(ctx, store.NewSecret{
+			ID: f.id, OrgID: "default", Kind: "text", Ciphertext: []byte("x"),
+			ReadTokenHash: f.read, ReceiptTokenHash: f.receipt,
+			KDF:      pcrypto.KDFParams{Salt: []byte("0123456789abcdef"), MemoryKiB: 19456, Iterations: 2, Parallelism: 1},
+			ViewsMax: 1, MaxFailedAttempts: 5, ExpiresAt: time.Now().Add(time.Hour),
+		})
+		if !errors.Is(err, store.ErrConflict) {
+			t.Fatalf("duplicate id error = %v, want ErrConflict", err)
+		}
 	})
-	if !errors.Is(err, store.ErrConflict) {
-		t.Fatalf("duplicate id error = %v, want ErrConflict", err)
-	}
 }

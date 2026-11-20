@@ -78,8 +78,10 @@ func (s *Store) Migrate(ctx context.Context) error {
 		// Each migration runs in its own transaction: a failure leaves the
 		// database on the previous version rather than half migrated.
 		err := s.tx(ctx, func(tx *sql.Tx) error {
-			if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
-				return err
+			for _, stmt := range splitStatements(m.SQL) {
+				if _, err := tx.ExecContext(ctx, stmt); err != nil {
+					return fmt.Errorf("%w (statement: %s)", err, firstLine(stmt))
+				}
 			}
 			_, err := tx.ExecContext(ctx,
 				s.rebind(`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`),
@@ -129,4 +131,15 @@ func (s *Store) appliedVersions(ctx context.Context) (map[int]bool, error) {
 		out[v] = true
 	}
 	return out, rows.Err()
+}
+
+// firstLine shortens a statement for an error message.
+func firstLine(stmt string) string {
+	if idx := strings.IndexByte(stmt, '\n'); idx > 0 {
+		stmt = stmt[:idx]
+	}
+	if len(stmt) > 120 {
+		stmt = stmt[:120] + "…"
+	}
+	return strings.TrimSpace(stmt)
 }

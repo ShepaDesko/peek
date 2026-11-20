@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	pcrypto "github.com/ShepaDesko/peek/internal/crypto"
 )
 
@@ -485,12 +487,22 @@ func nullString(s string) any {
 	return s
 }
 
+// isUniqueViolation reports a duplicate key, whatever the backend.
+//
+// PostgreSQL reports it through SQLSTATE 23505, which is what we match: the
+// message itself is translated to the server's locale, and a French server
+// says "la valeur d'une clé dupliquée" — matching on English text silently
+// turned a conflict into a 500 there.
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
 	msg := err.Error()
-	for _, sub := range []string{"UNIQUE constraint failed", "duplicate key value", "SQLITE_CONSTRAINT"} {
+	for _, sub := range []string{"UNIQUE constraint failed", "SQLITE_CONSTRAINT", "SQLSTATE 23505"} {
 		if strings.Contains(msg, sub) {
 			return true
 		}

@@ -105,8 +105,22 @@ type Security struct {
 	CreateAllowedCIDRs []string `toml:"create_allowed_cidrs"`
 	AnonymousCreate    bool     `toml:"anonymous_create"`
 	MaxPassphraseTries int      `toml:"max_passphrase_attempts"`
-	AnonymizeIPs       bool     `toml:"anonymize_ips"`
-	AuditRetention     Duration `toml:"audit_retention"`
+
+	// Sessions. Idle expiry slides forward on activity; the absolute one
+	// never does, so a stolen cookie has a hard lifetime.
+	SessionIdle     Duration `toml:"session_idle"`
+	SessionAbsolute Duration `toml:"session_absolute"`
+	// Failed logins before an account is locked for LoginLockFor. The lock is
+	// temporary on purpose: a permanent one turns guessing into a denial of
+	// service against the real user.
+	LoginAttempts int      `toml:"login_attempts"`
+	LoginLockFor  Duration `toml:"login_lock_for"`
+	// RequireTOTP forces every account to enrol a second factor.
+	RequireTOTP bool `toml:"require_totp"`
+	// AllowPasskeys enables WebAuthn.
+	AllowPasskeys  bool     `toml:"allow_passkeys"`
+	AnonymizeIPs   bool     `toml:"anonymize_ips"`
+	AuditRetention Duration `toml:"audit_retention"`
 
 	RateCreate RateLimit `toml:"rate_create"`
 	RateRead   RateLimit `toml:"rate_read"`
@@ -204,6 +218,12 @@ func Default() Config {
 		Security: Security{
 			AnonymousCreate:    false,
 			MaxPassphraseTries: 5,
+			SessionIdle:        Duration(12 * time.Hour),
+			SessionAbsolute:    Days(7),
+			LoginAttempts:      5,
+			LoginLockFor:       Duration(15 * time.Minute),
+			RequireTOTP:        false,
+			AllowPasskeys:      true,
 			AnonymizeIPs:       false,
 			AuditRetention:     Days(365),
 			RateCreate:         RateLimit{Burst: 20, Rate: 60, Window: Duration(time.Hour)},
@@ -380,6 +400,16 @@ func (c *Config) Validate() error {
 	}
 	if c.Security.MaxPassphraseTries <= 0 {
 		add("security.max_passphrase_attempts must be positive")
+	}
+	if c.Security.SessionIdle.Std() <= 0 {
+		add("security.session_idle must be positive")
+	}
+	if c.Security.SessionAbsolute.Std() < c.Security.SessionIdle.Std() {
+		add("security.session_absolute (%s) cannot be shorter than security.session_idle (%s)",
+			c.Security.SessionAbsolute, c.Security.SessionIdle)
+	}
+	if c.Security.LoginAttempts < 0 {
+		add("security.login_attempts cannot be negative")
 	}
 	for _, k := range c.Policy.AllowedKinds {
 		switch k {

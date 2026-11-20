@@ -53,10 +53,7 @@ func Open(ctx context.Context, cfg config.Database) (*Store, error) {
 	case "sqlite":
 		return openSQLite(ctx, cfg.DSN)
 	case "postgres":
-		// PostgreSQL support (and with it multi-node HA) is milestone M9. It is
-		// rejected loudly rather than half-working: a silent fallback to SQLite
-		// on several nodes would break the single-view guarantee.
-		return nil, errors.New("store: the postgres driver is not implemented yet (milestone M9); use database.driver = \"sqlite\"")
+		return openPostgres(ctx, cfg.DSN)
 	default:
 		return nil, fmt.Errorf("store: unknown driver %q", cfg.Driver)
 	}

@@ -43,10 +43,10 @@ type Server struct {
 	adminCIDRs  []*net.IPNet
 	createCIDRs []*net.IPNet
 
-	limitCreate *Limiter
-	limitRead   *Limiter
-	limitLogin  *Limiter
-	limitAPI    *Limiter
+	limitCreate RateLimiter
+	limitRead   RateLimiter
+	limitLogin  RateLimiter
+	limitAPI    RateLimiter
 
 	ui      *webui.Handler
 	version string
@@ -101,10 +101,10 @@ func New(opts Options) (*Server, error) {
 		trusted:     trusted,
 		adminCIDRs:  adminCIDRs,
 		createCIDRs: createCIDRs,
-		limitCreate: NewLimiter(opts.Config.Security.RateCreate),
-		limitRead:   NewLimiter(opts.Config.Security.RateRead),
-		limitLogin:  NewLimiter(opts.Config.Security.RateLogin),
-		limitAPI:    NewLimiter(opts.Config.Security.RateAPI),
+		limitCreate: newLimiter(opts.Store, log, opts.Config, "create", opts.Config.Security.RateCreate),
+		limitRead:   newLimiter(opts.Store, log, opts.Config, "read", opts.Config.Security.RateRead),
+		limitLogin:  newLimiter(opts.Store, log, opts.Config, "login", opts.Config.Security.RateLogin),
+		limitAPI:    newLimiter(opts.Store, log, opts.Config, "api", opts.Config.Security.RateAPI),
 		ui:          ui,
 		version:     opts.Version,
 		started:     time.Now(),
