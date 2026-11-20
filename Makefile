@@ -18,6 +18,9 @@ LDFLAGS := -s -w \
 	-X main.date=$(DATE) \
 	-X github.com/ShepaDesko/peek/internal/update.SigningPublicKey=$(SIGNING_KEY)
 
+# ./... would also match web/node_modules, which ships a stray Go package.
+PKGS := ./cmd/... ./internal/... ./tools/...
+
 BIN_DIR := bin
 WEB_DIST := web/dist
 EMBED_DIST := internal/webui/dist
@@ -87,7 +90,7 @@ test: test-go test-web ## Run every test suite
 
 .PHONY: test-go
 test-go: ## Run the Go tests with the race detector
-	$(GO) test -race ./...
+	$(GO) test -race $(PKGS)
 
 .PHONY: test-web
 test-web: ## Run the TypeScript tests (crypto vectors included)
@@ -100,7 +103,7 @@ vectors: ## Regenerate the shared crypto test vectors
 .PHONY: lint
 lint: ## Run gofmt, go vet, golangci-lint and ESLint
 	@test -z "$$(gofmt -l cmd internal tools)" || (echo "gofmt needed:"; gofmt -l cmd internal tools; exit 1)
-	$(GO) vet ./...
+	$(GO) vet $(PKGS)
 	@command -v golangci-lint >/dev/null 2>&1 && golangci-lint run || echo "golangci-lint not installed, skipped"
 	cd web && $(NPM) run lint
 
@@ -112,7 +115,7 @@ fmt: ## Format Go and TypeScript sources
 .PHONY: vuln
 vuln: ## Check Go dependencies for known vulnerabilities
 	@command -v govulncheck >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
-	govulncheck ./...
+	govulncheck $(PKGS)
 
 .PHONY: e2e
 e2e: build ## Run the Playwright end-to-end suite

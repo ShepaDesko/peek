@@ -34,7 +34,7 @@ jobs:
 
       - name: tests must pass before anything is published
         run: |
-          go test -race ./...
+          go test -race ./cmd/... ./internal/... ./tools/...
           npm ci --prefix web
           npm run test --prefix web
 

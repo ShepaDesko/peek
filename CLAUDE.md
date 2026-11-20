@@ -54,8 +54,11 @@ npm run test --prefix web -- crypto
 
 ## Traps worth remembering
 
+- **Go package patterns exclude `web/node_modules`**, which ships a stray Go
+  package from a frontend dependency: use `./cmd/... ./internal/... ./tools/...`
+  (the `$(PKGS)` variable in the Makefile), not `./...`.
 - **`-race` needs CGO**, so it does not run on a Windows dev box without a C
-  toolchain. CI runs it on Linux; run `go test ./...` locally.
+  toolchain. CI runs it on Linux; run `go test $(PKGS)` locally.
 - **go-toml has no duration type.** `config.Duration` implements
   `encoding.TextMarshaler`, which is why `peek.toml` can say `30d`. Use
   `.Std()` to get a `time.Duration`.

@@ -37,7 +37,7 @@ jobs:
           fi
 
       - name: go vet
-        run: go vet ./...
+        run: go vet ./cmd/... ./internal/... ./tools/...
 
       - uses: golangci/golangci-lint-action@v6
         with:
@@ -47,10 +47,10 @@ jobs:
       # The race detector is the point of this job: the single-view guarantee
       # is a concurrency property.
       - name: go test -race
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 ./cmd/... ./internal/... ./tools/...
 
       - name: build
-        run: CGO_ENABLED=0 go build -trimpath ./...
+        run: CGO_ENABLED=0 go build -trimpath ./cmd/...
 
   web:
     name: Web — lint, types, tests
@@ -128,7 +128,7 @@ jobs:
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          govulncheck ./cmd/... ./internal/... ./tools/...
 
       - name: npm audit
         working-directory: web
