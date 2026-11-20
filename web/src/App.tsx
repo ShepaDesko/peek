@@ -1,31 +1,63 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, api, type Branding, type Policy } from "./lib/api";
 import { LANGS, browserLang, storeLang, storedLang, translator, type Lang } from "./lib/i18n";
+import { isCryptoAvailable, isSecureContext } from "./lib/secure";
+import { navigate, replace, useSession } from "./lib/session";
+import Account from "./pages/Account";
+import Admin from "./pages/Admin";
 import Create from "./pages/Create";
+import Dashboard from "./pages/Dashboard";
+import Login from "./pages/Login";
+import { AcceptInvitation, Bootstrap, ResetPassword } from "./pages/Onboarding";
 import Receipt from "./pages/Receipt";
 import Reveal from "./pages/Reveal";
-import { isCryptoAvailable, isSecureContext } from "./lib/secure";
-import { Banner, Card } from "./ui";
+import { Banner, Card, Spinner } from "./ui";
 
 type Theme = "system" | "light" | "dark";
 
 /**
- * Routing by hand. Three routes do not justify a router dependency, and the
- * recipient bundle stays small — which is a stated budget, not a preference.
+ * Routing by hand. The routes are few and flat, and a router dependency would
+ * cost the recipient page more than it saves here.
  */
 type Route =
   | { name: "create" }
   | { name: "reveal"; id: string; fragment: string }
-  | { name: "receipt"; id: string; fragment: string };
+  | { name: "receipt"; id: string; fragment: string }
+  | { name: "login" }
+  | { name: "bootstrap" }
+  | { name: "invitation" }
+  | { name: "reset" }
+  | { name: "dashboard" }
+  | { name: "account" }
+  | { name: "admin" };
 
 function parseRoute(): Route {
-  const path = window.location.pathname;
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
   const fragment = window.location.hash.replace(/^#/, "");
-  const reveal = /^\/s\/([A-Za-z0-9_-]{22})\/?$/.exec(path);
+
+  const reveal = /^\/s\/([A-Za-z0-9_-]{22})$/.exec(path);
   if (reveal) return { name: "reveal", id: reveal[1], fragment };
-  const receipt = /^\/r\/([A-Za-z0-9_-]{22})\/?$/.exec(path);
+  const receipt = /^\/r\/([A-Za-z0-9_-]{22})$/.exec(path);
   if (receipt) return { name: "receipt", id: receipt[1], fragment };
-  return { name: "create" };
+
+  switch (path) {
+    case "/login":
+      return { name: "login" };
+    case "/bootstrap":
+      return { name: "bootstrap" };
+    case "/invitation":
+      return { name: "invitation" };
+    case "/reset":
+      return { name: "reset" };
+    case "/dashboard":
+      return { name: "dashboard" };
+    case "/account":
+      return { name: "account" };
+    case "/admin":
+      return { name: "admin" };
+    default:
+      return { name: "create" };
+  }
 }
 
 export default function App() {
@@ -35,6 +67,7 @@ export default function App() {
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>(() => storedLang() ?? browserLang() ?? "fr");
   const [theme, setTheme] = useState<Theme>(() => readTheme());
+  const session = useSession();
 
   useEffect(() => {
     const onNavigate = () => setRoute(parseRoute());
@@ -52,7 +85,6 @@ export default function App() {
       .then((b) => {
         setBranding(b);
         document.title = b.service_name;
-        document.documentElement.lang = lang;
         if (!storedLang() && (b.language === "fr" || b.language === "en")) {
           setLang(b.language);
         }
@@ -60,9 +92,8 @@ export default function App() {
       .catch(() => setBranding(null));
   }, [lang]);
 
-  // The policy lives on the internal listener only: on a public listener it
-  // answers 404, which is precisely how the page learns it must not offer
-  // creation here.
+  // The policy lives on the internal listener only: a 404 is how a public,
+  // recipient-only instance tells us not to offer creation here.
   useEffect(() => {
     if (route.name !== "create") return;
     api
@@ -92,17 +123,28 @@ export default function App() {
     applyTheme(theme);
   }, [theme]);
 
+  // A fresh instance sends its administrator to the first-run page rather than
+  // to a sign-in form nobody can pass.
+  useEffect(() => {
+    if (session.loading || !session.me) return;
+    if (session.me.needs_bootstrap && route.name === "login") {
+      replace("/bootstrap");
+    }
+    if (!session.me.needs_bootstrap && route.name === "bootstrap") {
+      replace("/login");
+    }
+  }, [session.loading, session.me, route.name]);
+
   const t = useMemo(() => translator(lang), [lang]);
-  // WebCrypto is only exposed in a secure context. Checked once, at the top,
-  // so every page says the same clear thing instead of throwing deep inside
-  // a key derivation.
   const cryptoReady = useMemo(() => isCryptoAvailable() && isSecureContext(), []);
   const serviceName = branding?.service_name ?? "Peek";
+  const me = session.me;
+  const signedIn = !!me?.authenticated;
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b" style={{ borderColor: "var(--peek-border)" }}>
-        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-3 px-4 py-4">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-3 px-4 py-4">
           <a href="/" className="flex items-center gap-2 font-semibold">
             <span
               aria-hidden="true"
@@ -111,7 +153,26 @@ export default function App() {
             />
             {serviceName}
           </a>
-          <span className="peek-muted hidden flex-1 text-xs sm:block">{t("app.tagline")}</span>
+
+          {signedIn ? (
+            <nav
+              aria-label={t("app.dashboard")}
+              className="flex flex-wrap items-center gap-1 text-sm"
+            >
+              <NavLink href="/" label={t("app.create")} active={route.name === "create"} />
+              <NavLink
+                href="/dashboard"
+                label={t("app.dashboard")}
+                active={route.name === "dashboard"}
+              />
+              <NavLink href="/account" label={t("app.account")} active={route.name === "account"} />
+              {me?.can_manage || me?.can_audit ? (
+                <NavLink href="/admin" label={t("app.admin")} active={route.name === "admin"} />
+              ) : null}
+            </nav>
+          ) : (
+            <span className="peek-muted hidden flex-1 text-xs sm:block">{t("app.tagline")}</span>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
             <label htmlFor="lang" className="sr-only">
@@ -144,11 +205,24 @@ export default function App() {
             >
               {effectiveTheme() === "dark" ? t("app.theme.light") : t("app.theme.dark")}
             </button>
+            {signedIn ? (
+              <button
+                type="button"
+                className="peek-btn peek-btn-ghost px-2 py-1 text-xs"
+                onClick={() => void session.signOut()}
+              >
+                {t("app.signOut")}
+              </button>
+            ) : me && !me.needs_bootstrap && route.name !== "login" ? (
+              <a href="/login" className="peek-btn peek-btn-ghost px-2 py-1 text-xs">
+                {t("app.signIn")}
+              </a>
+            ) : null}
           </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         {cryptoReady ? null : (
           <Card className="mb-5">
             <Banner tone="danger" title={t("insecure.title")}>
@@ -157,19 +231,25 @@ export default function App() {
             </Banner>
           </Card>
         )}
-        {route.name === "create" ? (
-          <Create t={t} policy={policy} policyError={policyError} />
-        ) : null}
-        {route.name === "reveal" ? (
-          <Reveal key={route.id} id={route.id} fragment={route.fragment} t={t} lang={lang} />
-        ) : null}
-        {route.name === "receipt" ? (
-          <Receipt key={route.id} id={route.id} fragment={route.fragment} t={t} lang={lang} />
-        ) : null}
+
+        {session.loading && route.name !== "reveal" ? (
+          <Card>
+            <Spinner label={t("app.loading")} />
+          </Card>
+        ) : (
+          <Routes
+            route={route}
+            t={t}
+            lang={lang}
+            policy={policy}
+            policyError={policyError}
+            session={session}
+          />
+        )}
       </main>
 
       <footer className="border-t" style={{ borderColor: "var(--peek-border)" }}>
-        <div className="peek-muted mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-4 text-xs">
+        <div className="peek-muted mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-4 text-xs">
           {branding?.support_url ? (
             <a href={branding.support_url} className="underline">
               {t("app.support")}
@@ -189,6 +269,101 @@ export default function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function Routes({
+  route,
+  t,
+  lang,
+  policy,
+  policyError,
+  session,
+}: {
+  route: Route;
+  t: ReturnType<typeof translator>;
+  lang: Lang;
+  policy: Policy | null;
+  policyError: string | null;
+  session: ReturnType<typeof useSession>;
+}) {
+  const me = session.me;
+  const signedIn = !!me?.authenticated;
+
+  switch (route.name) {
+    case "reveal":
+      return <Reveal key={route.id} id={route.id} fragment={route.fragment} t={t} lang={lang} />;
+    case "receipt":
+      return <Receipt key={route.id} id={route.id} fragment={route.fragment} t={t} lang={lang} />;
+    case "login":
+      return (
+        <Login
+          t={t}
+          onSignedIn={session.refresh}
+          pending={me?.mfa_pending}
+          passkeysEnabled={me?.passkeys}
+        />
+      );
+    case "bootstrap":
+      return <Bootstrap t={t} onSignedIn={session.refresh} />;
+    case "invitation":
+      return <AcceptInvitation t={t} onSignedIn={session.refresh} />;
+    case "reset":
+      return <ResetPassword t={t} />;
+    case "dashboard":
+      return signedIn ? <Dashboard t={t} lang={lang} /> : <SignInFirst t={t} />;
+    case "account":
+      return signedIn && me ? (
+        <Account t={t} lang={lang} me={me} refresh={session.refresh} />
+      ) : (
+        <SignInFirst t={t} />
+      );
+    case "admin":
+      return signedIn && me && (me.can_manage || me.can_audit) ? (
+        <Admin t={t} lang={lang} me={me} />
+      ) : (
+        <SignInFirst t={t} />
+      );
+    default:
+      return <Create t={t} policy={policy} policyError={policyError} />;
+  }
+}
+
+function SignInFirst({ t }: { t: ReturnType<typeof translator> }) {
+  return (
+    <Card className="mx-auto max-w-md space-y-3">
+      <h1 className="text-xl font-semibold">{t("login.title")}</h1>
+      <p className="peek-muted text-sm leading-relaxed">{t("login.subtitle")}</p>
+      <button
+        type="button"
+        className="peek-btn peek-btn-primary"
+        onClick={() => navigate("/login")}
+      >
+        {t("app.signIn")}
+      </button>
+    </Card>
+  );
+}
+
+function NavLink({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <a
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className="rounded-lg px-2.5 py-1.5 font-medium"
+      style={
+        active
+          ? { background: "var(--peek-primary-soft)", color: "var(--peek-primary)" }
+          : undefined
+      }
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+        event.preventDefault();
+        navigate(href);
+      }}
+    >
+      {label}
+    </a>
   );
 }
 

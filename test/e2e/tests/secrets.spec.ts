@@ -275,15 +275,42 @@ test("the audit trail records the journey without the secret", async ({ page, re
   await page.getByRole("button", { name: "Révéler le secret" }).click();
   await expect(page.getByRole("button", { name: "Afficher" })).toBeVisible();
 
+  // The audit trail needs an account now, so the check moves to accounts.spec.ts
+  // and this test asserts the part that matters here: nothing secret leaks.
   const response = await request.get(`/api/v1/audit?secret_id=${id}`);
-  expect(response.status()).toBe(200);
-  const raw = await response.text();
+  expect(response.status()).toBe(401);
+
+  const signedIn = await signInForAudit(page);
+  const trail = await signedIn.get(`/api/v1/audit?secret_id=${id}`);
+  expect(trail.status()).toBe(200);
+  const raw = await trail.text();
 
   expect(raw).not.toContain(SECRET);
   expect(raw).not.toContain(link.split("#v1.")[1]);
 
-  const events = (await response.json()).events.map((e: { event: string }) => e.event);
+  const events = (await trail.json()).events.map((e: { event: string }) => e.event);
   expect(events).toContain("secret.created");
   expect(events).toContain("secret.page_viewed");
   expect(events).toContain("secret.revealed");
 });
+
+/**
+ * Signs in as the administrator and returns a request context that carries the
+ * session cookie, so an API assertion can be made as a signed-in caller.
+ */
+async function signInForAudit(page: Page) {
+  await page.goto("/login");
+  const email = "admin@acme.test";
+  const password = "un-mot-de-passe-correct-2026";
+  if (page.url().endsWith("/bootstrap")) {
+    await page.getByLabel("Adresse e-mail").fill(email);
+    await page.getByLabel("Mot de passe", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Créer le compte" }).click();
+  } else {
+    await page.getByLabel("Adresse e-mail").fill(email);
+    await page.getByLabel("Mot de passe", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Se connecter", exact: true }).click();
+  }
+  await expect(page.getByRole("heading", { name: "Mes secrets" })).toBeVisible();
+  return page.request;
+}

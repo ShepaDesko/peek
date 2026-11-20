@@ -49,6 +49,11 @@ burst = 0
 [security.rate_create]
 burst = 0
 
+# The suite signs in dozens of times; the login bucket is covered by the Go
+# tests, and throttling it here would only make the suite flaky.
+[security.rate_login]
+burst = 0
+
 [branding]
 service_name = "Coffre E2E"
 primary_color = "#1d4ed8"
