@@ -379,7 +379,9 @@ func call(ctx context.Context, method, target string, body any, token string, ou
 // promptSecret reads a passphrase without echoing it.
 func promptSecret(label string) (string, error) {
 	fmt.Fprint(os.Stderr, label)
-	fd := int(syscall.Stdin)
+	// os.Stdin.Fd is portable; syscall.Stdin is an int on unix and a Handle on
+	// Windows, which makes a direct conversion either redundant or wrong.
+	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
 		return "", errors.New("no terminal available to read the passphrase; use --passphrase")
 	}

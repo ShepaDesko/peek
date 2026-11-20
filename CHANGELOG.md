@@ -64,6 +64,21 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `peek-cli push` and `peek-cli get`: the same encryption as the browser, so a
   secret created in a terminal opens in a browser and the other way round.
 
+### Found by running it, not by reading it
+- The interface detects a non-secure context and explains that HTTPS is
+  required, instead of failing with a raw `crypto.subtle is undefined` error.
+  Browsers only expose WebCrypto over HTTPS or on localhost.
+- `peek setup` hands the configuration to `root:peek 0640` and the master key
+  to `peek:peek 0400`, so the service can read what it was just given; a
+  permission error now prints the `chown` that fixes it.
+- Administration commands run with `sudo` no longer leave root-owned SQLite
+  files behind, and `peek doctor` does not create a database on a fresh
+  install.
+- `peek setup` enables the daily backup timer and waits for the service to
+  answer before printing its diagnosis.
+- The CSP carries `'wasm-unsafe-eval'`, without which the Argon2id WebAssembly
+  module cannot run at all.
+
 ### Not yet implemented
 Accounts, roles, SSO and TOTP (M5); the branding editor with live preview and
 branded e-mails (M6); files, multi-recipient and secret requests (M7); the
