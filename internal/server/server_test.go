@@ -48,11 +48,21 @@ func newHarness(t *testing.T, tweak func(*config.Config)) *harness {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
+	master := make([]byte, 32)
+	for i := range master {
+		master[i] = byte(i + 1)
+	}
+	cipher, err := pcrypto.NewServerCipher(master)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	srv, err := server.New(server.Options{
 		Config:  &cfg,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store:   st,
 		Version: "test",
+		Cipher:  cipher,
 	})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
@@ -575,8 +585,19 @@ func TestCreationDisabledByDefault(t *testing.T) {
 	h := newHarness(t, func(c *config.Config) { c.Security.AnonymousCreate = false })
 	c := newClient(t, "", "x")
 	rec := do(t, h.internal, http.MethodPost, "/api/v1/secrets", c.createBody(t, nil), nil)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status %d, want 403 when anonymous creation is off", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401 when anonymous creation is off and nobody is signed in", rec.Code)
+	}
+
+	// Signed in, the same request works and the secret is attributed.
+	admin := h.signIn(t)
+	rec = admin.do(t, h.internal, http.MethodPost, "/api/v1/secrets", c.createBody(t, nil), nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status %d for a signed-in creator: %s", rec.Code, rec.Body.String())
+	}
+	dash := decodeBody(t, admin.do(t, h.internal, http.MethodGet, "/api/v1/dashboard/secrets", nil, nil))
+	if len(dash["secrets"].([]any)) != 1 {
+		t.Fatalf("the secret is not on the creator dashboard: %v", dash)
 	}
 }
 
@@ -715,7 +736,13 @@ func TestAuditTrailRecordsWithoutSecretContent(t *testing.T) {
 	do(t, h.public, http.MethodGet, "/api/v1/secrets/"+c.id, nil, nil)
 	h.reveal(t, h.public, c, c.keys.ReadToken)
 
-	rec := do(t, h.internal, http.MethodGet, "/api/v1/audit?secret_id="+c.id, nil, nil)
+	anonymous := do(t, h.internal, http.MethodGet, "/api/v1/audit?secret_id="+c.id, nil, nil)
+	if anonymous.Code != http.StatusUnauthorized {
+		t.Fatalf("the audit trail answered %d to an anonymous caller, want 401", anonymous.Code)
+	}
+
+	admin := h.signIn(t)
+	rec := admin.do(t, h.internal, http.MethodGet, "/api/v1/audit?secret_id="+c.id, nil, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("audit: %d", rec.Code)
 	}

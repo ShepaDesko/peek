@@ -70,6 +70,10 @@ type CreateInput struct {
 	LabelEnc             []byte
 	CreatorID            string
 	OrgID                string
+	// NotifyEmailEnc is the sender's address, already encrypted by the caller
+	// with the server master key.
+	NotifyEmailEnc []byte
+	NotifyOnView   bool
 }
 
 // Created is the server side of a new secret. The links are assembled by the
@@ -159,6 +163,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Created, error) {
 		MaxFailedAttempts:    s.cfg.Security.MaxPassphraseTries,
 		LabelEnc:             in.LabelEnc,
 		ExpiresAt:            expires,
+		NotifyEmailEnc:       in.NotifyEmailEnc,
+		NotifyOnView:         in.NotifyOnView,
 	})
 	switch {
 	case errors.Is(err, store.ErrConflict):

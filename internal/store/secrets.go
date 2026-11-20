@@ -44,6 +44,10 @@ type NewSecret struct {
 	LabelEnc             []byte
 	GroupID              string
 	ExpiresAt            time.Time
+	// NotifyEmailEnc is the sender's address, encrypted with the server master
+	// key so that a notification can be sent without storing it in the clear.
+	NotifyEmailEnc []byte
+	NotifyOnView   bool
 }
 
 // Meta is the public metadata a recipient may read before proving possession
@@ -90,14 +94,16 @@ func (s *Store) Create(ctx context.Context, n NewSecret) error {
 		kdf_salt, kdf_memory_kib, kdf_iterations, kdf_parallelism,
 		has_passphrase, retrieval_step, deletable_by_recipient,
 		views_max, views_remaining, failed_attempts, max_failed_attempts,
-		label_enc, group_id, created_at, expires_at, last_viewed_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL)`,
+		label_enc, group_id, created_at, expires_at, last_viewed_at,
+		notify_email_enc, notify_on_view
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, ?, ?)`,
 		n.ID, n.OrgID, nullString(n.CreatorID), n.Kind, n.Ciphertext, nullString(n.StorageRef), n.SizeBytes,
 		n.ReadTokenHash, n.ReceiptTokenHash,
 		n.KDF.Salt, n.KDF.MemoryKiB, n.KDF.Iterations, n.KDF.Parallelism,
 		boolToInt(n.HasPassphrase), boolToInt(n.RetrievalStep), boolToInt(n.DeletableByRecipient),
 		n.ViewsMax, n.ViewsMax, n.MaxFailedAttempts,
-		n.LabelEnc, nullString(n.GroupID), now, unix(n.ExpiresAt))
+		n.LabelEnc, nullString(n.GroupID), now, unix(n.ExpiresAt),
+		n.NotifyEmailEnc, boolToInt(n.NotifyOnView))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ErrConflict
@@ -157,6 +163,8 @@ type Reveal struct {
 	SizeBytes      int64
 	ViewsRemaining int
 	Destroyed      bool
+	// NotifyEmailEnc is set when the sender asked to be told about reads.
+	NotifyEmailEnc []byte
 }
 
 // Consume verifies the read token, decrements the view counter and returns the
@@ -192,12 +200,16 @@ func (s *Store) Consume(ctx context.Context, id string, readTokenHash []byte, no
 			creator    sql.NullString
 			createdAt  int64
 			groupID    sql.NullString
+			notifyEnc  []byte
+			notifyOn   int
 		)
 		err := tx.QueryRowContext(ctx, s.rebind(`SELECT read_token_hash, ciphertext, storage_ref, kind,
-			size_bytes, views_remaining, views_max, expires_at, org_id, creator_id, created_at, group_id
+			size_bytes, views_remaining, views_max, expires_at, org_id, creator_id, created_at, group_id,
+			notify_email_enc, notify_on_view
 			FROM secrets WHERE id = ?`), id).Scan(
 			&storedHash, &ciphertext, &storageRef, &kind,
-			&size, &remaining, &viewsMax, &expires, &orgID, &creator, &createdAt, &groupID)
+			&size, &remaining, &viewsMax, &expires, &orgID, &creator, &createdAt, &groupID,
+			&notifyEnc, &notifyOn)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -234,6 +246,9 @@ func (s *Store) Consume(ctx context.Context, id string, readTokenHash []byte, no
 			StorageRef:     storageRef.String,
 			SizeBytes:      size,
 			ViewsRemaining: remaining - 1,
+		}
+		if notifyOn == 1 {
+			out.NotifyEmailEnc = notifyEnc
 		}
 		if out.ViewsRemaining <= 0 {
 			if err := deleteSecretTx(ctx, s, tx, id, orgID, creator, groupID,

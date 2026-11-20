@@ -41,6 +41,7 @@ type Config struct {
 	Security Security `toml:"security"`
 	Policy   Policy   `toml:"policy"`
 	Mail     Mail     `toml:"mail"`
+	Audit    Audit    `toml:"audit"`
 	Log      Log      `toml:"log"`
 	Branding Branding `toml:"branding"`
 	Backup   Backup   `toml:"backup"`
@@ -163,6 +164,23 @@ type Mail struct {
 	AllowedDomains []string `toml:"allowed_recipient_domains"`
 }
 
+// Audit configures what happens to the audit trail beyond the database.
+type Audit struct {
+	Syslog Syslog `toml:"syslog"`
+}
+
+// Syslog forwards the audit trail to a SIEM in RFC 5424 format.
+type Syslog struct {
+	Enabled bool   `toml:"enabled"`
+	Address string `toml:"address"`
+	// Protocol is udp, tcp or tls.
+	Protocol string `toml:"protocol"`
+	// Facility is the syslog facility number; 13 is local1.
+	Facility   int    `toml:"facility"`
+	AppName    string `toml:"app_name"`
+	SkipVerify bool   `toml:"skip_tls_verify"`
+}
+
 // Log configures structured logging. Secrets never reach it.
 type Log struct {
 	Level  string `toml:"level"`  // debug | info | warn | error
@@ -243,8 +261,9 @@ func Default() Config {
 			MaxRecipients:      10,
 			MaxSecretBytes:     1 << 20,
 		},
-		Mail: Mail{Port: 587, Encryption: "starttls", FromName: "Peek"},
-		Log:  Log{Level: "info", Format: "json"},
+		Mail:  Mail{Port: 587, Encryption: "starttls", FromName: "Peek"},
+		Audit: Audit{Syslog: Syslog{Protocol: "udp", Facility: 13, AppName: "peek"}},
+		Log:   Log{Level: "info", Format: "json"},
 		Branding: Branding{
 			ServiceName:  "Peek",
 			PrimaryColor: "#4f46e5",
@@ -427,6 +446,19 @@ func (c *Config) Validate() error {
 	case "json", "text":
 	default:
 		add("log.format must be json or text (got %q)", c.Log.Format)
+	}
+	if c.Audit.Syslog.Enabled {
+		if c.Audit.Syslog.Address == "" {
+			add("audit.syslog.address is required when audit.syslog.enabled is true")
+		}
+		switch c.Audit.Syslog.Protocol {
+		case "udp", "tcp", "tls":
+		default:
+			add("audit.syslog.protocol must be udp, tcp or tls (got %q)", c.Audit.Syslog.Protocol)
+		}
+		if c.Audit.Syslog.Facility < 0 || c.Audit.Syslog.Facility > 23 {
+			add("audit.syslog.facility must be between 0 and 23")
+		}
 	}
 	if c.Mail.Host != "" {
 		if c.Mail.FromAddress == "" {

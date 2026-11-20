@@ -18,11 +18,37 @@ const (
 	EventDeleted       = "secret.deleted"
 	EventExpired       = "secret.expired"
 	EventPurged        = "secret.purged"
+	EventLinkEmailed   = "secret.link_emailed"
 	EventNotFound      = "secret.not_found"
 	EventRateLimited   = "request.rate_limited"
 	EventAdminBlocked  = "request.admin_blocked"
 	EventConfigChanged = "admin.config_changed"
 	EventUpdateApplied = "admin.update_applied"
+
+	// Accounts and sessions.
+	EventLogin                  = "auth.login"
+	EventLoginFailed            = "auth.login_failed"
+	EventLogout                 = "auth.logout"
+	EventMFAFailed              = "auth.mfa_failed"
+	EventPasswordChanged        = "auth.password_changed"
+	EventPasswordResetRequested = "auth.password_reset_requested"
+	EventPasswordReset          = "auth.password_reset"
+	EventTOTPEnabled            = "auth.totp_enabled"
+	EventTOTPDisabled           = "auth.totp_disabled"
+	EventRecoveryCodesIssued    = "auth.recovery_codes_issued"
+	EventSessionsRevoked        = "auth.sessions_revoked"
+	EventPasskeyRegistered      = "auth.passkey_registered"
+	EventPasskeyRemoved         = "auth.passkey_removed"
+	EventPasskeyLogin           = "auth.passkey_login"
+
+	// User management.
+	EventUserCreated        = "admin.user_created"
+	EventUserUpdated        = "admin.user_updated"
+	EventUserDeleted        = "admin.user_deleted"
+	EventInvitationSent     = "admin.invitation_sent"
+	EventInvitationRevoked  = "admin.invitation_revoked"
+	EventInvitationAccepted = "admin.invitation_accepted"
+	EventUserPasswordSet    = "admin.user_password_set"
 )
 
 // AuditEvent is one append-only entry. The content of a secret, its key, its

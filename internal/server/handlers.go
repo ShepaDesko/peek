@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,9 +71,14 @@ func (s *Server) audit(r *http.Request, e store.AuditEvent) {
 	}
 	e.IP = ip
 	e.UserAgent = r.UserAgent()
+	if e.At.IsZero() {
+		e.At = time.Now().UTC()
+	}
 	if err := s.store.Append(r.Context(), e); err != nil {
 		s.log.Error("cannot write audit event", "event", e.Event, "error", err.Error())
 	}
+	// The database copy is the record; the SIEM gets a best-effort copy.
+	s.siem.Forward(e)
 }
 
 // ---------------------------------------------------------------------------
@@ -191,16 +197,28 @@ type createRequest struct {
 	RetrievalStep        *bool  `json:"retrieval_step"`
 	DeletableByRecipient bool   `json:"deletable_by_recipient"`
 	Label                string `json:"label_enc"`
+	// NotifyEmail asks to be told when the secret is read. The address is
+	// encrypted with the server master key before it is stored.
+	NotifyEmail string `json:"notify_email"`
 }
 
 func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.Security.AnonymousCreate {
-		// Accounts arrive in milestone M5. Until then, creation is gated by
-		// security.anonymous_create plus the create CIDR list, and refusing by
-		// default is the safe side of that trade.
-		writeError(w, r, http.StatusForbidden, "creation_disabled",
-			"Secret creation is disabled on this instance. Set security.anonymous_create = true in peek.toml, or sign in once accounts are available.")
+	// Creating a secret needs either an account or an instance that allows
+	// anonymous creation. Refusing by default is the safe side of that trade:
+	// an exposed instance is not an open relay on day one.
+	p := principalOf(r.Context())
+	if p == nil && !s.cfg.Security.AnonymousCreate {
+		writeError(w, r, http.StatusUnauthorized, "unauthenticated",
+			"Sign in to create a secret, or enable security.anonymous_create in peek.toml.")
 		return
+	}
+	if p != nil && p.User.Role == store.RoleAuditor {
+		writeError(w, r, http.StatusForbidden, "forbidden", "An auditor account cannot create secrets.")
+		return
+	}
+	creatorID, orgID := "", store.DefaultOrgID
+	if p != nil {
+		creatorID, orgID = p.User.ID, p.User.OrgID
 	}
 
 	var req createRequest
@@ -242,7 +260,25 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		retrieval = *req.RetrievalStep
 	}
 
+	var notifyEnc []byte
+	if req.NotifyEmail != "" {
+		if s.cipher == nil {
+			writeFieldError(w, http.StatusServiceUnavailable, "no_master_key",
+				"This instance has no master key, so a notification address cannot be stored.", "notify_email")
+			return
+		}
+		sealed, err := s.cipher.SealString(pcrypto.PurposeEmail, strings.TrimSpace(req.NotifyEmail))
+		if err != nil {
+			s.log.Error("seal notification address", "error", err.Error())
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "Internal error.")
+			return
+		}
+		notifyEnc = sealed
+	}
+
 	created, err := s.secrets.Create(r.Context(), secrets.CreateInput{
+		CreatorID:        creatorID,
+		OrgID:            orgID,
 		ID:               req.ID,
 		Kind:             req.Kind,
 		Ciphertext:       ciphertext,
@@ -260,6 +296,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		RetrievalStep:        retrieval,
 		DeletableByRecipient: req.DeletableByRecipient,
 		LabelEnc:             label,
+		NotifyEmailEnc:       notifyEnc,
+		NotifyOnView:         notifyEnc != nil,
 	})
 	switch {
 	case err == nil:
@@ -282,6 +320,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	s.audit(r, store.AuditEvent{
 		SecretID: created.ID,
+		UserID:   creatorID,
 		Event:    store.EventCreated,
 		Detail: map[string]string{
 			"kind":           created.Kind,
@@ -377,6 +416,7 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.notifySender(r, id, rev)
 	s.audit(r, store.AuditEvent{SecretID: safeID(id), Event: store.EventRevealed,
 		Detail: map[string]string{
 			"views_remaining": strconv.Itoa(rev.ViewsRemaining),
@@ -490,6 +530,9 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 // helpers
 // ---------------------------------------------------------------------------
 
+// errMalformedBody is the single answer for a body we cannot parse.
+var errMalformedBody = errors.New("malformed JSON body")
+
 func decodeJSON(r *http.Request, dst any) error {
 	ct := r.Header.Get("Content-Type")
 	if ct != "" && !strings.HasPrefix(ct, "application/json") {
@@ -502,7 +545,7 @@ func decodeJSON(r *http.Request, dst any) error {
 		if errors.As(err, &maxErr) {
 			return fmt.Errorf("request body too large")
 		}
-		return fmt.Errorf("malformed JSON body")
+		return errMalformedBody
 	}
 	return nil
 }
@@ -554,4 +597,30 @@ func errString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// notifySender tells the creator their secret was read, when they asked for it.
+//
+// It runs in the background: the recipient is waiting for their secret, and a
+// slow mail relay must not hold that up. Failures are logged, never surfaced
+// to the recipient, who has nothing to do with them.
+func (s *Server) notifySender(r *http.Request, secretID string, rev store.Reveal) {
+	if len(rev.NotifyEmailEnc) == 0 || s.cipher == nil || !s.mailer.Configured() {
+		return
+	}
+	address, err := s.cipher.OpenString(pcrypto.PurposeEmail, rev.NotifyEmailEnc)
+	if err != nil {
+		s.log.Error("cannot read the notification address", "error", err.Error())
+		return
+	}
+	destroyed := rev.Destroyed
+	id := safeID(secretID)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := s.mailSecretViewed(ctx, address, id, destroyed); err != nil {
+			s.log.Error("cannot send the read notification", "error", err.Error())
+		}
+	}()
+	_ = r
 }

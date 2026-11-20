@@ -21,7 +21,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/ShepaDesko/peek/internal/accounts"
+	"github.com/ShepaDesko/peek/internal/audit"
 	"github.com/ShepaDesko/peek/internal/config"
+	pcrypto "github.com/ShepaDesko/peek/internal/crypto"
+	"github.com/ShepaDesko/peek/internal/mail"
 	"github.com/ShepaDesko/peek/internal/secrets"
 	"github.com/ShepaDesko/peek/internal/store"
 	"github.com/ShepaDesko/peek/internal/webui"
@@ -48,6 +52,11 @@ type Server struct {
 	limitLogin  RateLimiter
 	limitAPI    RateLimiter
 
+	accounts *accounts.Service
+	mailer   mail.Sender
+	siem     audit.Forwarder
+	cipher   *pcrypto.ServerCipher
+
 	ui      *webui.Handler
 	version string
 	started time.Time
@@ -63,6 +72,15 @@ type Options struct {
 	Logger  *slog.Logger
 	Store   *store.Store
 	Version string
+	// Cipher encrypts server-side metadata (TOTP seeds, credentials). It may
+	// be nil on an instance with no master key; the features that need it
+	// then refuse with a clear message instead of starting half-working.
+	Cipher *pcrypto.ServerCipher
+	// Mailer is optional: without one, nothing is e-mailed and the interface
+	// hands over links directly.
+	Mailer mail.Sender
+	// SIEM forwards the audit trail; nil means the database copy only.
+	SIEM audit.Forwarder
 }
 
 // New builds a Server. It fails rather than start with a configuration whose
@@ -109,8 +127,21 @@ func New(opts Options) (*Server, error) {
 		version:     opts.Version,
 		started:     time.Now(),
 	}
+	s.accounts = accounts.New(opts.Store, opts.Config, opts.Cipher)
+	s.cipher = opts.Cipher
+	s.mailer = opts.Mailer
+	if s.mailer == nil {
+		s.mailer = mail.Discard{Log: log}
+	}
+	s.siem = opts.SIEM
+	if s.siem == nil {
+		s.siem = audit.Nop{}
+	}
 	return s, nil
 }
+
+// Accounts exposes the account service, for the CLI and the tests.
+func (s *Server) Accounts() *accounts.Service { return s.accounts }
 
 // Secrets exposes the service, for tests and the CLI.
 func (s *Server) Secrets() *secrets.Service { return s.secrets }
@@ -132,6 +163,9 @@ func (s *Server) Handler(listener string) http.Handler {
 
 	r.Route("/api/v1", func(api chi.Router) {
 		api.Use(noStore)
+		// Every API route resolves the caller when a session cookie is
+		// present; each group then decides whether it needs one.
+		api.Use(s.withPrincipal)
 
 		api.Get("/branding", s.handleBranding)
 		api.Get("/ip", s.handleWhoami)
@@ -144,9 +178,33 @@ func (s *Server) Handler(listener string) http.Handler {
 			pub.Delete("/secrets/{id}", s.handleRecipientDelete)
 		})
 
-		// Sender and admin routes: internal listener only, plus the CIDR gate.
+		// Everything below is internal-listener only.
 		api.Group(func(priv chi.Router) {
 			priv.Use(s.internalOnly)
+			priv.Use(s.requireCSRF)
+
+			// --- sign-in surface: rate limited, no session needed ----------
+			priv.Group(func(anon chi.Router) {
+				anon.Use(s.rateLimit(s.limitLogin, "login"))
+				anon.Post("/auth/login", s.handleLogin)
+				anon.Post("/auth/mfa", s.handleMFA)
+				anon.Post("/auth/bootstrap", s.handleBootstrap)
+				anon.Post("/auth/password/forgot", s.handleForgotPassword)
+				anon.Post("/auth/password/reset", s.handleResetPassword)
+				anon.Post("/auth/passkeys/login/start", s.handlePasskeyLoginStart)
+				anon.Post("/auth/passkeys/login/finish", s.handlePasskeyLoginFinish)
+				anon.Post("/invitations/preview", s.handlePreviewInvitation)
+				anon.Post("/invitations/accept", s.handleAcceptInvitation)
+			})
+
+			priv.Group(func(open chi.Router) {
+				open.Use(s.rateLimit(s.limitAPI, "api"))
+				open.Get("/auth/me", s.handleMe)
+				open.Post("/auth/logout", s.handleLogout)
+				open.Get("/policy", s.handlePolicy)
+			})
+
+			// --- creating and following your own secrets -------------------
 			priv.Group(func(create chi.Router) {
 				create.Use(s.restrictCIDR(s.createCIDRs, "create"))
 				create.Use(s.rateLimit(s.limitCreate, "create"))
@@ -156,13 +214,61 @@ func (s *Server) Handler(listener string) http.Handler {
 				sender.Use(s.rateLimit(s.limitAPI, "api"))
 				sender.Get("/secrets/{id}/receipt", s.handleReceipt)
 				sender.Post("/secrets/{id}/burn", s.handleBurn)
+				sender.Post("/secrets/{id}/email", s.handleSendLink)
 			})
+
+			// --- signed-in account management ------------------------------
+			priv.Group(func(account chi.Router) {
+				account.Use(s.rateLimit(s.limitAPI, "api"))
+				account.Use(s.requireAuth)
+
+				account.Post("/auth/password", s.handleChangePassword)
+				account.Post("/auth/totp/start", s.handleTOTPStart)
+				account.Post("/auth/totp/confirm", s.handleTOTPConfirm)
+				account.Post("/auth/totp/disable", s.handleTOTPDisable)
+				account.Post("/auth/recovery-codes", s.handleRecoveryCodes)
+
+				account.Get("/auth/sessions", s.handleListSessions)
+				account.Delete("/auth/sessions/{id}", s.handleRevokeSession)
+				account.Post("/auth/sessions/revoke-others", s.handleRevokeOtherSessions)
+
+				account.Get("/auth/passkeys", s.handleListPasskeys)
+				account.Post("/auth/passkeys/register/start", s.handlePasskeyRegisterStart)
+				account.Post("/auth/passkeys/register/finish", s.handlePasskeyRegisterFinish)
+				account.Patch("/auth/passkeys/{id}", s.handleRenamePasskey)
+				account.Delete("/auth/passkeys/{id}", s.handleDeletePasskey)
+
+				account.Get("/dashboard/secrets", s.handleDashboard)
+				account.Post("/dashboard/secrets/{id}/burn", s.handleBurnOwned)
+			})
+
+			// --- administration --------------------------------------------
 			priv.Group(func(admin chi.Router) {
 				admin.Use(s.restrictCIDR(s.adminCIDRs, "admin"))
 				admin.Use(s.rateLimit(s.limitAPI, "api"))
-				admin.Get("/policy", s.handlePolicy)
-				admin.Get("/audit", s.handleAudit)
-				admin.Get("/instance", s.handleInstance)
+
+				admin.Group(func(manage chi.Router) {
+					manage.Use(s.requireRole(store.RoleManager))
+					manage.Get("/users", s.handleListUsers)
+					manage.Post("/users", s.handleCreateUser)
+					manage.Patch("/users/{id}", s.handleUpdateUser)
+					manage.Delete("/users/{id}", s.handleDeleteUser)
+					manage.Post("/users/{id}/password", s.handleSetUserPassword)
+					manage.Get("/invitations", s.handleListInvitations)
+					manage.Delete("/invitations/{id}", s.handleRevokeInvitation)
+				})
+
+				// The auditor role reads the trail and nothing else.
+				admin.Group(func(audit chi.Router) {
+					audit.Use(s.requireRole(store.RoleManager, store.RoleAuditor))
+					audit.Get("/audit", s.handleAudit)
+					audit.Get("/audit/export", s.handleAuditExport)
+				})
+
+				admin.Group(func(instance chi.Router) {
+					instance.Use(s.requireRole(store.RoleAdmin))
+					instance.Get("/instance", s.handleInstance)
+				})
 			})
 		})
 	})

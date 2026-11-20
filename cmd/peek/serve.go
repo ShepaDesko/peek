@@ -8,8 +8,11 @@ import (
 	"os"
 	"sync"
 
+	"github.com/ShepaDesko/peek/internal/audit"
 	"github.com/ShepaDesko/peek/internal/config"
+	pcrypto "github.com/ShepaDesko/peek/internal/crypto"
 	"github.com/ShepaDesko/peek/internal/jobs"
+	"github.com/ShepaDesko/peek/internal/mail"
 	"github.com/ShepaDesko/peek/internal/server"
 	"github.com/ShepaDesko/peek/internal/store"
 )
@@ -49,11 +52,33 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	defer func() { _ = st.Close() }()
 
+	// The master key encrypts server-side metadata (TOTP seeds, credentials).
+	// A missing one is not fatal: everything that does not need it keeps
+	// working, and the features that do say so clearly.
+	cipher, err := pcrypto.LoadServerCipher(cfg.MasterKeyFile)
+	if err != nil {
+		log.Warn("no usable master key: second factors and stored credentials are unavailable",
+			"file", cfg.MasterKeyFile, "error", err.Error())
+		cipher = nil
+	}
+
+	var mailer mail.Sender = mail.Discard{Log: log}
+	if cfg.Mail.Host != "" {
+		mailer = mail.New(cfg.Mail, log)
+		log.Info("e-mail enabled", "host", cfg.Mail.Host, "from", cfg.Mail.FromAddress)
+	}
+
+	siem := audit.New(cfg.Audit.Syslog, log)
+	defer func() { _ = siem.Close() }()
+
 	srv, err := server.New(server.Options{
 		Config:  &cfg,
 		Logger:  log,
 		Store:   st,
 		Version: version,
+		Cipher:  cipher,
+		Mailer:  mailer,
+		SIEM:    siem,
 	})
 	if err != nil {
 		return err

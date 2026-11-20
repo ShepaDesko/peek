@@ -606,25 +606,6 @@ func runBranding(_ context.Context, args []string) error {
 }
 
 // ---------------------------------------------------------------------------
-// peek admin
-// ---------------------------------------------------------------------------
-
-func runAdmin(_ context.Context, args []string) error {
-	sub := "create"
-	if len(args) > 0 {
-		sub = args[0]
-	}
-	switch sub {
-	case "create", "reset-password", "disable-2fa":
-		return fail("accounts, roles and two-factor authentication arrive in milestone M5.\n" +
-			"Until then an instance has no users: creation is gated by security.anonymous_create\n" +
-			"and security.create_allowed_cidrs in peek.toml.")
-	default:
-		return fail("usage: peek admin create|reset-password|disable-2fa")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // small helpers
 // ---------------------------------------------------------------------------
 

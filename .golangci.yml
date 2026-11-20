@@ -52,6 +52,12 @@ linters:
       # The CLI writes to stdout on purpose.
       - path: cmd/
         linters: [forbidigo]
+      # internal/store/audit.go is a list of event-name constants. gosec reads
+      # "Passkey", "Token" and "RecoveryCodes" as credentials; they are labels
+      # that end up in a SIEM.
+      - path: internal/store/audit\.go
+        text: "G101"
+        linters: [gosec]
 
 formatters:
   enable:
