@@ -1,0 +1,197 @@
+@import "tailwindcss";
+
+/*
+ * Peek interface styles.
+ *
+ * Colours come from /branding.css, which the server generates from the
+ * instance brand. Everything here is a fallback for the values it defines, so
+ * a rebranded instance needs no rebuild.
+ */
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+/*
+ * Fallback palette, in the base layer on purpose: /branding.css is served
+ * unlayered by the binary, and unlayered rules beat every layer, so an
+ * instance brand always wins over these defaults without !important.
+ */
+@layer base {
+  :root {
+    --peek-primary: #4f46e5;
+    --peek-primary-hover: #453ec9;
+    --peek-primary-active: #3c36ad;
+    --peek-primary-soft: #eceafc;
+    --peek-on-primary: #ffffff;
+    --peek-accent: #0ea5e9;
+
+    --peek-bg: #f6f7fb;
+    --peek-surface: #ffffff;
+    --peek-border: #e2e5ee;
+    --peek-text: #15182a;
+    --peek-muted: #5b6079;
+    --peek-danger: #b42318;
+    --peek-warning: #a05e03;
+    --peek-success: #087443;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --peek-bg: #0b0d16;
+      --peek-surface: #15192a;
+      --peek-border: #262b40;
+      --peek-text: #eef0f8;
+      --peek-muted: #a3a9c2;
+      --peek-primary-soft: #1d2140;
+      --peek-danger: #ff7b6b;
+      --peek-warning: #f2b544;
+      --peek-success: #4ade80;
+    }
+  }
+
+  html[data-theme="dark"] {
+    --peek-bg: #0b0d16;
+    --peek-surface: #15192a;
+    --peek-border: #262b40;
+    --peek-text: #eef0f8;
+    --peek-muted: #a3a9c2;
+    --peek-primary-soft: #1d2140;
+    --peek-danger: #ff7b6b;
+    --peek-warning: #f2b544;
+    --peek-success: #4ade80;
+  }
+
+  html[data-theme="light"] {
+    --peek-bg: #f6f7fb;
+    --peek-surface: #ffffff;
+    --peek-border: #e2e5ee;
+    --peek-text: #15182a;
+    --peek-muted: #5b6079;
+    --peek-danger: #b42318;
+    --peek-warning: #a05e03;
+    --peek-success: #087443;
+  }
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--peek-bg);
+  color: var(--peek-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus everywhere: a keyboard user must always know where they are. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--peek-primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@layer components {
+  .peek-card {
+    background: var(--peek-surface);
+    border: 1px solid var(--peek-border);
+    border-radius: 14px;
+  }
+
+  .peek-input {
+    width: 100%;
+    background: var(--peek-surface);
+    color: var(--peek-text);
+    border: 1px solid var(--peek-border);
+    border-radius: 10px;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.95rem;
+  }
+
+  .peek-input:focus {
+    border-color: var(--peek-primary);
+  }
+
+  .peek-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 10px;
+    padding: 0.6rem 1rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      transform 80ms ease;
+  }
+
+  .peek-btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  .peek-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .peek-btn-primary {
+    background: var(--peek-primary);
+    color: var(--peek-on-primary);
+  }
+
+  .peek-btn-primary:hover:not(:disabled) {
+    background: var(--peek-primary-hover);
+  }
+
+  .peek-btn-ghost {
+    background: transparent;
+    color: var(--peek-text);
+    border-color: var(--peek-border);
+  }
+
+  .peek-btn-ghost:hover:not(:disabled) {
+    background: var(--peek-primary-soft);
+  }
+
+  .peek-btn-danger {
+    background: transparent;
+    color: var(--peek-danger);
+    border-color: color-mix(in srgb, var(--peek-danger) 40%, transparent);
+  }
+
+  .peek-btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--peek-danger) 12%, transparent);
+  }
+
+  .peek-muted {
+    color: var(--peek-muted);
+  }
+
+  .peek-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border: 1px solid var(--peek-border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
