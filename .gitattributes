@@ -1,0 +1,20 @@
+# Normalise line endings in the repository.
+* text=auto eol=lf
+
+# These are executed on Linux: CRLF would break the shebang or make.
+*.sh       text eol=lf
+Makefile   text eol=lf
+*.service  text eol=lf
+*.timer    text eol=lf
+*.toml     text eol=lf
+*.sql      text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+
+# Generated, and compared byte for byte by the crypto tests.
+crypto/vectors/*.json text eol=lf
+
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
