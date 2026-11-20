@@ -1,62 +1,64 @@
 # Peek
 
-**Ephemeral secret sharing, self-hosted, white-label.**
-One Linux binary, systemd, no Docker, no runtime to install, nothing loaded
-from the internet by the browser.
+**Partage de secrets par liens éphémères, auto-hébergé, en marque blanche.**
+Un seul binaire Linux, géré par systemd. Pas de Docker, aucun runtime à
+installer, rien que le navigateur aille chercher sur Internet.
 
-A secret is encrypted **in the sender's browser**. The server stores a
-ciphertext and two digests. The key travels in the URL fragment, which browsers
-never send. Peek cannot read what it holds — by construction, not by policy.
+Un secret est chiffré **dans le navigateur de l'émetteur**. Le serveur ne
+stocke qu'un chiffré et deux empreintes. La clé voyage dans le fragment de
+l'URL, que les navigateurs n'envoient jamais. Peek ne peut pas lire ce qu'il
+héberge — par construction, pas par politique interne.
 
 ```
-┌── sender's browser ─────────┐        ┌── peek ──────────────┐
-│ AES-256-GCM + HKDF          │ POST   │ ciphertext           │
-│ (+ Argon2id if passphrase)  │ ─────► │ SHA-256(read token)  │
-│ key stays in the fragment   │        │ expiry, read counter │
-└─────────────────────────────┘        └──────────────────────┘
-          │  https://secrets.acme.com/s/<id>#<key>
+┌── navigateur émetteur ──────┐        ┌── peek ──────────────────┐
+│ AES-256-GCM + HKDF          │ POST   │ chiffré                  │
+│ (+ Argon2id si passphrase)  │ ─────► │ SHA-256(jeton de lecture)│
+│ la clé reste dans le #      │        │ expiration, compteur     │
+└─────────────────────────────┘        └──────────────────────────┘
+          │  https://coffre.acme.fr/s/<id>#<clé>
           ▼
-┌── recipient's browser ──────┐  proof of possession, then one read is spent
-│ derives the read token      │ ─────► ciphertext ─────► decrypted locally
+┌── navigateur destinataire ──┐  preuve de possession, puis une vue est consommée
+│ dérive le jeton de lecture  │ ─────► chiffré ─────► déchiffré localement
 └─────────────────────────────┘
 ```
 
-## What works today
+## Ce qui fonctionne aujourd'hui
 
-| Area | State |
+| Domaine | État |
 |---|---|
-| Text and URL secrets, encrypted end to end | ✅ |
-| Expiry by duration **and** by number of reads, enforced atomically | ✅ |
-| Click-to-reveal step: preview bots spend no read | ✅ |
-| Optional passphrase, bounded attempts, secret destroyed on exhaustion | ✅ |
-| Sender receipt page: live status, QR code, destroy now | ✅ |
-| Recipient deletion, real deletion on expiry, per-minute purge | ✅ |
-| Append-only audit trail with no secret content | ✅ |
-| Rate limiting, strict CSP, `no-store`, `noindex` | ✅ |
-| White-label name, colours and generated palette with contrast checks | ✅ |
-| French and English, light and dark themes | ✅ |
-| Two listeners: expose recipient pages only | ✅ |
-| Real client IP behind Kemp, F5, HAProxy, nginx (+ PROXY protocol) | ✅ |
-| `setup`, `doctor`, `backup`, `restore`, signed `update` with rollback | ✅ |
-| `.deb`, `.rpm`, `.tar.gz`, hardened systemd units, `install.sh` | ✅ |
-| `peek-cli push` / `get`, byte-compatible with the browser | ✅ |
-| Accounts, roles, SSO, TOTP, passkeys | milestone M5 |
-| Branding editor with live preview, branded e-mails | milestone M6 |
-| Files, multi-recipient, secret requests, S3 | milestone M7 |
-| Documented REST API, tokens, webhooks | milestone M8 |
-| PostgreSQL, high availability, multi-organisation | milestone M9 |
+| Secrets texte et URL, chiffrés de bout en bout | ✅ |
+| Expiration par **durée** et par **nombre de lectures**, appliquée atomiquement | ✅ |
+| Étape « cliquer pour révéler » : les robots d'aperçu ne consomment aucune vue | ✅ |
+| Passphrase optionnelle, tentatives limitées, secret détruit au-delà | ✅ |
+| Page reçu pour l'émetteur : statut en direct, QR code, « détruire maintenant » | ✅ |
+| Suppression par le destinataire, suppression réelle à l'expiration, purge chaque minute | ✅ |
+| Journal d'audit append-only, sans jamais le contenu d'un secret | ✅ |
+| Limitation de débit, CSP stricte, `no-store`, `noindex` | ✅ |
+| Marque blanche : nom, couleurs, palette générée avec contrôle de contraste | ✅ |
+| Français et anglais, thèmes clair et sombre | ✅ |
+| Deux écouteurs : n'exposer que les pages destinataires | ✅ |
+| IP client réelle derrière Kemp, F5, HAProxy, nginx (+ PROXY protocol) | ✅ |
+| `setup`, `doctor`, `backup`, `restore`, `update` signé avec retour arrière | ✅ |
+| `.deb`, `.rpm`, `.tar.gz`, unités systemd durcies, `install.sh` | ✅ |
+| `peek-cli push` / `get`, compatible bit à bit avec le navigateur | ✅ |
+| Comptes, rôles, SSO, TOTP, passkeys | jalon M5 |
+| Éditeur de marque avec aperçu en direct, e-mails brandés | jalon M6 |
+| Fichiers, multi-destinataires, demandes de secret, S3 | jalon M7 |
+| API REST documentée, jetons, webhooks | jalon M8 |
+| PostgreSQL, haute disponibilité, multi-organisation | jalon M9 |
 
-Unfinished areas fail loudly rather than pretending: setting
-`database.driver = "postgres"` or `tls.mode = "acme"` refuses to start with an
-explanation instead of silently doing something else.
+Ce qui n'est pas terminé **refuse franchement** au lieu de faire semblant :
+mettre `database.driver = "postgres"` ou `tls.mode = "acme"` empêche le
+démarrage avec un message explicite, plutôt que de basculer en silence sur
+autre chose.
 
-## Install
+## Installation
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ShepaDesko/peek/main/packaging/install.sh | sudo sh
 ```
 
-or, from a downloaded package:
+ou depuis un paquet téléchargé :
 
 ```bash
 sudo apt install ./peek_1.0.0_linux_amd64.deb   # Debian, Ubuntu
@@ -64,67 +66,69 @@ sudo dnf install ./peek-1.0.0.amd64.rpm         # RHEL, Rocky, Alma
 sudo peek setup
 ```
 
-`peek setup` asks for the public URL, the exposure mode, the listeners, TLS,
-the database and SMTP, writes `/etc/peek/peek.toml`, generates the master key,
-creates the service account and directories, starts the service and finishes
-with a `peek doctor`.
+`peek setup` demande l'URL publique, le mode d'exposition, les écouteurs, le
+TLS, la base de données et le SMTP, écrit `/etc/peek/peek.toml`, génère la clé
+maîtresse, crée le compte de service et les répertoires, démarre le service,
+active la sauvegarde quotidienne et termine par un `peek doctor`.
 
-Full instructions: [docs/INSTALL.md](docs/INSTALL.md).
+Détails : [docs/INSTALL.md](docs/INSTALL.md).
 
-## Upgrade
+## HTTPS obligatoire
+
+Le chiffrement a lieu dans le navigateur, et les navigateurs n'exposent
+WebCrypto qu'en `https://` ou sur `localhost`. Une instance publiée en HTTP
+simple sur une adresse de LAN s'affiche, explique clairement le problème, et
+refuse de chiffrer. Terminez le TLS sur votre répartiteur, ou mettez
+`tls.mode = "file"`.
+
+## Mise à jour
 
 ```bash
-sudo peek update              # checks the signature, backs up, swaps, verifies, rolls back on failure
-sudo peek update --check      # exit code 10 when a release is available
-sudo peek update --file peek_1.4.2_linux_amd64.tar.gz   # offline host
+sudo peek update              # vérifie la signature, sauvegarde, remplace, contrôle, revient en arrière si besoin
+sudo peek update --check      # code de retour 10 si une version est disponible
+sudo peek update --file peek_1.4.2_linux_amd64.tar.gz   # serveur hors ligne
 sudo peek rollback
 ```
 
-Details: [docs/UPGRADE.md](docs/UPGRADE.md).
+Détails : [docs/UPGRADE.md](docs/UPGRADE.md).
 
-## HTTPS is required
+## Exposer l'instance sans exposer l'administration
 
-Encryption happens in the browser, and browsers only expose WebCrypto over
-`https://` or on `localhost`. An instance published over plain HTTP on a LAN
-address will load, state the problem plainly, and refuse to encrypt. Terminate
-TLS on your proxy, or set `tls.mode = "file"`.
-
-## Expose it safely
-
-Peek is built to sit behind a load balancer with only its recipient pages
-published:
+Peek est prévu pour vivre derrière un répartiteur de charge en ne publiant que
+ses pages destinataires :
 
 ```toml
 [server]
-internal_listen = "10.0.0.5:8080"   # creation, dashboard, administration, API
-public_listen   = "10.0.0.5:8081"   # recipient pages only — publish this one
-trusted_proxies = ["10.0.0.0/24"]   # the only sources whose X-Forwarded-* is believed
+internal_listen = "10.0.0.5:8080"   # création, tableau de bord, administration, API
+public_listen   = "10.0.0.5:8081"   # pages destinataires uniquement — publiez celui-ci
+trusted_proxies = ["10.0.0.0/24"]   # seules sources dont les X-Forwarded-* sont crus
 ```
 
-Ready-made configurations for Kemp LoadMaster, HAProxy, nginx, F5, Apache and
-Traefik: [docs/REVERSE-PROXY.md](docs/REVERSE-PROXY.md).
-Then check it from the server itself:
+Configurations prêtes à l'emploi pour Kemp LoadMaster, HAProxy, nginx, F5,
+Apache et Traefik : [docs/REVERSE-PROXY.md](docs/REVERSE-PROXY.md).
+Puis, depuis le serveur :
 
 ```bash
 sudo peek doctor --external
 ```
 
-It reports the client IP Peek actually resolves, the certificate, and whether
-the admin surface answers through the public URL — the mistake that matters.
+Il indique l'IP client que Peek résout réellement, l'état du certificat, et
+surtout si l'administration répond à travers l'URL publique — l'erreur qui
+compte.
 
-## Build from source
+## Compiler depuis les sources
 
-Requires Go 1.26+ and Node 22+. No Docker.
+Go 1.26+ et Node 22+. Pas de Docker.
 
 ```bash
 make deps
-make build        # builds the interface, embeds it, produces bin/peek
-make test         # Go tests with -race, TypeScript tests, shared crypto vectors
+make build        # compile l'interface, l'embarque, produit bin/peek
+make test         # tests Go avec -race, tests TypeScript, vecteurs de crypto partagés
 make lint
 ./bin/peek version
 ```
 
-Development loop (API on :8080, Vite on :5173):
+Boucle de développement (API sur :8080, Vite sur :5173) :
 
 ```bash
 make dev-config
@@ -133,21 +137,24 @@ make dev
 
 ## Documentation
 
-| Document | Contents |
+| Document | Contenu |
 |---|---|
-| [INSTALL.md](docs/INSTALL.md) | Installation, service account, first run |
-| [CONFIG.md](docs/CONFIG.md) | Every setting in `peek.toml` |
-| [REVERSE-PROXY.md](docs/REVERSE-PROXY.md) | Kemp, HAProxy, nginx, F5, Apache, Traefik, direct TLS |
-| [UPGRADE.md](docs/UPGRADE.md) | Updates, offline updates, rollback |
-| [BACKUP.md](docs/BACKUP.md) | Backups, restore, what an archive contains |
-| [CRYPTO.md](docs/CRYPTO.md) | The v1 format, key derivation, test vectors |
-| [THREAT-MODEL.md](docs/THREAT-MODEL.md) | What zero-knowledge protects, and what it does not |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Code layout and request flow |
-| [BRANDING.md](docs/BRANDING.md) | White-labelling an instance |
-| [API.md](docs/API.md) | HTTP endpoints as implemented today |
-| [DECISIONS.md](docs/DECISIONS.md) | Decisions taken, with their reasons |
-| [SECURITY.md](SECURITY.md) | Reporting a vulnerability |
+| [INSTALL.md](docs/INSTALL.md) | Installation, compte de service, première mise en route |
+| [CONFIG.md](docs/CONFIG.md) | Tous les réglages de `peek.toml` |
+| [REVERSE-PROXY.md](docs/REVERSE-PROXY.md) | Kemp, HAProxy, nginx, F5, Apache, Traefik, exposition directe |
+| [UPGRADE.md](docs/UPGRADE.md) | Mises à jour, mise à jour hors ligne, retour arrière |
+| [BACKUP.md](docs/BACKUP.md) | Sauvegarde, restauration, contenu d'une archive |
+| [CRYPTO.md](docs/CRYPTO.md) | Le format v1, dérivation des clés, vecteurs de test |
+| [THREAT-MODEL.md](docs/THREAT-MODEL.md) | Ce que le zero-knowledge protège, et ce qu'il ne protège pas |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Organisation du code et parcours d'une requête |
+| [BRANDING.md](docs/BRANDING.md) | Mettre une instance aux couleurs d'un client |
+| [API.md](docs/API.md) | Les points d'entrée HTTP tels qu'implémentés |
+| [DECISIONS.md](docs/DECISIONS.md) | Les décisions prises, et pourquoi |
+| [SECURITY.md](SECURITY.md) | Signaler une vulnérabilité |
+
+Les documents du dossier `docs/` sont rédigés en anglais ; dites-le si vous les
+voulez en français, la traduction est mécanique.
 
 ## Licence
 
-Proprietary. See [LICENSE](LICENSE).
+Propriétaire. Voir [LICENSE](LICENSE).
