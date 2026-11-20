@@ -1,0 +1,355 @@
+// Package server assembles the HTTP surface: routing, hardening middleware,
+// the two listeners and graceful shutdown.
+//
+// The route table is split in two. The public mux carries only what a
+// recipient needs; the internal mux carries everything. An instance that sets
+// server.public_listen publishes the first one to the load balancer and keeps
+// creation, the dashboard, administration and the API on the LAN.
+package server
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/ShepaDesko/peek/internal/config"
+	"github.com/ShepaDesko/peek/internal/secrets"
+	"github.com/ShepaDesko/peek/internal/store"
+	"github.com/ShepaDesko/peek/internal/webui"
+)
+
+const (
+	listenerPublic   = "public"
+	listenerInternal = "internal"
+)
+
+// Server owns the HTTP listeners and the handlers behind them.
+type Server struct {
+	cfg     *config.Config
+	log     *slog.Logger
+	store   *store.Store
+	secrets *secrets.Service
+	trusted *TrustedProxies
+
+	adminCIDRs  []*net.IPNet
+	createCIDRs []*net.IPNet
+
+	limitCreate *Limiter
+	limitRead   *Limiter
+	limitLogin  *Limiter
+	limitAPI    *Limiter
+
+	ui      *webui.Handler
+	version string
+	started time.Time
+
+	mu        sync.Mutex
+	servers   []*http.Server
+	listeners []net.Listener
+}
+
+// Options configure New.
+type Options struct {
+	Config  *config.Config
+	Logger  *slog.Logger
+	Store   *store.Store
+	Version string
+}
+
+// New builds a Server. It fails rather than start with a configuration whose
+// network trust cannot be parsed.
+func New(opts Options) (*Server, error) {
+	if opts.Config == nil {
+		return nil, errors.New("server: missing configuration")
+	}
+	log := opts.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+
+	trusted, err := NewTrustedProxies(opts.Config.Server.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("server.trusted_proxies: %w", err)
+	}
+	adminCIDRs, err := parseCIDRs(opts.Config.Security.AdminAllowedCIDRs)
+	if err != nil {
+		return nil, fmt.Errorf("security.admin_allowed_cidrs: %w", err)
+	}
+	createCIDRs, err := parseCIDRs(opts.Config.Security.CreateAllowedCIDRs)
+	if err != nil {
+		return nil, fmt.Errorf("security.create_allowed_cidrs: %w", err)
+	}
+	ui, err := webui.NewHandler()
+	if err != nil {
+		return nil, err
+	}
+
+	s := &Server{
+		cfg:         opts.Config,
+		log:         log,
+		store:       opts.Store,
+		secrets:     secrets.New(opts.Store, opts.Config),
+		trusted:     trusted,
+		adminCIDRs:  adminCIDRs,
+		createCIDRs: createCIDRs,
+		limitCreate: NewLimiter(opts.Config.Security.RateCreate),
+		limitRead:   NewLimiter(opts.Config.Security.RateRead),
+		limitLogin:  NewLimiter(opts.Config.Security.RateLogin),
+		limitAPI:    NewLimiter(opts.Config.Security.RateAPI),
+		ui:          ui,
+		version:     opts.Version,
+		started:     time.Now(),
+	}
+	return s, nil
+}
+
+// Secrets exposes the service, for tests and the CLI.
+func (s *Server) Secrets() *secrets.Service { return s.secrets }
+
+// Handler returns the handler for one listener role.
+func (s *Server) Handler(listener string) http.Handler {
+	r := chi.NewRouter()
+	r.Use(s.withContext(listener))
+	r.Use(s.recoverer)
+	r.Use(s.accessLog)
+	r.Use(s.securityHeaders)
+	r.Use(limitBody(s.cfg.Server.MaxBodyBytes))
+
+	// Health checks are intentionally unauthenticated, tiny and cacheless, so
+	// a load balancer can poll them without learning anything.
+	r.Get("/healthz", s.handleHealthz)
+	r.Get("/readyz", s.handleReadyz)
+	r.Get("/robots.txt", s.handleRobots)
+
+	r.Route("/api/v1", func(api chi.Router) {
+		api.Use(noStore)
+
+		api.Get("/branding", s.handleBranding)
+		api.Get("/ip", s.handleWhoami)
+
+		// Recipient-facing routes: available on both listeners.
+		api.Group(func(pub chi.Router) {
+			pub.Use(s.rateLimit(s.limitRead, "read"))
+			pub.Get("/secrets/{id}", s.handleSecretMeta)
+			pub.Post("/secrets/{id}/reveal", s.handleReveal)
+			pub.Delete("/secrets/{id}", s.handleRecipientDelete)
+		})
+
+		// Sender and admin routes: internal listener only, plus the CIDR gate.
+		api.Group(func(priv chi.Router) {
+			priv.Use(s.internalOnly)
+			priv.Group(func(create chi.Router) {
+				create.Use(s.restrictCIDR(s.createCIDRs, "create"))
+				create.Use(s.rateLimit(s.limitCreate, "create"))
+				create.Post("/secrets", s.handleCreate)
+			})
+			priv.Group(func(sender chi.Router) {
+				sender.Use(s.rateLimit(s.limitAPI, "api"))
+				sender.Get("/secrets/{id}/receipt", s.handleReceipt)
+				sender.Post("/secrets/{id}/burn", s.handleBurn)
+			})
+			priv.Group(func(admin chi.Router) {
+				admin.Use(s.restrictCIDR(s.adminCIDRs, "admin"))
+				admin.Use(s.rateLimit(s.limitAPI, "api"))
+				admin.Get("/policy", s.handlePolicy)
+				admin.Get("/audit", s.handleAudit)
+				admin.Get("/instance", s.handleInstance)
+			})
+		})
+	})
+
+	// Branding stylesheet: served as a file so the CSP needs no inline styles.
+	r.With(noStore).Get("/branding.css", s.handleBrandingCSS)
+
+	// Single-page application. The recipient pages are the only ones the
+	// public listener needs, but the SPA is one bundle: it is served on both
+	// listeners and the API gate above is what actually protects creation.
+	r.NotFound(s.ui.ServeHTTP)
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+	})
+	return r
+}
+
+// Serve starts every configured listener and blocks until the context is
+// cancelled, then shuts down gracefully.
+func (s *Server) Serve(ctx context.Context) error {
+	type binding struct {
+		name string
+		addr string
+	}
+	bindings := []binding{{listenerInternal, s.cfg.Server.InternalListen}}
+	if s.cfg.Server.PublicListen != "" {
+		bindings = append(bindings, binding{listenerPublic, s.cfg.Server.PublicListen})
+	}
+
+	tlsCfg, err := s.tlsConfig()
+	if err != nil {
+		return err
+	}
+
+	errs := make(chan error, len(bindings))
+	var wg sync.WaitGroup
+
+	for _, b := range bindings {
+		ln, err := net.Listen("tcp", b.addr)
+		if err != nil {
+			s.shutdown(context.Background())
+			return fmt.Errorf("listen on %s (%s): %w", b.addr, b.name, err)
+		}
+		if s.cfg.Server.ProxyProtocol {
+			if s.trusted.Empty() {
+				_ = ln.Close()
+				s.shutdown(context.Background())
+				return errors.New("server.proxy_protocol requires server.trusted_proxies: an untrusted peer could otherwise forge its source address")
+			}
+			ln = newProxyListener(ln, s.trusted)
+		}
+		if tlsCfg != nil {
+			ln = tls.NewListener(ln, tlsCfg)
+		}
+
+		srv := &http.Server{
+			Handler:           s.Handler(b.name),
+			ReadHeaderTimeout: 15 * time.Second,
+			ReadTimeout:       s.cfg.Server.ReadTimeout.Std(),
+			WriteTimeout:      s.cfg.Server.WriteTimeout.Std(),
+			IdleTimeout:       s.cfg.Server.IdleTimeout.Std(),
+			MaxHeaderBytes:    s.cfg.Server.MaxHeaderBytes,
+			ErrorLog:          nil,
+		}
+		s.mu.Lock()
+		s.servers = append(s.servers, srv)
+		s.listeners = append(s.listeners, ln)
+		s.mu.Unlock()
+
+		s.log.Info("listening",
+			"listener", b.name,
+			"addr", ln.Addr().String(),
+			"tls", tlsCfg != nil,
+			"proxy_protocol", s.cfg.Server.ProxyProtocol,
+			"routes", routeScope(b.name))
+
+		wg.Add(1)
+		go func(srv *http.Server, ln net.Listener, name string) {
+			defer wg.Done()
+			if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errs <- fmt.Errorf("%s listener: %w", name, err)
+			}
+		}(srv, ln, b.name)
+	}
+
+	select {
+	case <-ctx.Done():
+	case err := <-errs:
+		s.shutdown(context.Background())
+		return err
+	}
+
+	grace, cancel := context.WithTimeout(context.Background(), s.cfg.Server.ShutdownGrace.Std())
+	defer cancel()
+	s.shutdown(grace)
+	wg.Wait()
+	return nil
+}
+
+// Addrs returns the bound addresses, which tests need when they listen on :0.
+func (s *Server) Addrs() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]string{}
+	for i, ln := range s.listeners {
+		name := listenerInternal
+		if i > 0 {
+			name = listenerPublic
+		}
+		out[name] = ln.Addr().String()
+	}
+	return out
+}
+
+func (s *Server) shutdown(ctx context.Context) {
+	s.mu.Lock()
+	servers := append([]*http.Server(nil), s.servers...)
+	s.servers = nil
+	s.listeners = nil
+	s.mu.Unlock()
+	for _, srv := range servers {
+		if err := srv.Shutdown(ctx); err != nil {
+			_ = srv.Close()
+		}
+	}
+}
+
+func (s *Server) tlsConfig() (*tls.Config, error) {
+	switch s.cfg.TLS.Mode {
+	case "none", "":
+		return nil, nil
+	case "file":
+		cert, err := tls.LoadX509KeyPair(s.cfg.TLS.CertFile, s.cfg.TLS.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("tls: load certificate: %w", err)
+		}
+		return &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+			NextProtos:   []string{"h2", "http/1.1"},
+		}, nil
+	case "acme":
+		// ACME is milestone M4. Refusing loudly beats silently serving plain
+		// HTTP on a listener the operator believes is encrypted.
+		return nil, errors.New("tls.mode = acme is not wired yet (milestone M4); use mode \"file\" or terminate TLS on the proxy")
+	default:
+		return nil, fmt.Errorf("tls.mode %q is not supported", s.cfg.TLS.Mode)
+	}
+}
+
+func parseCIDRs(entries []string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, raw := range entries {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if _, n, err := net.ParseCIDR(raw); err == nil {
+			out = append(out, n)
+			continue
+		}
+		ip := net.ParseIP(raw)
+		if ip == nil {
+			return nil, fmt.Errorf("%q is neither an IP nor a CIDR", raw)
+		}
+		bits := 32
+		if ip.To4() == nil {
+			bits = 128
+		}
+		out = append(out, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+	}
+	return out, nil
+}
+
+func routeScope(listener string) string {
+	if listener == listenerPublic {
+		return "recipient routes only"
+	}
+	return "all routes"
+}
+
+// chiRouteContext returns the matched route pattern for the access log.
+func chiRouteContext(r *http.Request) string {
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if p := rc.RoutePattern(); p != "" {
+			return p
+		}
+	}
+	return ""
+}
