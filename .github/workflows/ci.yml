@@ -178,74 +178,89 @@ jobs:
           path: test/e2e/playwright-report
           retention-days: 7
 
-  install:
-    name: Package install — ${{ matrix.distro }}
+  binary:
+    name: Build the Linux binary
     runs-on: ubuntu-latest
     needs: [go, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - name: build with the interface embedded
+        run: make build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: peek-linux-amd64
+          path: bin/peek
+          retention-days: 1
+
+  install:
+    name: Install on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    needs: [binary]
     strategy:
       fail-fast: false
       matrix:
         include:
           - distro: debian-12
             image: debian:12
-            pkg: deb
           - distro: ubuntu-24.04
             image: ubuntu:24.04
-            pkg: deb
           - distro: rocky-9
             image: rockylinux:9
-            pkg: rpm
     container:
       image: ${{ matrix.image }}
     steps:
-      - name: install prerequisites
-        run: |
-          set -eu
-          # systemd is deliberately not installed: there is no PID 1 to talk to
-          # in a container, and this job exercises the binary and the packaging
-          # scripts, not the unit. Rocky and Alma ship curl-minimal, which
-          # conflicts with curl, so a client is only pulled in when missing.
-          if command -v apt-get >/dev/null; then
-            apt-get update -qq
-            apt-get install -y -qq ca-certificates >/dev/null
-            command -v curl >/dev/null || apt-get install -y -qq curl >/dev/null
-          else
-            dnf install -y -q ca-certificates >/dev/null
-            command -v curl >/dev/null || dnf install -y -q --allowerasing curl >/dev/null
-          fi
-          curl --version | head -1
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      # No toolchain action runs inside the container on purpose: the binary
+      # arrives built, which is also how a customer receives it.
+      - uses: actions/download-artifact@v4
         with:
-          go-version: ${{ env.GO_VERSION }}
+          name: peek-linux-amd64
+          path: /tmp/peek-bin
 
-      # The container has no PID 1 systemd, so the packaging scripts are
-      # exercised through a direct run of the binary instead: setup writes the
-      # configuration, doctor checks it, and the service answers /readyz.
-      - name: setup, serve and check
+      - name: install, configure and exercise
         run: |
           set -eux
-          CGO_ENABLED=0 go build -trimpath -o /usr/bin/peek ./cmd/peek
+          install -m 0755 /tmp/peek-bin/peek /usr/bin/peek
           id peek >/dev/null 2>&1 || useradd --system --home-dir /var/lib/peek --no-create-home --shell /sbin/nologin peek
           install -d -o peek -g peek -m 0750 /var/lib/peek /var/backups/peek
           install -d -m 0750 /etc/peek
-          peek setup --non-interactive --force \
-            --public-url http://127.0.0.1:8080 \
-            --mode internal \
-            --internal-listen 127.0.0.1:8080 \
-            --anonymous-create
+
+          peek version
+          peek setup --non-interactive --force             --public-url http://127.0.0.1:8080             --mode internal             --internal-listen 127.0.0.1:8080             --anonymous-create
           peek config check
+
+          # The configuration must be readable by the service account: this is
+          # the failure that a real Debian install surfaced first.
+          test "$(stat -c '%U:%G %a' /etc/peek/peek.toml)" = "root:peek 640"
+          test "$(stat -c '%U:%G %a' /etc/peek/master.key)" = "peek:peek 400"
+
           peek serve &
-          for i in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:8080/readyz && break
+          server=$!
+          ready=0
+          for _ in $(seq 1 30); do
+            if peek doctor --json >/dev/null 2>&1; then :; fi
+            if command -v curl >/dev/null && curl -fsS http://127.0.0.1:8080/readyz >/dev/null 2>&1; then ready=1; break; fi
+            if command -v wget >/dev/null && wget -q -O- http://127.0.0.1:8080/readyz >/dev/null 2>&1; then ready=1; break; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8080/readyz
+          test "$ready" = "1"
+
           peek doctor || true
           peek backup --to /var/backups/peek
           peek backup --list
+          # A root-run backup must not take ownership of the database.
+          test "$(stat -c '%U' /var/lib/peek/peek.db)" = "peek"
+          kill "$server"
 
   upgrade:
     name: Upgrade N-1 → N and rollback
