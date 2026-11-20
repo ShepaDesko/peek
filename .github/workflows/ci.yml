@@ -246,11 +246,12 @@ jobs:
 
           peek serve &
           server=$!
+
+          # The bare images have no HTTP client, so readiness is taken from the
+          # product's own diagnostic, which dials the listener.
           ready=0
           for _ in $(seq 1 30); do
-            if peek doctor --json >/dev/null 2>&1; then :; fi
-            if command -v curl >/dev/null && curl -fsS http://127.0.0.1:8080/readyz >/dev/null 2>&1; then ready=1; break; fi
-            if command -v wget >/dev/null && wget -q -O- http://127.0.0.1:8080/readyz >/dev/null 2>&1; then ready=1; break; fi
+            if peek doctor 2>&1 | grep -q "listener internal .*answers"; then ready=1; break; fi
             sleep 1
           done
           test "$ready" = "1"
