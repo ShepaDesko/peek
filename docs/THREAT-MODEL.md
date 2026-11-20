@@ -98,6 +98,11 @@ expiry and the rate limiting work. `security.anonymize_ips` keeps only a /24 or
 IP, body size caps and timeouts raise the cost; sizing the pipe and the load
 balancer in front is still your job.
 
+**Plain HTTP breaks the product, not just its transport.** WebCrypto is only
+available in a secure context, so an instance served over `http://` on anything
+other than localhost cannot encrypt at all. The interface says so instead of
+failing obscurely, and `peek doctor` warns about an `http://` public URL.
+
 **An old browser may be unable to decrypt.** WebCrypto, WebAssembly and
 `'wasm-unsafe-eval'` support are required. The page says so rather than failing
 silently.

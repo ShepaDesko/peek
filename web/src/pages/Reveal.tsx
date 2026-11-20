@@ -12,6 +12,7 @@ import {
 import { ApiError, api, type SecretMeta } from "../lib/api";
 import { formatWhen } from "../lib/format";
 import type { Lang, Translate } from "../lib/i18n";
+import { isCryptoAvailable, isSecureContext } from "../lib/secure";
 import { Banner, Card, CopyButton, Field, Spinner } from "../ui";
 import { describeError } from "./Create";
 
@@ -283,7 +284,7 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
         <button
           type="submit"
           className="peek-btn peek-btn-primary w-full"
-          disabled={phase === "revealing"}
+          disabled={phase === "revealing" || !isCryptoAvailable() || !isSecureContext()}
         >
           {phase === "revealing" ? <Spinner label={t("reveal.revealing")} /> : t("reveal.button")}
         </button>

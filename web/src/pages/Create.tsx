@@ -20,6 +20,7 @@ import {
   type PasswordOptions,
 } from "../lib/password";
 import type { Translate } from "../lib/i18n";
+import { isCryptoAvailable, isSecureContext } from "../lib/secure";
 import { Banner, Card, Field, Spinner, Toggle } from "../ui";
 
 interface Props {
@@ -54,6 +55,8 @@ export default function Create({ t, policy, policyError }: Props) {
   const [genOpts, setGenOpts] = useState<PasswordOptions>(defaultPasswordOptions);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Without WebCrypto there is nothing to submit: App already explains why.
+  const cryptoReady = isCryptoAvailable() && isSecureContext();
 
   // Defaults follow the instance policy, so an admin's choices are what a user
   // sees first.
@@ -383,7 +386,7 @@ export default function Create({ t, policy, policyError }: Props) {
         <button
           type="submit"
           className="peek-btn peek-btn-primary w-full sm:w-auto"
-          disabled={busy}
+          disabled={busy || !cryptoReady}
         >
           {busy ? <Spinner label={t("create.submitting")} /> : t("create.submit")}
         </button>

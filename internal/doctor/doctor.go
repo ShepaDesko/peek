@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -156,8 +157,9 @@ func checkConfigFile(r *Report, path string) {
 	}
 	mode := info.Mode().Perm()
 	detail := fmt.Sprintf("%s (mode %04o)", path, mode)
-	// The file holds the SMTP password and the backup passphrase.
-	if runtime.GOOS != "windows" && mode&0o077 != 0 {
+	// The file holds the SMTP password and the backup passphrase. Group read is
+	// how the service gets to it (root:peek 0640); anything wider is a problem.
+	if runtime.GOOS != "windows" && mode&0o027 != 0 {
 		r.add("config file", WARN, detail,
 			fmt.Sprintf("tighten it: sudo chmod 0640 %s && sudo chown root:peek %s", path, path))
 		return
@@ -220,6 +222,15 @@ func checkDirs(r *Report, cfg *config.Config) {
 }
 
 func checkDatabase(ctx context.Context, r *Report, cfg *config.Config) {
+	// Do not create the database from a diagnostic command: on a fresh install
+	// the service has not started yet, and creating it here (usually under
+	// sudo) would hand the service a set of files it cannot write.
+	if path := cfg.SQLitePath(); path != "" {
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			r.add("database", OK, "not created yet; the service creates it at first start")
+			return
+		}
+	}
 	st, err := store.Open(ctx, cfg.Database)
 	if err != nil {
 		r.add("database", FAIL, err.Error())

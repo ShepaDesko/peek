@@ -64,6 +64,9 @@ npm run test --prefix web -- crypto
   `.Std()` to get a `time.Duration`.
 - **`internal/webui/dist` only has a `.gitignore` committed.** `go build` works
   without Node (a placeholder page is served); `make web-build` fills it.
+- **WebCrypto needs a secure context.** Over plain HTTP on a non-localhost
+  origin, `crypto.subtle` is undefined and nothing works. `web/src/lib/secure.ts`
+  detects it and the interface explains it; do not "simplify" that away.
 - **The CSP needs `'wasm-unsafe-eval'`** or Argon2id cannot run. Do not
   "tidy it away".
 - **Frontend fallback colours live in `@layer base`** so the unlayered

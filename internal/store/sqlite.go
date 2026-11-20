@@ -65,6 +65,10 @@ func openSQLite(ctx context.Context, path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	// A command run with sudo must not leave root-owned database files behind.
+	if path != ":memory:" && !strings.Contains(path, "mode=memory") {
+		alignOwnership(path)
+	}
 	return s, nil
 }
 

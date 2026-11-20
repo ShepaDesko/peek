@@ -82,6 +82,13 @@ sudo peek rollback
 
 Details: [docs/UPGRADE.md](docs/UPGRADE.md).
 
+## HTTPS is required
+
+Encryption happens in the browser, and browsers only expose WebCrypto over
+`https://` or on `localhost`. An instance published over plain HTTP on a LAN
+address will load, state the problem plainly, and refuse to encrypt. Terminate
+TLS on your proxy, or set `tls.mode = "file"`.
+
 ## Expose it safely
 
 Peek is built to sit behind a load balancer with only its recipient pages

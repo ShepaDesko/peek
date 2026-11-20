@@ -223,11 +223,11 @@ func Run(opts Options) (*Result, error) {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
-	if err := chownToService(cfg); err == nil {
+	if err := chownToService(cfg, opts.ConfigPath); err == nil {
 		w.say("set ownership of the data directories to the peek user\n")
 	}
 
-	if action := enableService(w); action != "" {
+	if action := enableService(w, cfg); action != "" {
 		res.ServiceAction = action
 	}
 
@@ -284,9 +284,14 @@ func ensureMasterKey(path string) (bool, error) {
 	return true, nil
 }
 
-// chownToService gives the data directories to the peek user when running as
+// chownToService hands the data to the peek service account when running as
 // root on Linux. A missing user is not an error: a developer runs as themself.
-func chownToService(cfg config.Config) error {
+//
+// The configuration and its directory stay owned by root and are made readable
+// through the peek group. Without this the service starts as peek, cannot open
+// /etc/peek/peek.toml, and restarts forever — which is exactly what happened
+// the first time this ran on a real Debian box.
+func chownToService(cfg config.Config, configPath string) error {
 	if runtime.GOOS == "windows" || os.Geteuid() != 0 {
 		return errors.New("not root")
 	}
@@ -296,6 +301,7 @@ func chownToService(cfg config.Config) error {
 	}
 	uid, _ := strconv.Atoi(u.Uid)
 	gid, _ := strconv.Atoi(u.Gid)
+
 	for _, dir := range cfg.Dirs() {
 		// The tree was just created by this process, from a configured path.
 		_ = filepath.Walk(dir, func(p string, _ os.FileInfo, walkErr error) error { //nolint:gosec // see above
@@ -307,14 +313,28 @@ func chownToService(cfg config.Config) error {
 			return nil
 		})
 	}
+
+	// root:peek 0640 — the service reads it, nobody else can.
+	if configPath != "" {
+		_ = os.Chown(configPath, 0, gid)
+		_ = os.Chmod(configPath, 0o640) //nolint:gosec // G302: root:peek 0640/0750 is how the service reads its configuration
+		if dir := filepath.Dir(configPath); dir != "" && dir != "." && dir != "/" {
+			_ = os.Chown(dir, 0, gid)
+			_ = os.Chmod(dir, 0o750) //nolint:gosec // G302: root:peek 0640/0750 is how the service reads its configuration
+		}
+	}
+	// The master key belongs to the service alone.
 	if cfg.MasterKeyFile != "" {
 		_ = os.Chown(cfg.MasterKeyFile, uid, gid)
+		_ = os.Chmod(cfg.MasterKeyFile, 0o400)
 	}
 	return nil
 }
 
-// enableService enables and starts the systemd unit when it is installed.
-func enableService(w *wizard) string {
+// enableService enables and starts the systemd units when they are installed,
+// then waits for the service to answer so that the diagnosis printed right
+// afterwards describes a running instance rather than a starting one.
+func enableService(w *wizard, cfg config.Config) string {
 	if runtime.GOOS != "linux" {
 		return ""
 	}
@@ -329,7 +349,7 @@ func enableService(w *wizard) string {
 	if !w.confirm("\nEnable and (re)start the peek service now?", true) {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
 	if out, err := exec.CommandContext(ctx, "systemctl", "enable", "--now", "peek.service").CombinedOutput(); err != nil {
@@ -337,7 +357,46 @@ func enableService(w *wizard) string {
 		return "failed"
 	}
 	w.say("peek.service enabled and started\n")
+
+	// The daily backup is part of the product, not an afterthought: enable its
+	// timer here, since the package cannot do it before a configuration exists.
+	if cfg.Backup.Enabled {
+		if out, err := exec.CommandContext(ctx, "systemctl", "enable", "--now", "peek-backup.timer").CombinedOutput(); err != nil {
+			w.sayf("note: could not enable peek-backup.timer: %s\n", strings.TrimSpace(string(out)))
+		} else {
+			w.say("peek-backup.timer enabled (daily backup)\n")
+		}
+	}
+
+	waitReady(w, cfg)
 	return "enabled"
+}
+
+// waitReady polls the local listener until the service answers, for at most a
+// few seconds. A fresh instance has a schema to create before it binds.
+func waitReady(w *wizard, cfg config.Config) {
+	addr := cfg.Server.InternalListen
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	target := net.JoinHostPort(host, port)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	dialer := &net.Dialer{Timeout: time.Second}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := dialer.DialContext(ctx, "tcp", target)
+		if err == nil {
+			_ = conn.Close()
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	w.sayf("note: %s did not answer within 15s; check journalctl -u peek\n", target)
 }
 
 // --- prompt helpers ---------------------------------------------------------

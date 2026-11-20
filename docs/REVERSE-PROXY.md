@@ -27,6 +27,16 @@ admin_allowed_cidrs  = ["10.0.0.0/8", "192.168.0.0/16"]
 create_allowed_cidrs = ["10.0.0.0/8"]
 ```
 
+## HTTPS is required, not recommended
+
+Browsers expose WebCrypto only in a secure context, so an instance published
+over plain `http://` (other than `localhost`) cannot encrypt or decrypt
+anything. The interface detects it and says so rather than failing with a
+cryptic error, but the fix is always the same: publish `https://`.
+
+Every example below terminates TLS. If you are evaluating Peek on a laptop,
+`http://127.0.0.1:8080` works because localhost is a secure context.
+
 ## Why `trusted_proxies` matters
 
 Rate limits, CIDR gates and the audit trail are all written against the client

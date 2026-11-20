@@ -243,6 +243,13 @@ func Load(path string, allowMissing bool) (Config, error) {
 		if errors.Is(err, os.ErrNotExist) && allowMissing {
 			return cfg, nil
 		}
+		if errors.Is(err, os.ErrPermission) {
+			// The usual cause: the service runs as peek and the file is
+			// root:root. Say so, instead of leaving a restart loop in journald.
+			return cfg, fmt.Errorf("cannot read %s: %w\n"+
+				"the service runs as the peek user, so the file must be readable by it:\n"+
+				"    sudo chown root:peek %s && sudo chmod 0640 %s", path, err, path, path)
+		}
 		return cfg, fmt.Errorf("read %s: %w", path, err)
 	}
 	dec := toml.NewDecoder(strings.NewReader(string(buf)))
@@ -450,17 +457,31 @@ func (c Config) Redacted() Config {
 // Marshal renders the configuration as TOML.
 func (c Config) Marshal() ([]byte, error) { return toml.Marshal(c) }
 
-// Dirs lists the directories Peek needs to exist and own.
+// Dirs lists the directories Peek needs to exist and own, without repeats:
+// the SQLite file usually lives in the data directory.
 func (c *Config) Dirs() []string {
-	dirs := []string{c.DataDir}
-	if c.Storage.Backend == "local" && c.Storage.Path != "" {
-		dirs = append(dirs, c.Storage.Path)
+	var dirs []string
+	seen := map[string]bool{}
+	add := func(path string) {
+		if path == "" {
+			return
+		}
+		clean := filepath.Clean(path)
+		if seen[clean] {
+			return
+		}
+		seen[clean] = true
+		dirs = append(dirs, clean)
+	}
+	add(c.DataDir)
+	if c.Storage.Backend == "local" {
+		add(c.Storage.Path)
 	}
 	if p := c.SQLitePath(); p != "" {
-		dirs = append(dirs, filepath.Dir(p))
+		add(filepath.Dir(p))
 	}
-	if c.Backup.Enabled && c.Backup.Dir != "" {
-		dirs = append(dirs, c.Backup.Dir)
+	if c.Backup.Enabled {
+		add(c.Backup.Dir)
 	}
 	return dirs
 }

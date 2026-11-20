@@ -119,7 +119,23 @@ sudo peek setup --non-interactive --force \
   --anonymous-create
 ```
 
-## 3. Check it
+## 3. HTTPS is not optional
+
+Peek encrypts in the browser, and browsers only expose WebCrypto in a **secure
+context**: an `https://` origin, or `localhost`. Served over plain `http://` on
+a LAN address, the interface loads, says so clearly, and refuses to encrypt
+anything, because it cannot.
+
+So, for anything beyond a local try-out:
+
+- terminate TLS on your load balancer and publish `https://…` (see
+  [REVERSE-PROXY.md](REVERSE-PROXY.md)), or
+- set `tls.mode = "file"` with a certificate and key, and let Peek terminate it.
+
+`public_url` must match what users actually type; `peek doctor` warns when it
+is still `http://`.
+
+## 4. Check it
 
 ```bash
 sudo peek doctor
@@ -142,7 +158,7 @@ This additionally checks the public URL, the certificate chain, which client IP
 Peek resolves through the proxy, and whether the admin surface is reachable
 from outside.
 
-## 4. Service management
+## 5. Service management
 
 ```bash
 sudo systemctl status peek
@@ -157,7 +173,7 @@ Check the hardening of the unit:
 systemd-analyze security peek
 ```
 
-## 5. First use
+## 6. First use
 
 Open the public URL. Accounts, roles and SSO arrive in milestone M5; until
 then, creation is controlled by two settings:
@@ -171,7 +187,7 @@ create_allowed_cidrs = ["10.0.0.0/8"]     # and optionally restrict who
 Recipients never need either: a link plus, where applicable, the passphrase is
 all it takes.
 
-## 6. Uninstall
+## 7. Uninstall
 
 ```bash
 sudo apt remove peek        # or: sudo dnf remove peek

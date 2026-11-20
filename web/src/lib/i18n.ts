@@ -112,6 +112,11 @@ const fr = {
   "expiry.7d": "7 jours",
   "expiry.30d": "30 jours",
 
+  "insecure.title": "Connexion non sécurisée",
+  "insecure.body":
+    "Le chiffrement a lieu dans votre navigateur, et les navigateurs ne l'autorisent qu'en HTTPS. Cette page est servie en HTTP simple : aucun secret ne peut y être chiffré ni déchiffré.",
+  "insecure.admin":
+    'Administrateur : publiez Peek en HTTPS (certificat sur le répartiteur de charge, ou tls.mode = "file" dans peek.toml). Voir docs/REVERSE-PROXY.md.',
   "error.network": "Le serveur est injoignable.",
   "error.generic": "Une erreur est survenue.",
   "error.rate": "Trop de tentatives. Patientez un instant.",
@@ -219,6 +224,11 @@ const en: Record<Key, string> = {
   "expiry.7d": "7 days",
   "expiry.30d": "30 days",
 
+  "insecure.title": "Insecure connection",
+  "insecure.body":
+    "Encryption happens in your browser, and browsers only allow it over HTTPS. This page is served over plain HTTP, so nothing can be encrypted or decrypted here.",
+  "insecure.admin":
+    'Administrator: publish Peek over HTTPS (a certificate on the load balancer, or tls.mode = "file" in peek.toml). See docs/REVERSE-PROXY.md.',
   "error.network": "The server cannot be reached.",
   "error.generic": "Something went wrong.",
   "error.rate": "Too many attempts. Please wait a moment.",

@@ -98,10 +98,13 @@ nfpms:
     contents:
       - src: packaging/systemd/peek.service
         dst: /usr/lib/systemd/system/peek.service
+        file_info: { mode: 0644 }
       - src: packaging/systemd/peek-backup.service
         dst: /usr/lib/systemd/system/peek-backup.service
+        file_info: { mode: 0644 }
       - src: packaging/systemd/peek-backup.timer
         dst: /usr/lib/systemd/system/peek-backup.timer
+        file_info: { mode: 0644 }
       - src: packaging/peek.toml.example
         dst: /usr/share/doc/peek/peek.toml.example
       - src: docs/INSTALL.md

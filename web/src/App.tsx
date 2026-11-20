@@ -4,6 +4,8 @@ import { LANGS, browserLang, storeLang, storedLang, translator, type Lang } from
 import Create from "./pages/Create";
 import Receipt from "./pages/Receipt";
 import Reveal from "./pages/Reveal";
+import { isCryptoAvailable, isSecureContext } from "./lib/secure";
+import { Banner, Card } from "./ui";
 
 type Theme = "system" | "light" | "dark";
 
@@ -91,6 +93,10 @@ export default function App() {
   }, [theme]);
 
   const t = useMemo(() => translator(lang), [lang]);
+  // WebCrypto is only exposed in a secure context. Checked once, at the top,
+  // so every page says the same clear thing instead of throwing deep inside
+  // a key derivation.
+  const cryptoReady = useMemo(() => isCryptoAvailable() && isSecureContext(), []);
   const serviceName = branding?.service_name ?? "Peek";
 
   return (
@@ -143,6 +149,14 @@ export default function App() {
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+        {cryptoReady ? null : (
+          <Card className="mb-5">
+            <Banner tone="danger" title={t("insecure.title")}>
+              <p>{t("insecure.body")}</p>
+              <p className="mt-2 text-xs">{t("insecure.admin")}</p>
+            </Banner>
+          </Card>
+        )}
         {route.name === "create" ? (
           <Create t={t} policy={policy} policyError={policyError} />
         ) : null}
