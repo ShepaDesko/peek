@@ -201,14 +201,16 @@ jobs:
       - name: install prerequisites
         run: |
           set -eu
+          # systemd is deliberately not installed: there is no PID 1 to talk to
+          # in a container, and this job exercises the binary and the packaging
+          # scripts, not the unit. Rocky and Alma ship curl-minimal, which
+          # conflicts with curl, so a client is only pulled in when missing.
           if command -v apt-get >/dev/null; then
             apt-get update -qq
-            apt-get install -y -qq ca-certificates systemd >/dev/null
+            apt-get install -y -qq ca-certificates >/dev/null
             command -v curl >/dev/null || apt-get install -y -qq curl >/dev/null
           else
-            # Rocky and Alma ship curl-minimal, which conflicts with curl:
-            # only pull curl in when the image really has no client.
-            dnf install -y -q ca-certificates systemd >/dev/null
+            dnf install -y -q ca-certificates >/dev/null
             command -v curl >/dev/null || dnf install -y -q --allowerasing curl >/dev/null
           fi
           curl --version | head -1
@@ -226,7 +228,7 @@ jobs:
         run: |
           set -eux
           CGO_ENABLED=0 go build -trimpath -o /usr/bin/peek ./cmd/peek
-          useradd --system --home-dir /var/lib/peek --no-create-home --shell /sbin/nologin peek || true
+          id peek >/dev/null 2>&1 || useradd --system --home-dir /var/lib/peek --no-create-home --shell /sbin/nologin peek
           install -d -o peek -g peek -m 0750 /var/lib/peek /var/backups/peek
           install -d -m 0750 /etc/peek
           peek setup --non-interactive --force \
