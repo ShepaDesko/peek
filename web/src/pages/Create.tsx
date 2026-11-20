@@ -30,7 +30,10 @@ interface Props {
 
 type Kind = "text" | "url";
 
-const EXPIRY_CHOICES: { seconds: number; key: "expiry.5m" | "expiry.1h" | "expiry.24h" | "expiry.7d" | "expiry.30d" }[] = [
+const EXPIRY_CHOICES: {
+  seconds: number;
+  key: "expiry.5m" | "expiry.1h" | "expiry.24h" | "expiry.7d" | "expiry.30d";
+}[] = [
   { seconds: 300, key: "expiry.5m" },
   { seconds: 3600, key: "expiry.1h" },
   { seconds: 86400, key: "expiry.24h" },
@@ -167,7 +170,11 @@ export default function Create({ t, policy, policyError }: Props) {
           <p className="peek-muted text-sm leading-relaxed">{t("create.subtitle")}</p>
         </header>
 
-        <div role="group" className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--peek-border)" }}>
+        <div
+          role="group"
+          className="inline-flex rounded-xl border p-1"
+          style={{ borderColor: "var(--peek-border)" }}
+        >
           {(["text", "url"] as Kind[]).map((option) => (
             <button
               key={option}
@@ -367,9 +374,17 @@ export default function Create({ t, policy, policyError }: Props) {
           />
         </div>
 
-        {error ? <Banner tone="danger" title={t("create.error")}>{error}</Banner> : null}
+        {error ? (
+          <Banner tone="danger" title={t("create.error")}>
+            {error}
+          </Banner>
+        ) : null}
 
-        <button type="submit" className="peek-btn peek-btn-primary w-full sm:w-auto" disabled={busy}>
+        <button
+          type="submit"
+          className="peek-btn peek-btn-primary w-full sm:w-auto"
+          disabled={busy}
+        >
           {busy ? <Spinner label={t("create.submitting")} /> : t("create.submit")}
         </button>
       </Card>

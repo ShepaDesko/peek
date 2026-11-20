@@ -93,7 +93,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		OK   bool   `json:"ok"`
 		Err  string `json:"error,omitempty"`
 	}
-	checks := []check{}
+	checks := make([]check, 0, 1)
 	ready := true
 
 	err := s.store.Ping(r.Context())
@@ -204,7 +204,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createRequest
-	if err := decodeJSON(w, r, &req); err != nil {
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
@@ -338,7 +338,7 @@ type revealRequest struct {
 func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var req revealRequest
-	if err := decodeJSON(w, r, &req); err != nil {
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
@@ -490,7 +490,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 // helpers
 // ---------------------------------------------------------------------------
 
-func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+func decodeJSON(r *http.Request, dst any) error {
 	ct := r.Header.Get("Content-Type")
 	if ct != "" && !strings.HasPrefix(ct, "application/json") {
 		return fmt.Errorf("expected Content-Type application/json")

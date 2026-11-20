@@ -104,7 +104,7 @@ func (s *Store) ListAudit(ctx context.Context, f AuditFilter) ([]AuditEvent, err
 	if err != nil {
 		return nil, fmt.Errorf("store: list audit: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []AuditEvent
 	for rows.Next() {

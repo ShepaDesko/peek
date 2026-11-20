@@ -238,7 +238,7 @@ func Default() Config {
 // defaults when allowMissing is set, which is what peek setup needs.
 func Load(path string, allowMissing bool) (Config, error) {
 	cfg := Default()
-	buf, err := os.ReadFile(path)
+	buf, err := os.ReadFile(path) //nolint:gosec // the configuration path, from the operator
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) && allowMissing {
 			return cfg, nil

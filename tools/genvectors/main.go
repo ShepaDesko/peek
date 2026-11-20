@@ -49,6 +49,10 @@ type file struct {
 	Cases   []vector `json:"cases"`
 }
 
+// vectorPassphrase is an input of the published test vectors, not a
+// credential: it exists so both implementations stretch the same string.
+const vectorPassphrase = "Hunter2-Tr\u00e8s-Secret-\u00e9\u00e0\u00fc" //nolint:gosec // see above
+
 func b(n int, seed byte) []byte {
 	out := make([]byte, n)
 	for i := range out {
@@ -73,7 +77,7 @@ func main() {
 		{
 			Name:          "text-with-passphrase-default-params",
 			ContentKeyB64: e(b(32, 2)),
-			Passphrase:    "Hunter2-Très-Secret-éàü",
+			Passphrase:    vectorPassphrase,
 			KDF:           kdf{SaltB64: e(b(16, 11)), MemoryKiB: 19456, Iterations: 2, Parallelism: 1},
 			SecretID:      e(b(16, 4)),
 			NonceB64:      e(b(12, 6)),
@@ -140,8 +144,8 @@ func main() {
 	buf = append(buf, '\n')
 
 	path := filepath.Join("crypto", "vectors", "v1.json")
-	must(os.MkdirAll(filepath.Dir(path), 0o755))
-	must(os.WriteFile(path, buf, 0o644))
+	must(os.MkdirAll(filepath.Dir(path), 0o755)) //nolint:gosec // a repository directory
+	must(os.WriteFile(path, buf, 0o644))         //nolint:gosec // a repository file, committed as is
 	fmt.Printf("wrote %s (%d cases)\n", path, len(cases))
 }
 

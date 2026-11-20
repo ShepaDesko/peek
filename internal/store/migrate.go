@@ -119,7 +119,7 @@ func (s *Store) appliedVersions(ctx context.Context) (map[int]bool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: read schema_migrations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[int]bool{}
 	for rows.Next() {
 		var v int

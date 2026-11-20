@@ -6,6 +6,7 @@ package setup
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ShepaDesko/peek/internal/config"
 )
@@ -187,13 +189,14 @@ func Run(opts Options) (*Result, error) {
 	// --- Write it all -------------------------------------------------------
 	res := &Result{ConfigPath: opts.ConfigPath, Config: cfg, Created: fresh}
 
-	if err := os.MkdirAll(filepath.Dir(opts.ConfigPath), 0o755); err != nil {
+	// 0750 root:peek: this directory holds the master key and the SMTP password.
+	if err := os.MkdirAll(filepath.Dir(opts.ConfigPath), 0o750); err != nil {
 		return nil, fmt.Errorf("create %s: %w", filepath.Dir(opts.ConfigPath), err)
 	}
 	if !fresh {
 		backup := opts.ConfigPath + ".bak"
 		if data, err := os.ReadFile(opts.ConfigPath); err == nil {
-			if err := os.WriteFile(backup, data, 0o600); err == nil {
+			if err := os.WriteFile(backup, data, 0o600); err == nil { //nolint:gosec // G703: the path comes from the operator, not from a request
 				w.sayf("\nprevious configuration saved to %s\n", backup)
 			}
 		}
@@ -247,10 +250,11 @@ func writeConfig(path string, cfg config.Config) error {
 		"# Written by peek setup. Every setting is documented in docs/CONFIG.md.\n" +
 		"# Check it after editing with: peek config check\n\n")
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(header, buf...), 0o640); err != nil {
+	// 0640 root:peek is deliberate: the service reads this through its group.
+	if err := os.WriteFile(tmp, append(header, buf...), 0o640); err != nil { //nolint:gosec // see above
 		return fmt.Errorf("write %s: %w", tmp, err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := os.Rename(tmp, path); err != nil { //nolint:gosec // the configured configuration path
 		return fmt.Errorf("install %s: %w", path, err)
 	}
 	return nil
@@ -267,7 +271,7 @@ func ensureMasterKey(path string) (bool, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return false, err
 	}
 	key := make([]byte, 32)
@@ -293,11 +297,13 @@ func chownToService(cfg config.Config) error {
 	uid, _ := strconv.Atoi(u.Uid)
 	gid, _ := strconv.Atoi(u.Gid)
 	for _, dir := range cfg.Dirs() {
-		_ = filepath.Walk(dir, func(p string, _ os.FileInfo, err error) error {
-			if err != nil {
-				return nil
+		// The tree was just created by this process, from a configured path.
+		_ = filepath.Walk(dir, func(p string, _ os.FileInfo, walkErr error) error { //nolint:gosec // see above
+			if walkErr != nil {
+				// An unreadable entry is not worth failing an install over; doctor reports it.
+				return nil //nolint:nilerr // deliberate
 			}
-			_ = os.Chown(p, uid, gid)
+			_ = os.Chown(p, uid, gid) //nolint:gosec // G122: the tree was created by this process moments earlier
 			return nil
 		})
 	}
@@ -323,8 +329,10 @@ func enableService(w *wizard) string {
 	if !w.confirm("\nEnable and (re)start the peek service now?", true) {
 		return ""
 	}
-	_ = exec.Command("systemctl", "daemon-reload").Run()
-	if out, err := exec.Command("systemctl", "enable", "--now", "peek.service").CombinedOutput(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
+	if out, err := exec.CommandContext(ctx, "systemctl", "enable", "--now", "peek.service").CombinedOutput(); err != nil {
 		w.sayf("systemctl: %v\n%s\n", err, strings.TrimSpace(string(out)))
 		return "failed"
 	}
@@ -334,8 +342,8 @@ func enableService(w *wizard) string {
 
 // --- prompt helpers ---------------------------------------------------------
 
-func (w *wizard) say(s string)               { fmt.Fprint(w.out, s) }
-func (w *wizard) sayf(f string, args ...any) { fmt.Fprintf(w.out, f, args...) }
+func (w *wizard) say(s string)               { _, _ = fmt.Fprint(w.out, s) }
+func (w *wizard) sayf(f string, args ...any) { _, _ = fmt.Fprintf(w.out, f, args...) }
 
 func (w *wizard) read() string {
 	line, err := w.in.ReadString('\n')

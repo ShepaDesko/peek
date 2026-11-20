@@ -47,6 +47,10 @@ var SigningPublicKey = ""
 // PreviousBinaryPath is where the replaced binary is kept.
 const PreviousBinaryPath = "/usr/lib/peek/peek.previous"
 
+// errUnsupportedSignature is returned for a signature algorithm this
+// build does not know how to verify.
+var errUnsupportedSignature = errors.New("update: unsupported signature algorithm")
+
 // Release is one available version.
 type Release struct {
 	Version    string    `json:"tag_name"`
@@ -193,7 +197,7 @@ func (c *Client) Download(ctx context.Context, a *Asset, dir string) (string, er
 		return "", fmt.Errorf("update: download %s returned HTTP %d", a.Name, resp.StatusCode)
 	}
 	path := filepath.Join(dir, filepath.Base(a.Name))
-	out, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	out, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) //nolint:gosec // G304: a release archive named by the operator
 	if err != nil {
 		return "", err
 	}
@@ -206,7 +210,7 @@ func (c *Client) Download(ctx context.Context, a *Asset, dir string) (string, er
 
 // SHA256 returns the hex digest of a file.
 func SHA256(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // a release archive named by the operator
 	if err != nil {
 		return "", err
 	}
@@ -224,7 +228,7 @@ func VerifyChecksum(archivePath, checksumsPath string) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(checksumsPath)
+	f, err := os.Open(checksumsPath) //nolint:gosec // a release artefact named by the operator
 	if err != nil {
 		return err
 	}
@@ -272,7 +276,7 @@ func VerifySignature(signedPath, signaturePath, publicKey string) error {
 	if keyID != sigKeyID {
 		return fmt.Errorf("update: the signature was made with key %x, this build trusts %x", sigKeyID, keyID)
 	}
-	data, err := os.ReadFile(signedPath)
+	data, err := os.ReadFile(signedPath) //nolint:gosec // G304: a release archive named by the operator
 	if err != nil {
 		return err
 	}
@@ -310,7 +314,7 @@ func parseMinisignPublicKey(key string) (publicKey []byte, keyID uint64, err err
 }
 
 func parseMinisignSignature(path string) (sig []byte, keyID uint64, prehashed bool, err error) {
-	buf, err := os.ReadFile(path)
+	buf, err := os.ReadFile(path) //nolint:gosec // G304: a release archive named by the operator
 	if err != nil {
 		return nil, 0, false, err
 	}
@@ -333,7 +337,7 @@ func parseMinisignSignature(path string) (sig []byte, keyID uint64, prehashed bo
 		case "ED":
 			prehashed = true
 		default:
-			return nil, 0, false, fmt.Errorf("update: unsupported signature algorithm %q", algo)
+			return nil, 0, false, fmt.Errorf("%w: %q", errUnsupportedSignature, algo)
 		}
 		return raw[10:], leUint64(raw[2:10]), prehashed, nil
 	}
@@ -350,7 +354,7 @@ func leUint64(b []byte) uint64 {
 
 // ExtractBinary pulls the peek binary out of a release archive.
 func ExtractBinary(archivePath, destDir string) (string, error) {
-	f, err := os.Open(archivePath)
+	f, err := os.Open(archivePath) //nolint:gosec // a release archive named by the operator
 	if err != nil {
 		return "", err
 	}
@@ -375,7 +379,8 @@ func ExtractBinary(archivePath, destDir string) (string, error) {
 			continue
 		}
 		dest := filepath.Join(destDir, name)
-		out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+		// 0755: this is the executable being installed.
+		out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755) //nolint:gosec // see above
 		if err != nil {
 			return "", err
 		}
@@ -395,15 +400,16 @@ func ExtractBinary(archivePath, destDir string) (string, error) {
 // The rename is atomic, so a crash mid-update cannot leave a half-written
 // binary on disk.
 func SwapBinary(newBinary, target, previous string) error {
-	if err := os.MkdirAll(filepath.Dir(previous), 0o755); err != nil {
+	// /usr/lib/peek holds the previous binary and is world readable like /usr/bin.
+	if err := os.MkdirAll(filepath.Dir(previous), 0o755); err != nil { //nolint:gosec // see above
 		return err
 	}
 	staged := target + ".new"
 	if err := copyFileMode(newBinary, staged, 0o755); err != nil {
 		return err
 	}
-	if current, err := os.ReadFile(target); err == nil {
-		if err := os.WriteFile(previous, current, 0o755); err != nil {
+	if current, err := os.ReadFile(target); err == nil { //nolint:gosec // G304: a binary path this process installs, from the operator
+		if err := os.WriteFile(previous, current, 0o755); err != nil { //nolint:gosec // an executable
 			return fmt.Errorf("update: cannot keep the previous binary: %w", err)
 		}
 	}
@@ -439,7 +445,7 @@ func WaitReady(ctx context.Context, url string, timeout time.Duration) error {
 		case <-time.After(time.Second):
 		}
 	}
-	return fmt.Errorf("update: %s did not become ready in %s (last error: %v)", url, timeout, lastErr)
+	return fmt.Errorf("update: %s did not become ready in %s (last error: %w)", url, timeout, lastErr)
 }
 
 // blake2b512 is what minisign hashes a file with before signing it in
@@ -450,12 +456,12 @@ func blake2b512(data []byte) []byte {
 }
 
 func copyFileMode(src, dst string, mode os.FileMode) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) //nolint:gosec // G304: a binary path this process installs, from the operator
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode) //nolint:gosec // G304: a binary path this process installs, from the operator
 	if err != nil {
 		return err
 	}

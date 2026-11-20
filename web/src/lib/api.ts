@@ -24,7 +24,12 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  token?: string,
+): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers["X-Peek-Token"] = token;
@@ -159,9 +164,19 @@ export const api = {
       read_token: readToken,
     }),
   receipt: (id: string, receiptToken: string) =>
-    request<Receipt>("GET", `/api/v1/secrets/${encodeURIComponent(id)}/receipt`, undefined, receiptToken),
+    request<Receipt>(
+      "GET",
+      `/api/v1/secrets/${encodeURIComponent(id)}/receipt`,
+      undefined,
+      receiptToken,
+    ),
   burn: (id: string, receiptToken: string) =>
-    request<void>("POST", `/api/v1/secrets/${encodeURIComponent(id)}/burn`, undefined, receiptToken),
+    request<void>(
+      "POST",
+      `/api/v1/secrets/${encodeURIComponent(id)}/burn`,
+      undefined,
+      receiptToken,
+    ),
   deleteByRecipient: (id: string, readToken: string) =>
     request<void>("DELETE", `/api/v1/secrets/${encodeURIComponent(id)}`, undefined, readToken),
 };

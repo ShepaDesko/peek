@@ -32,13 +32,19 @@ import (
 
 var version = "dev"
 
+// main holds no deferred work: run owns the signal context and returns the
+// exit code, so os.Exit cannot skip a cleanup.
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if len(os.Args) < 2 {
 		usage()
-		os.Exit(2)
+		return 2
 	}
 
 	var err error
@@ -54,12 +60,13 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "peek-cli: unknown command %q\n\n", os.Args[1])
 		usage()
-		os.Exit(2)
+		return 2
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "peek-cli:", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func usage() {
@@ -322,7 +329,9 @@ func call(ctx context.Context, method, target string, body any, token string, ou
 		}
 		reader = bytes.NewReader(buf)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, target, reader)
+	// The target is built from the server the operator passed on the command
+	// line, which is the whole point of this tool.
+	req, err := http.NewRequestWithContext(ctx, method, target, reader) //nolint:gosec // operator-supplied endpoint
 	if err != nil {
 		return err
 	}
@@ -335,7 +344,7 @@ func call(ctx context.Context, method, target string, body any, token string, ou
 	req.Header.Set("User-Agent", "peek-cli/"+version)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: the endpoint is the server the operator passed on the command line
 	if err != nil {
 		return fmt.Errorf("cannot reach %s: %w", target, err)
 	}

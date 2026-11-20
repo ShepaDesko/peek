@@ -37,7 +37,13 @@ type command struct {
 	run     func(ctx context.Context, args []string) error
 }
 
+// main keeps no deferred work of its own: run owns the signal context and
+// returns an exit code, so os.Exit never skips a cleanup.
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -61,9 +67,9 @@ func main() {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		usage(commands)
 		if len(args) == 0 {
-			os.Exit(2)
+			return 2
 		}
-		return
+		return 0
 	}
 
 	for _, c := range commands {
@@ -72,30 +78,45 @@ func main() {
 		}
 		if err := c.run(ctx, args[1:]); err != nil {
 			if errors.Is(err, context.Canceled) {
-				return
+				return 0
+			}
+			// A command may ask for a specific exit code, which is what makes
+			// `peek update --check` usable in a monitoring script.
+			var coded exitError
+			if errors.As(err, &coded) {
+				fmt.Fprintln(os.Stderr, coded.Error())
+				return coded.code
 			}
 			fmt.Fprintf(os.Stderr, "peek %s: %v\n", c.name, err)
-			os.Exit(1)
+			return 1
 		}
-		return
+		return 0
 	}
 
 	fmt.Fprintf(os.Stderr, "peek: unknown command %q\n\n", args[0])
 	usage(commands)
-	os.Exit(2)
+	return 2
 }
+
+// exitError carries a specific exit code out of a command.
+type exitError struct {
+	code int
+	msg  string
+}
+
+func (e exitError) Error() string { return e.msg }
 
 func usage(commands []command) {
 	out := os.Stdout
-	fmt.Fprintf(out, "Peek %s — ephemeral secret sharing, self-hosted.\n\n", version)
-	fmt.Fprintln(out, "Usage: peek <command> [options]")
-	fmt.Fprintln(out)
+	_, _ = fmt.Fprintf(out, "Peek %s — ephemeral secret sharing, self-hosted.\n\n", version)
+	_, _ = fmt.Fprintln(out, "Usage: peek <command> [options]")
+	_, _ = fmt.Fprintln(out)
 	for _, c := range commands {
-		fmt.Fprintf(out, "  %-9s %s\n", c.name, c.summary)
+		_, _ = fmt.Fprintf(out, "  %-9s %s\n", c.name, c.summary)
 	}
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Run peek <command> --help for the options of a command.")
-	fmt.Fprintf(out, "Configuration: %s\n", defaultConfigPath())
+	_, _ = fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out, "Run peek <command> --help for the options of a command.")
+	_, _ = fmt.Fprintf(out, "Configuration: %s\n", defaultConfigPath())
 }
 
 func runVersion(_ context.Context, _ []string) error {

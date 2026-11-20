@@ -110,7 +110,12 @@ describe("format guards", () => {
 
   it("derives a different read token for a wrong passphrase", async () => {
     const key = newContentKey();
-    const params = { salt: new Uint8Array(16).fill(3), memoryKiB: 8192, iterations: 1, parallelism: 1 };
+    const params = {
+      salt: new Uint8Array(16).fill(3),
+      memoryKiB: 8192,
+      iterations: 1,
+      parallelism: 1,
+    };
     const good = await deriveKeys(key, "right", params);
     const bad = await deriveKeys(key, "wrong", params);
     expect(b64urlEncode(good.readTokenHash)).not.toBe(b64urlEncode(bad.readTokenHash));

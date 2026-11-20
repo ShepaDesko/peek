@@ -94,7 +94,8 @@ func newLogger(cfg config.Log) (*slog.Logger, func(), error) {
 	out := os.Stdout
 	closer := func() {}
 	if cfg.File != "" {
-		f, err := os.OpenFile(cfg.File, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
+		// 0600: a log file carries IP addresses and user agents.
+		f, err := os.OpenFile(cfg.File, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			return nil, nil, fmt.Errorf("open log file %s: %w", cfg.File, err)
 		}

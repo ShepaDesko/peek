@@ -201,7 +201,8 @@ func (s *Server) Serve(ctx context.Context) error {
 	var wg sync.WaitGroup
 
 	for _, b := range bindings {
-		ln, err := net.Listen("tcp", b.addr)
+		var lc net.ListenConfig
+		ln, err := lc.Listen(ctx, "tcp", b.addr)
 		if err != nil {
 			s.shutdown(context.Background())
 			return fmt.Errorf("listen on %s (%s): %w", b.addr, b.name, err)

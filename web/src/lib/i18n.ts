@@ -75,8 +75,7 @@ const fr = {
   "receipt.new": "Partager un autre secret",
   "receipt.keepLink":
     "Conservez cette page pour suivre le statut : son adresse contient le jeton de suivi.",
-  "receipt.passphraseReminder":
-    "N'oubliez pas de transmettre la passphrase séparément du lien.",
+  "receipt.passphraseReminder": "N'oubliez pas de transmettre la passphrase séparément du lien.",
 
   "reveal.title": "Un secret vous a été partagé",
   "reveal.warning": "Ce secret ne s'affiche qu'un nombre limité de fois.",
@@ -181,7 +180,8 @@ const en: Record<Key, string> = {
   "receipt.burn.confirm": "Destroy this secret right away? This cannot be undone.",
   "receipt.burned": "The secret has been destroyed.",
   "receipt.new": "Share another secret",
-  "receipt.keepLink": "Keep this page to follow the status: its address carries the tracking token.",
+  "receipt.keepLink":
+    "Keep this page to follow the status: its address carries the tracking token.",
   "receipt.passphraseReminder": "Remember to send the passphrase separately from the link.",
 
   "reveal.title": "A secret has been shared with you",

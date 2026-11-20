@@ -27,8 +27,7 @@ const proxyHeaderTimeout = 5 * time.Second
 // connections according to the PROXY header.
 type proxyListener struct {
 	net.Listener
-	trusted  *TrustedProxies
-	required bool
+	trusted *TrustedProxies
 }
 
 // newProxyListener enables PROXY protocol parsing on l.

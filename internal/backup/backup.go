@@ -149,7 +149,7 @@ func Create(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	out, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	out, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // G304: the path is named by the operator on the command line
 	if err != nil {
 		return nil, fmt.Errorf("backup: create %s: %w", path, err)
 	}
@@ -237,7 +237,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (*Manifest, error) {
 	if cfg == nil {
 		return nil, errors.New("restore: missing configuration")
 	}
-	f, err := os.Open(opts.Archive)
+	f, err := os.Open(opts.Archive) //nolint:gosec // operator-supplied path
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (*Manifest, error) {
 	}
 
 	var manifest Manifest
-	buf, err := os.ReadFile(filepath.Join(staging, "manifest.json"))
+	buf, err := os.ReadFile(filepath.Join(staging, "manifest.json")) //nolint:gosec // G304: the path is named by the operator on the command line
 	if err != nil {
 		return nil, errors.New("restore: this does not look like a Peek backup (no manifest.json)")
 	}
@@ -411,7 +411,7 @@ func dirExists(path string) bool {
 }
 
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) //nolint:gosec // operator-supplied path
 	if err != nil {
 		return err
 	}
@@ -419,7 +419,7 @@ func copyFile(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) //nolint:gosec // G304: the path is named by the operator on the command line
 	if err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func writeTarGz(w io.Writer, root string) error {
 		if info.IsDir() {
 			return nil
 		}
-		f, err := os.Open(path)
+		f, err := os.Open(path) //nolint:gosec // G304: a path inside the backup directory or the staging tree, both owned by this process
 		if err != nil {
 			return err
 		}
@@ -519,7 +519,7 @@ func extractTarGz(r io.Reader, dest string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 				return err
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) //nolint:gosec // G304: a path inside the backup directory or the staging tree, both owned by this process
 			if err != nil {
 				return err
 			}

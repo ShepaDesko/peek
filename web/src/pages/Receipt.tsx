@@ -192,7 +192,9 @@ export default function Receipt({ id, fragment, t, lang }: Props) {
 }
 
 /** parseFragment reads v1.<contentKey>~<receiptToken> without throwing. */
-function parseFragment(fragment: string): { contentKeyB64: string; receiptTokenB64: string } | null {
+function parseFragment(
+  fragment: string,
+): { contentKeyB64: string; receiptTokenB64: string } | null {
   const raw = fragment.replace(/^#/, "");
   if (!raw.startsWith("v1.")) return null;
   const [contentKeyB64, receiptTokenB64] = raw.slice(3).split("~");

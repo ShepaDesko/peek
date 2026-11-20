@@ -418,12 +418,12 @@ func (s *Store) PurgeExpired(ctx context.Context, now time.Time) (int, error) {
 	for rows.Next() {
 		var d doomed
 		if err := rows.Scan(&d.id, &d.orgID, &d.creator, &d.groupID, &d.viewsMax, &d.remaining, &d.createdAt); err != nil {
-			rows.Close()
+			_ = rows.Close() //nolint:sqlclosecheck // closed before the writes: a defer would hold the cursor open
 			return 0, err
 		}
 		list = append(list, d)
 	}
-	rows.Close()
+	_ = rows.Close() //nolint:sqlclosecheck // closed before the writes: a defer would hold the cursor open
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}

@@ -72,7 +72,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if name != "" {
 		if f, err := h.files.Open(name); err == nil {
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			if info, err := f.Stat(); err == nil && !info.IsDir() {
 				if strings.HasPrefix(name, "assets/") {
 					// Vite emits content-hashed names under assets/.
@@ -80,6 +80,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				} else {
 					w.Header().Set("Cache-Control", "no-cache")
 				}
+				//nolint:errcheck // the type assertion is guarded by the fs.File contract
 				http.ServeContent(w, r, info.Name(), info.ModTime(), f.(interface {
 					Read([]byte) (int, error)
 					Seek(int64, int) (int64, error)

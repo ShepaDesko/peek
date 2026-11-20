@@ -87,19 +87,19 @@ func (r *Report) Write(w io.Writer) {
 		}
 	}
 	for _, res := range r.Results {
-		fmt.Fprintf(w, "[%-4s] %-*s  %s\n", res.Level, width, res.Name, res.Detail)
+		_, _ = fmt.Fprintf(w, "[%-4s] %-*s  %s\n", res.Level, width, res.Name, res.Detail)
 		if res.Hint != "" {
-			fmt.Fprintf(w, "         %-*s  → %s\n", width, "", res.Hint)
+			_, _ = fmt.Fprintf(w, "         %-*s  → %s\n", width, "", res.Hint)
 		}
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 	switch {
 	case r.Failed():
-		fmt.Fprintln(w, "Diagnosis: problems found. Fix the FAIL lines above and run peek doctor again.")
+		_, _ = fmt.Fprintln(w, "Diagnosis: problems found. Fix the FAIL lines above and run peek doctor again.")
 	case r.Warned():
-		fmt.Fprintln(w, "Diagnosis: usable, with warnings.")
+		_, _ = fmt.Fprintln(w, "Diagnosis: usable, with warnings.")
 	default:
-		fmt.Fprintln(w, "Diagnosis: everything checks out.")
+		_, _ = fmt.Fprintln(w, "Diagnosis: everything checks out.")
 	}
 }
 
@@ -265,13 +265,15 @@ func checkListeners(r *Report, cfg *config.Config) {
 	}
 	for _, b := range bindings {
 		name := "listener " + b.role
-		conn, err := net.DialTimeout("tcp", dialable(b.addr), 2*time.Second)
+		dialer := &net.Dialer{Timeout: 2 * time.Second}
+		conn, err := dialer.DialContext(context.Background(), "tcp", dialable(b.addr))
 		if err == nil {
 			_ = conn.Close()
 			r.add(name, OK, fmt.Sprintf("%s answers (service appears to be running)", b.addr))
 			continue
 		}
-		ln, lerr := net.Listen("tcp", b.addr)
+		var lc net.ListenConfig
+		ln, lerr := lc.Listen(context.Background(), "tcp", b.addr)
 		if lerr == nil {
 			_ = ln.Close()
 			r.add(name, WARN, fmt.Sprintf("%s is free: nothing is listening", b.addr),
@@ -374,7 +376,8 @@ func checkMail(r *Report, cfg *config.Config, testTo string) {
 		return
 	}
 	addr := net.JoinHostPort(cfg.Mail.Host, fmt.Sprint(cfg.Mail.Port))
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	conn, err := dialer.DialContext(context.Background(), "tcp", addr)
 	if err != nil {
 		r.add("SMTP", FAIL, fmt.Sprintf("cannot connect to %s: %v", addr, err))
 		return
@@ -431,7 +434,7 @@ func checkExternal(ctx context.Context, r *Report, cfg *config.Config) {
 			"check DNS, the proxy, and that public_url matches what the proxy publishes")
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		r.add("public URL", FAIL, fmt.Sprintf("GET %s/healthz returned %d", base, resp.StatusCode))
 	} else {
@@ -445,7 +448,7 @@ func checkExternal(ctx context.Context, r *Report, cfg *config.Config) {
 
 	// What client IP does Peek resolve for a request coming through the proxy?
 	if resp, err := get(ctx, client, base+"/api/v1/ip"); err == nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var body struct {
 			ClientIP    string `json:"client_ip"`
 			PeerAddr    string `json:"peer_addr"`
@@ -475,7 +478,7 @@ func checkExternal(ctx context.Context, r *Report, cfg *config.Config) {
 		r.add("admin surface", WARN, "could not probe /api/v1/audit: "+err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusNotFound, http.StatusUnauthorized, http.StatusForbidden:
 		r.add("admin surface", OK, fmt.Sprintf("/api/v1/audit is not served publicly (HTTP %d)", resp.StatusCode))

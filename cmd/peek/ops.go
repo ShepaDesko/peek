@@ -104,7 +104,7 @@ func runDoctor(ctx context.Context, args []string) error {
 		report.Write(os.Stdout)
 	}
 	if report.Failed() {
-		os.Exit(1)
+		return exitError{code: 1, msg: "peek doctor: checks failed (see the FAIL lines above)"}
 	}
 	return nil
 }
@@ -294,7 +294,7 @@ func runUpdate(ctx context.Context, args []string) error {
 				fmt.Printf("\n%s\n", summary)
 			}
 			// A distinct exit code lets monitoring act on it.
-			os.Exit(10)
+			return exitError{code: 10, msg: "update available: run sudo peek update"}
 		}
 		if sameVersion(newVersion, version) && *wanted == "" {
 			fmt.Printf("peek %s is already the latest release on channel %s.\n", version, *channel)
@@ -374,7 +374,10 @@ func runUpdate(ctx context.Context, args []string) error {
 	if err := restartService(); err != nil {
 		fmt.Printf("could not restart the service automatically: %v\n", err)
 		fmt.Println("restart it yourself: sudo systemctl restart peek")
-		return nil
+		// The binary is installed; only the restart failed, and the user
+		// has been told how to finish. Reporting an error here would
+		// suggest the update did not happen.
+		return nil //nolint:nilerr // deliberate: see above
 	}
 
 	readyURL := strings.TrimRight(cfg.PublicURL, "/") + "/readyz"
@@ -382,7 +385,7 @@ func runUpdate(ctx context.Context, args []string) error {
 		fmt.Printf("the new version did not come up: %v\n", err)
 		fmt.Println("rolling back…")
 		if rbErr := rollback(); rbErr != nil {
-			return fmt.Errorf("rollback failed: %v (original failure: %w)", rbErr, err)
+			return fmt.Errorf("rollback failed (%w) after the update failed: %w", rbErr, err)
 		}
 		_ = restartService()
 		return fail("update rolled back. Check journalctl -u peek for the reason.")
@@ -403,7 +406,7 @@ func runRollback(ctx context.Context, args []string) error {
 	fmt.Printf("restored the previous binary from %s\n", update.PreviousBinaryPath)
 	if err := restartService(); err != nil {
 		fmt.Println("restart the service yourself: sudo systemctl restart peek")
-		return nil
+		return nil //nolint:nilerr // the binary is installed; only the restart failed, and the user was told
 	}
 	if cfg, err := config.Load(*configPath, true); err == nil {
 		if err := update.WaitReady(ctx, strings.TrimRight(cfg.PublicURL, "/")+"/readyz", 45*time.Second); err != nil {
@@ -423,12 +426,12 @@ func rollback() error {
 		return err
 	}
 	target, _ = filepath.EvalSymlinks(target)
-	data, err := os.ReadFile(update.PreviousBinaryPath)
+	data, err := os.ReadFile(update.PreviousBinaryPath) //nolint:gosec // a path this binary owns
 	if err != nil {
 		return err
 	}
 	staged := target + ".rollback"
-	if err := os.WriteFile(staged, data, 0o755); err != nil {
+	if err := os.WriteFile(staged, data, 0o755); err != nil { //nolint:gosec // an executable
 		return err
 	}
 	return os.Rename(staged, target)
@@ -441,9 +444,11 @@ func restartService() error {
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return err
 	}
-	out, err := exec.Command("systemctl", "restart", "peek.service").CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "systemctl", "restart", "peek.service").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -490,12 +495,12 @@ func runKey(_ context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(aside, data, 0o400); err != nil {
+		if err := os.WriteFile(aside, data, 0o400); err != nil { //nolint:gosec // G703: a path the operator passed
 			return err
 		}
 		fmt.Printf("previous key kept at %s — do not delete it until re-encryption is confirmed\n", aside)
 	}
-	if err := os.MkdirAll(filepath.Dir(cfg.MasterKeyFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfg.MasterKeyFile), 0o755); err != nil { //nolint:gosec // installed next to the binary
 		return err
 	}
 	tmp := cfg.MasterKeyFile + ".new"
@@ -547,7 +552,7 @@ func runBranding(_ context.Context, args []string) error {
 		}
 		buf = append(buf, '\n')
 		if fs.NArg() == 1 {
-			if err := os.WriteFile(fs.Arg(0), buf, 0o644); err != nil {
+			if err := os.WriteFile(fs.Arg(0), buf, 0o644); err != nil { //nolint:gosec // a brand file is not a secret
 				return err
 			}
 			fmt.Printf("brand exported to %s\n", fs.Arg(0))
@@ -560,7 +565,7 @@ func runBranding(_ context.Context, args []string) error {
 		if fs.NArg() != 1 {
 			return fail("usage: peek branding import FILE")
 		}
-		buf, err := os.ReadFile(fs.Arg(0))
+		buf, err := os.ReadFile(fs.Arg(0)) //nolint:gosec // the operator names the brand file
 		if err != nil {
 			return err
 		}
@@ -585,7 +590,7 @@ func runBranding(_ context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(*configPath, marshalled, 0o640); err != nil {
+		if err := os.WriteFile(*configPath, marshalled, 0o640); err != nil { //nolint:gosec // G306: a brand file is not a secret
 			return err
 		}
 		fmt.Printf("brand imported into %s\n", *configPath)

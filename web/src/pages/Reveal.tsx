@@ -170,7 +170,10 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
 
           {payload.kind === "url" ? (
             <div className="space-y-3">
-              <p className="break-all rounded-xl border p-3 font-mono text-sm" style={{ borderColor: "var(--peek-border)" }}>
+              <p
+                className="break-all rounded-xl border p-3 font-mono text-sm"
+                style={{ borderColor: "var(--peek-border)" }}
+              >
                 {text}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -183,7 +186,11 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
                 >
                   {t("reveal.open")}
                 </a>
-                <CopyButton value={text} label={t("reveal.copy")} copiedLabel={t("reveal.copied")} />
+                <CopyButton
+                  value={text}
+                  label={t("reveal.copy")}
+                  copiedLabel={t("reveal.copied")}
+                />
               </div>
             </div>
           ) : (
@@ -202,7 +209,11 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
                 >
                   {visible ? t("reveal.hide") : t("reveal.show")}
                 </button>
-                <CopyButton value={text} label={t("reveal.copy")} copiedLabel={t("reveal.copied")} />
+                <CopyButton
+                  value={text}
+                  label={t("reveal.copy")}
+                  copiedLabel={t("reveal.copied")}
+                />
                 {meta?.deletable_by_recipient && !deleted ? (
                   <button type="button" className="peek-btn peek-btn-danger" onClick={removeNow}>
                     {t("reveal.delete")}
@@ -269,7 +280,11 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
           </Banner>
         ) : null}
 
-        <button type="submit" className="peek-btn peek-btn-primary w-full" disabled={phase === "revealing"}>
+        <button
+          type="submit"
+          className="peek-btn peek-btn-primary w-full"
+          disabled={phase === "revealing"}
+        >
           {phase === "revealing" ? <Spinner label={t("reveal.revealing")} /> : t("reveal.button")}
         </button>
       </Card>
