@@ -1,0 +1,140 @@
+# Peek configuration — reference file.
+#
+# Every setting below is shown with its default. Only public_url and the
+# listen addresses usually need changing for a first install; `peek setup`
+# writes this file for you, and `peek config check` validates it.
+#
+# Durations accept 45s, 30m, 12h, 7d.
+
+# URL users will type. Links, cookies, CSP and redirects derive from it.
+public_url = "https://secrets.example.com"
+default_language = "fr"          # fr | en
+multi_org = false                # several organisations on one instance (M9)
+update_check = true              # daily check for a new release
+update_url = ""                  # internal mirror instead of GitHub releases
+update_channel = "stable"        # stable | beta
+master_key_file = "/etc/peek/master.key"
+data_dir = "/var/lib/peek"
+
+[server]
+# Everything: creation, dashboard, administration, API.
+internal_listen = "127.0.0.1:8080"
+# Recipient pages only. Publish THIS one through the load balancer and the
+# admin surface stays unreachable from the internet. Empty = single listener.
+public_listen = ""
+# Forwarded headers (X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host,
+# Forwarded) are honoured ONLY from these addresses. Empty = never trusted.
+trusted_proxies = []
+# PROXY protocol v1/v2, for layer 4 load balancers. Requires trusted_proxies.
+proxy_protocol = false
+read_timeout = "30s"
+write_timeout = "2m"
+idle_timeout = "1m30s"
+shutdown_grace = "20s"
+max_body_bytes = 8388608
+max_header_bytes = 1048576
+
+[tls]
+# none: TLS terminated by the proxy (the usual case behind Kemp, F5, HAProxy).
+# file: Peek terminates TLS with the certificate below.
+# acme: Let's Encrypt (milestone M4).
+mode = "none"
+cert_file = ""
+key_file = ""
+acme_email = ""
+acme_hosts = []
+acme_dir = "/var/lib/peek/acme"
+# Leave HSTS off when the proxy already sends the header.
+hsts = false
+hsts_max_age = 31536000
+
+[database]
+driver = "sqlite"                # sqlite | postgres (postgres: milestone M9)
+dsn = "/var/lib/peek/peek.db"
+
+[storage]
+backend = "local"                # local | s3 (s3: milestone M7)
+path = "/var/lib/peek/files"
+s3_bucket = ""
+s3_region = ""
+s3_endpoint = ""
+
+[security]
+# Restrict administration and creation by network. Empty = no restriction.
+admin_allowed_cidrs = []
+create_allowed_cidrs = []
+# Accounts arrive in milestone M5; until then this is what allows creation.
+anonymous_create = false
+# Wrong passphrase attempts before the secret is destroyed.
+max_passphrase_attempts = 5
+# Keep only a /24 (IPv4) or /48 (IPv6) prefix in logs and audit entries.
+anonymize_ips = false
+audit_retention = "365d"
+
+# Token buckets, per real client IP: burst immediately, then rate per window.
+[security.rate_create]
+burst = 20
+rate = 60
+window = "1h"
+
+[security.rate_read]
+burst = 30
+rate = 300
+window = "1h"
+
+[security.rate_login]
+burst = 10
+rate = 60
+window = "1h"
+
+[security.rate_api]
+burst = 60
+rate = 1200
+window = "1h"
+
+[policy]
+max_ttl = "30d"
+default_ttl = "1d"
+max_views = 100
+default_views = 1
+require_passphrase = false
+force_retrieval_step = false
+allowed_kinds = ["text", "url", "file"]
+max_file_bytes = 104857600       # 100 MiB (milestone M7)
+max_secret_bytes = 1048576       # 1 MiB of ciphertext for a text secret
+max_recipients = 10
+
+[mail]
+# Leave host empty to disable every e-mail feature.
+host = ""
+port = 587
+username = ""
+password = ""
+encryption = "starttls"          # none | starttls | tls
+from_name = "Peek"
+from_address = ""
+skip_tls_verify = false
+allowed_recipient_domains = []
+
+[log]
+level = "info"                   # debug | info | warn | error
+format = "json"                  # json | text
+file = ""                        # empty: stdout, captured by journald
+
+[branding]
+service_name = "Peek"
+primary_color = "#4f46e5"
+accent_color = "#0ea5e9"
+hide_powered_by = false
+support_url = ""
+legal_url = ""
+privacy_url = ""
+
+[backup]
+enabled = true
+dir = "/var/backups/peek"
+keep = 7
+# Set a passphrase: a backup holds the ciphertext of active secrets and the
+# master key. With one, the archive is encrypted with age.
+passphrase = ""
+interval = "1d"

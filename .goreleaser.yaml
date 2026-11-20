@@ -1,0 +1,212 @@
+# GoReleaser configuration for Peek.
+#
+# One static binary per platform, plus .deb and .rpm packages, checksums, a
+# minisign signature and an SBOM. No Docker image: the product is a native
+# Linux binary driven by systemd.
+#
+# Local dry run: make snapshot
+
+version: 2
+
+project_name: peek
+
+before:
+  hooks:
+    # The interface must be built and staged before the Go build embeds it.
+    - sh -c "cd web && npm ci && npm run build"
+    - sh -c "rm -rf internal/webui/dist && mkdir -p internal/webui/dist && cp -r web/dist/. internal/webui/dist/"
+    - go mod tidy
+
+builds:
+  - id: peek
+    main: ./cmd/peek
+    binary: peek
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .CommitDate }}
+      - -X github.com/ShepaDesko/peek/internal/update.SigningPublicKey={{ .Env.PEEK_SIGNING_PUBKEY }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: peek-cli
+    main: ./cmd/peek-cli
+    binary: peek-cli
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: server
+    ids: [peek]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - SECURITY.md
+      - src: docs/*.md
+        dst: docs
+      - src: packaging/systemd/*
+        dst: packaging/systemd
+      - src: packaging/peek.toml.example
+        dst: packaging
+
+  - id: cli
+    ids: [peek-cli]
+    name_template: "{{ .ProjectName }}-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+
+nfpms:
+  - id: packages
+    ids: [peek]
+    package_name: peek
+    vendor: Peek
+    homepage: https://github.com/ShepaDesko/peek
+    maintainer: Peek <noreply@example.com>
+    description: |
+      Ephemeral secret sharing, self-hosted and white-label.
+      Secrets are encrypted in the browser; the server stores ciphertext only.
+    license: Proprietary
+    formats: [deb, rpm]
+    file_name_template: >-
+      {{- if eq .ConventionalExtension ".deb" -}}
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+      {{- else -}}
+      {{ .ProjectName }}-{{ .Version }}.{{ .Arch }}
+      {{- end -}}
+    bindir: /usr/bin
+    section: utils
+    priority: optional
+    contents:
+      - src: packaging/systemd/peek.service
+        dst: /usr/lib/systemd/system/peek.service
+      - src: packaging/systemd/peek-backup.service
+        dst: /usr/lib/systemd/system/peek-backup.service
+      - src: packaging/systemd/peek-backup.timer
+        dst: /usr/lib/systemd/system/peek-backup.timer
+      - src: packaging/peek.toml.example
+        dst: /usr/share/doc/peek/peek.toml.example
+      - src: docs/INSTALL.md
+        dst: /usr/share/doc/peek/INSTALL.md
+      - src: docs/CONFIG.md
+        dst: /usr/share/doc/peek/CONFIG.md
+      - src: docs/REVERSE-PROXY.md
+        dst: /usr/share/doc/peek/REVERSE-PROXY.md
+      - src: docs/UPGRADE.md
+        dst: /usr/share/doc/peek/UPGRADE.md
+      - src: docs/BACKUP.md
+        dst: /usr/share/doc/peek/BACKUP.md
+      # Created empty and owned by the service account.
+      - dst: /var/lib/peek
+        type: dir
+        file_info:
+          mode: 0750
+          owner: peek
+          group: peek
+      - dst: /var/backups/peek
+        type: dir
+        file_info:
+          mode: 0750
+          owner: peek
+          group: peek
+    scripts:
+      postinstall: packaging/deb/postinst.sh
+      preremove: packaging/deb/prerm.sh
+      postremove: packaging/deb/postrm.sh
+    overrides:
+      rpm:
+        scripts:
+          postinstall: packaging/rpm/postinstall.sh
+          preremove: packaging/rpm/preuninstall.sh
+          postremove: packaging/rpm/postuninstall.sh
+    rpm:
+      group: Applications/Internet
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Signature over the checksum file: one signature covers every artefact, and
+# `peek update` verifies exactly this chain before installing anything.
+signs:
+  - id: minisign
+    cmd: minisign
+    args:
+      - -S
+      - -s
+      - "{{ .Env.PEEK_SIGNING_KEY_FILE }}"
+      - -m
+      - "${artifact}"
+      - -x
+      - "${signature}"
+      - -c
+      - "Peek {{ .Version }}"
+    signature: "${artifact}.minisig"
+    artifacts: checksum
+    output: true
+
+sboms:
+  - id: archive-sbom
+    artifacts: archive
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Security
+      regexp: '^(sec|security)(\(.+\))?!?:'
+      order: 2
+    - title: Other
+      order: 99
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "Peek {{ .Version }}"
+  footer: |
+    ## Install
+
+    ```
+    curl -fsSL https://raw.githubusercontent.com/ShepaDesko/peek/main/packaging/install.sh | sudo sh
+    ```
+
+    ## Upgrade
+
+    ```
+    sudo peek update
+    ```
+
+    Offline hosts: download the archive and run `sudo peek update --file peek_{{ .Version }}_linux_amd64.tar.gz`.
+    Every artefact is covered by `checksums.txt`, itself signed with minisign.

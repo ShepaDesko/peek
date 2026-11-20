@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: tests must pass before anything is published
+        run: |
+          go test -race ./...
+          npm ci --prefix web
+          npm run test --prefix web
+
+      - name: install minisign
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+
+      # The private key never leaves this step's environment, and the public
+      # key is compiled into the binary so that `peek update` can verify the
+      # next release without any network trust.
+      - name: prepare the signing key
+        env:
+          PEEK_SIGNING_KEY: ${{ secrets.PEEK_SIGNING_KEY }}
+        run: |
+          if [ -z "$PEEK_SIGNING_KEY" ]; then
+            echo "::error::secret PEEK_SIGNING_KEY is not set; releases must be signed"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$PEEK_SIGNING_KEY" > /tmp/minisign.key
+          echo "PEEK_SIGNING_KEY_FILE=/tmp/minisign.key" >> "$GITHUB_ENV"
+
+      - uses: anchore/sbom-action/download-syft@v0
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PEEK_SIGNING_PUBKEY: ${{ secrets.PEEK_SIGNING_PUBKEY }}
+          PEEK_SIGNING_KEY_FILE: /tmp/minisign.key
+          # minisign reads the key passphrase from here (empty for a CI key).
+          MINISIGN_PASSWORD: ${{ secrets.PEEK_SIGNING_KEY_PASSWORD }}
+
+      - name: wipe the key
+        if: always()
+        run: shred -u /tmp/minisign.key || rm -f /tmp/minisign.key

@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily Peek backup
+Documentation=https://github.com/ShepaDesko/peek
+
+[Timer]
+# 03:17 local time, with jitter so a fleet of instances does not all start at
+# the same second.
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=peek-backup.service
+
+[Install]
+WantedBy=timers.target
