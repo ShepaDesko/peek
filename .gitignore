@@ -1,0 +1,33 @@
+# Build outputs
+/bin/
+/dist/
+/web/dist/
+/web/node_modules/
+/test/e2e/node_modules/
+/test/e2e/playwright-report/
+/test/e2e/test-results/
+
+# Local development state
+/.dev/
+/peek.dev.toml
+/.tmpcheck/
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Secrets and backups, in case anyone runs the service from a checkout
+master.key
+*.minisig
+*.tar.gz
+*.tar.gz.age
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# TypeScript incremental build info
+*.tsbuildinfo

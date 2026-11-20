@@ -1,0 +1,53 @@
+# golangci-lint configuration.
+#
+# The enabled set is deliberately small and opinionated: correctness, resource
+# leaks, and the error handling that a long-lived service depends on.
+
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - prealloc
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+    gosec:
+      excludes:
+        # G104 duplicates errcheck.
+        - G104
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+
+  exclusions:
+    rules:
+      # Tests may ignore errors in fixtures and use weak randomness.
+      - path: _test\.go
+        linters: [gosec, errcheck, unparam, noctx]
+      # The CLI writes to stdout on purpose.
+      - path: cmd/
+        linters: [forbidigo]
+
+formatters:
+  enable:
+    - gofmt
