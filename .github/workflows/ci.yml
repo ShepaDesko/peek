@@ -200,12 +200,18 @@ jobs:
     steps:
       - name: install prerequisites
         run: |
+          set -eu
           if command -v apt-get >/dev/null; then
             apt-get update -qq
-            apt-get install -y -qq curl ca-certificates systemd >/dev/null
+            apt-get install -y -qq ca-certificates systemd >/dev/null
+            command -v curl >/dev/null || apt-get install -y -qq curl >/dev/null
           else
-            (dnf install -y -q curl ca-certificates systemd || yum install -y -q curl ca-certificates systemd) >/dev/null
+            # Rocky and Alma ship curl-minimal, which conflicts with curl:
+            # only pull curl in when the image really has no client.
+            dnf install -y -q ca-certificates systemd >/dev/null
+            command -v curl >/dev/null || dnf install -y -q --allowerasing curl >/dev/null
           fi
+          curl --version | head -1
 
       - uses: actions/checkout@v4
 
