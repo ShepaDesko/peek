@@ -26,7 +26,9 @@ import (
 	"github.com/ShepaDesko/peek/internal/config"
 	pcrypto "github.com/ShepaDesko/peek/internal/crypto"
 	"github.com/ShepaDesko/peek/internal/mail"
+	"github.com/ShepaDesko/peek/internal/requests"
 	"github.com/ShepaDesko/peek/internal/secrets"
+	"github.com/ShepaDesko/peek/internal/storage"
 	"github.com/ShepaDesko/peek/internal/store"
 	"github.com/ShepaDesko/peek/internal/webui"
 )
@@ -38,11 +40,13 @@ const (
 
 // Server owns the HTTP listeners and the handlers behind them.
 type Server struct {
-	cfg     *config.Config
-	log     *slog.Logger
-	store   *store.Store
-	secrets *secrets.Service
-	trusted *TrustedProxies
+	cfg      *config.Config
+	log      *slog.Logger
+	store    *store.Store
+	secrets  *secrets.Service
+	requests *requests.Service
+	blobs    storage.Backend
+	trusted  *TrustedProxies
 
 	adminCIDRs  []*net.IPNet
 	createCIDRs []*net.IPNet
@@ -81,6 +85,9 @@ type Options struct {
 	Mailer mail.Sender
 	// SIEM forwards the audit trail; nil means the database copy only.
 	SIEM audit.Forwarder
+	// Blobs stores encrypted attachments. Without one, file secrets are
+	// refused with a clear message rather than quietly dropped.
+	Blobs storage.Backend
 }
 
 // New builds a Server. It fails rather than start with a configuration whose
@@ -127,6 +134,9 @@ func New(opts Options) (*Server, error) {
 		version:     opts.Version,
 		started:     time.Now(),
 	}
+	s.secrets.SetStorage(opts.Blobs)
+	s.blobs = opts.Blobs
+	s.requests = requests.New(opts.Store, opts.Config, s.secrets)
 	s.accounts = accounts.New(opts.Store, opts.Config, opts.Cipher)
 	s.cipher = opts.Cipher
 	s.mailer = opts.Mailer
@@ -145,6 +155,9 @@ func (s *Server) Accounts() *accounts.Service { return s.accounts }
 
 // Secrets exposes the service, for tests and the CLI.
 func (s *Server) Secrets() *secrets.Service { return s.secrets }
+
+// Requests exposes the secret-request service, for tests and the CLI.
+func (s *Server) Requests() *requests.Service { return s.requests }
 
 // Handler returns the handler for one listener role.
 func (s *Server) Handler(listener string) http.Handler {
@@ -176,6 +189,17 @@ func (s *Server) Handler(listener string) http.Handler {
 			pub.Get("/secrets/{id}", s.handleSecretMeta)
 			pub.Post("/secrets/{id}/reveal", s.handleReveal)
 			pub.Delete("/secrets/{id}", s.handleRecipientDelete)
+
+			// Attachments: readable only with a grant handed out by a
+			// successful reveal, which is why they sit beside it.
+			pub.Get("/files/{id}", s.handleDownloadFile)
+			pub.Head("/files/{id}", s.handleDownloadFile)
+
+			// Secret requests: reading the prompt and depositing an answer
+			// are recipient-facing, so an instance can expose only those.
+			pub.Get("/requests/{id}", s.handleRequestMeta)
+			pub.Post("/requests/{id}/open", s.handleOpenRequest)
+			pub.Post("/requests/{id}/deposit", s.handleDeposit)
 		})
 
 		// Everything below is internal-listener only.
@@ -209,12 +233,20 @@ func (s *Server) Handler(listener string) http.Handler {
 				create.Use(s.restrictCIDR(s.createCIDRs, "create"))
 				create.Use(s.rateLimit(s.limitCreate, "create"))
 				create.Post("/secrets", s.handleCreate)
+				create.Post("/requests", s.handleCreateRequest)
+				// Uploading sits behind the creation gate, not the read one:
+				// an instance that does not let you create a secret is not a
+				// place to drop a hundred megabytes either.
+				create.Post("/files", s.handleUploadFile)
 			})
 			priv.Group(func(sender chi.Router) {
 				sender.Use(s.rateLimit(s.limitAPI, "api"))
 				sender.Get("/secrets/{id}/receipt", s.handleReceipt)
 				sender.Post("/secrets/{id}/burn", s.handleBurn)
 				sender.Post("/secrets/{id}/email", s.handleSendLink)
+				sender.Get("/requests/{id}/receipt", s.handleRequestReceipt)
+				sender.Post("/requests/{id}/receipt", s.handleRequestReceipt)
+				sender.Delete("/requests/{id}", s.handleCloseRequest)
 			})
 
 			// --- signed-in account management ------------------------------
@@ -238,6 +270,7 @@ func (s *Server) Handler(listener string) http.Handler {
 				account.Patch("/auth/passkeys/{id}", s.handleRenamePasskey)
 				account.Delete("/auth/passkeys/{id}", s.handleDeletePasskey)
 
+				account.Get("/dashboard/requests", s.handleListRequests)
 				account.Get("/dashboard/secrets", s.handleDashboard)
 				account.Post("/dashboard/secrets/{id}/burn", s.handleBurnOwned)
 			})

@@ -96,6 +96,12 @@ type Storage struct {
 	S3Bucket   string `toml:"s3_bucket"`
 	S3Region   string `toml:"s3_region"`
 	S3Endpoint string `toml:"s3_endpoint"`
+	S3Prefix   string `toml:"s3_prefix"`
+	// S3PathStyle forces bucket-in-the-path addressing. It is implied by a
+	// custom endpoint, because appliances rarely have a wildcard certificate.
+	S3PathStyle bool   `toml:"s3_path_style"`
+	S3AccessKey string `toml:"s3_access_key"`
+	S3SecretKey string `toml:"s3_secret_key"`
 }
 
 // Security covers network gating and abuse limits.
@@ -149,6 +155,17 @@ type Policy struct {
 	MaxFileBytes       int64    `toml:"max_file_bytes"`
 	MaxRecipients      int      `toml:"max_recipients"`
 	MaxSecretBytes     int64    `toml:"max_secret_bytes"`
+	// MaxFilesPerSecret caps how many blobs one bundle may carry.
+	MaxFilesPerSecret int `toml:"max_files_per_secret"`
+	// UploadWindow is how long an uploaded blob waits for a secret to claim
+	// it. A sender who closes the tab leaves nothing behind for longer.
+	UploadWindow Duration `toml:"upload_window"`
+	// DownloadWindow is how long a recipient keeps access to the blobs after
+	// revealing. The secret row is gone by then; this is what lets a large
+	// download finish anyway.
+	DownloadWindow Duration `toml:"download_window"`
+	// MaxDeposits caps how many answers one secret request accepts.
+	MaxDeposits int `toml:"max_deposits"`
 }
 
 // Mail configures outbound SMTP. Empty host disables every e-mail feature.
@@ -260,6 +277,10 @@ func Default() Config {
 			MaxFileBytes:       100 << 20,
 			MaxRecipients:      10,
 			MaxSecretBytes:     1 << 20,
+			MaxFilesPerSecret:  10,
+			UploadWindow:       Duration(2 * time.Hour),
+			DownloadWindow:     Duration(30 * time.Minute),
+			MaxDeposits:        1,
 		},
 		Mail:  Mail{Port: 587, Encryption: "starttls", FromName: "Peek"},
 		Audit: Audit{Syslog: Syslog{Protocol: "udp", Facility: 13, AppName: "peek"}},
@@ -401,6 +422,9 @@ func (c *Config) Validate() error {
 		if c.Storage.S3Bucket == "" {
 			add("storage.s3_bucket is required for the s3 backend")
 		}
+		if c.Storage.S3AccessKey == "" || c.Storage.S3SecretKey == "" {
+			add("storage.s3_access_key and storage.s3_secret_key are required for the s3 backend")
+		}
 	default:
 		add("storage.backend must be local or s3 (got %q)", c.Storage.Backend)
 	}
@@ -497,6 +521,12 @@ func (c *Config) SecretURL(id string) string {
 	return strings.TrimRight(c.PublicURL, "/") + "/s/" + id
 }
 
+// RequestURL is the deposit link of a secret request. Like a secret link, the
+// key it needs lives in the fragment and never reaches the server.
+func (c *Config) RequestURL(id string) string {
+	return strings.TrimRight(c.PublicURL, "/") + "/r/" + id
+}
+
 // SQLitePath returns the on-disk path of the SQLite database, if that is the driver.
 func (c *Config) SQLitePath() string {
 	if c.Database.Driver != "sqlite" {
@@ -507,6 +537,9 @@ func (c *Config) SQLitePath() string {
 
 // Redacted returns a copy with every secret replaced, for peek config show.
 func (c Config) Redacted() Config {
+	if c.Storage.S3SecretKey != "" {
+		c.Storage.S3SecretKey = "***"
+	}
 	if c.Mail.Password != "" {
 		c.Mail.Password = "***"
 	}

@@ -166,6 +166,14 @@ func (s *Server) handlePolicy(w http.ResponseWriter, _ *http.Request) {
 		"max_file_bytes":          p.MaxFileBytes,
 		"max_secret_bytes":        p.MaxSecretBytes,
 		"max_recipients":          p.MaxRecipients,
+		"max_files_per_secret":    p.MaxFilesPerSecret,
+		"max_deposits":            p.MaxDeposits,
+		"upload_window_seconds":   int(p.UploadWindow.Std().Seconds()),
+		"download_window_seconds": int(p.DownloadWindow.Std().Seconds()),
+		// The browser must chunk exactly as the server sizes uploads, or a
+		// file at the limit would be refused a few kilobytes short.
+		"file_chunk_size":         pcrypto.DefaultChunkSize,
+		"storage":                 s.blobs != nil,
 		"max_passphrase_attempts": s.cfg.Security.MaxPassphraseTries,
 		"kdf": map[string]any{
 			"memory_kib":  pcrypto.DefaultMemoryKiB,
@@ -179,27 +187,148 @@ func (s *Server) handlePolicy(w http.ResponseWriter, _ *http.Request) {
 // Secrets
 // ---------------------------------------------------------------------------
 
-type createRequest struct {
-	ID               string `json:"id"`
-	Kind             string `json:"kind"`
-	Ciphertext       string `json:"ciphertext"`
-	ReadTokenHash    string `json:"read_token_hash"`
-	ReceiptTokenHash string `json:"receipt_token_hash"`
-	KDF              struct {
-		Salt        string `json:"salt"`
-		MemoryKiB   uint32 `json:"memory_kib"`
-		Iterations  uint32 `json:"iterations"`
-		Parallelism uint8  `json:"parallelism"`
-	} `json:"kdf"`
+// kdfBody is the key-derivation block, identical everywhere it appears.
+type kdfBody struct {
+	Salt        string `json:"salt"`
+	MemoryKiB   uint32 `json:"memory_kib"`
+	Iterations  uint32 `json:"iterations"`
+	Parallelism uint8  `json:"parallelism"`
+}
+
+// fileRefBody names a blob already uploaded, with the token proving the caller
+// is the one who uploaded it.
+type fileRefBody struct {
+	ID    string `json:"id"`
+	Token string `json:"token"`
+}
+
+// recipientBody is one link: its own key, expiry, views, passphrase and label.
+type recipientBody struct {
+	ID               string  `json:"id"`
+	Kind             string  `json:"kind"`
+	Ciphertext       string  `json:"ciphertext"`
+	ReadTokenHash    string  `json:"read_token_hash"`
+	ReceiptTokenHash string  `json:"receipt_token_hash"`
+	KDF              kdfBody `json:"kdf"`
+
 	HasPassphrase        bool   `json:"has_passphrase"`
 	TTLSeconds           int    `json:"ttl_seconds"`
 	Views                int    `json:"views"`
 	RetrievalStep        *bool  `json:"retrieval_step"`
 	DeletableByRecipient bool   `json:"deletable_by_recipient"`
 	Label                string `json:"label_enc"`
-	// NotifyEmail asks to be told when the secret is read. The address is
+	// NotifyEmail asks to be told when this link is read. The address is
 	// encrypted with the server master key before it is stored.
 	NotifyEmail string `json:"notify_email"`
+}
+
+// createRequest is one secret, or a bundle of links sharing the same files.
+//
+// The single-recipient form is the embedded recipientBody, so the simple case
+// stays a flat JSON object. A multi-recipient creation fills "recipients"
+// instead: N links with their own settings, one upload of the attachments.
+type createRequest struct {
+	recipientBody
+	Recipients []recipientBody `json:"recipients"`
+	Files      []fileRefBody   `json:"files"`
+}
+
+// fieldError says which field of the request was wrong, without the decoding
+// helpers having to carry an http.ResponseWriter around.
+type fieldError struct {
+	field   string
+	message string
+}
+
+func badField(field string, err error) *fieldError {
+	return &fieldError{field: field, message: err.Error()}
+}
+
+// recipientInput turns one recipient block into a service input, decoding
+// every base64 field and sealing the notification address.
+func (s *Server) recipientInput(b recipientBody, creatorID, orgID string) (secrets.CreateInput, *fieldError) {
+	ciphertext, err := decodeB64Field(b.Ciphertext, "ciphertext")
+	if err != nil {
+		return secrets.CreateInput{}, badField("ciphertext", err)
+	}
+	readHash, err := decodeB64Field(b.ReadTokenHash, "read_token_hash")
+	if err != nil {
+		return secrets.CreateInput{}, badField("read_token_hash", err)
+	}
+	receiptHash, err := decodeB64Field(b.ReceiptTokenHash, "receipt_token_hash")
+	if err != nil {
+		return secrets.CreateInput{}, badField("receipt_token_hash", err)
+	}
+	salt, err := decodeB64Field(b.KDF.Salt, "kdf.salt")
+	if err != nil {
+		return secrets.CreateInput{}, badField("kdf.salt", err)
+	}
+	var label []byte
+	if b.Label != "" {
+		if label, err = decodeB64Field(b.Label, "label_enc"); err != nil {
+			return secrets.CreateInput{}, badField("label_enc", err)
+		}
+	}
+
+	retrieval := true
+	if b.RetrievalStep != nil {
+		retrieval = *b.RetrievalStep
+	}
+
+	var notifyEnc []byte
+	if b.NotifyEmail != "" {
+		if s.cipher == nil {
+			return secrets.CreateInput{}, &fieldError{field: "notify_email",
+				message: "This instance has no master key, so a notification address cannot be stored."}
+		}
+		sealed, err := s.cipher.SealString(pcrypto.PurposeEmail, strings.TrimSpace(b.NotifyEmail))
+		if err != nil {
+			return secrets.CreateInput{}, &fieldError{field: "notify_email", message: "Internal error."}
+		}
+		notifyEnc = sealed
+	}
+
+	return secrets.CreateInput{
+		CreatorID:        creatorID,
+		OrgID:            orgID,
+		ID:               b.ID,
+		Kind:             b.Kind,
+		Ciphertext:       ciphertext,
+		ReadTokenHash:    readHash,
+		ReceiptTokenHash: receiptHash,
+		KDF: pcrypto.KDFParams{
+			Salt:        salt,
+			MemoryKiB:   b.KDF.MemoryKiB,
+			Iterations:  b.KDF.Iterations,
+			Parallelism: b.KDF.Parallelism,
+		},
+		HasPassphrase:        b.HasPassphrase,
+		TTL:                  time.Duration(b.TTLSeconds) * time.Second,
+		Views:                b.Views,
+		RetrievalStep:        retrieval,
+		DeletableByRecipient: b.DeletableByRecipient,
+		LabelEnc:             label,
+		NotifyEmailEnc:       notifyEnc,
+		NotifyOnView:         notifyEnc != nil,
+	}, nil
+}
+
+func decodeFileRefs(refs []fileRefBody) ([]secrets.FileClaim, *fieldError) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	out := make([]secrets.FileClaim, 0, len(refs))
+	for _, f := range refs {
+		token, err := decodeB64Field(f.Token, "files.token")
+		if err != nil {
+			return nil, badField("files", err)
+		}
+		if !pcrypto.ValidID(f.ID) || len(token) != 32 {
+			return nil, &fieldError{field: "files", message: "malformed attachment reference"}
+		}
+		out = append(out, secrets.FileClaim{ID: f.ID, Token: token})
+	}
+	return out, nil
 }
 
 func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -227,78 +356,35 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ciphertext, err := decodeB64Field(req.Ciphertext, "ciphertext")
-	if err != nil {
-		writeFieldError(w, http.StatusBadRequest, "bad_request", err.Error(), "ciphertext")
+	blocks := req.Recipients
+	if len(blocks) == 0 {
+		blocks = []recipientBody{req.recipientBody}
+	} else if req.ID != "" {
+		// Both forms at once would leave it ambiguous which settings apply.
+		writeFieldError(w, http.StatusBadRequest, "bad_request",
+			"Send either one secret or a recipients list, not both.", "recipients")
 		return
-	}
-	readHash, err := decodeB64Field(req.ReadTokenHash, "read_token_hash")
-	if err != nil {
-		writeFieldError(w, http.StatusBadRequest, "bad_request", err.Error(), "read_token_hash")
-		return
-	}
-	receiptHash, err := decodeB64Field(req.ReceiptTokenHash, "receipt_token_hash")
-	if err != nil {
-		writeFieldError(w, http.StatusBadRequest, "bad_request", err.Error(), "receipt_token_hash")
-		return
-	}
-	salt, err := decodeB64Field(req.KDF.Salt, "kdf.salt")
-	if err != nil {
-		writeFieldError(w, http.StatusBadRequest, "bad_request", err.Error(), "kdf.salt")
-		return
-	}
-	var label []byte
-	if req.Label != "" {
-		if label, err = decodeB64Field(req.Label, "label_enc"); err != nil {
-			writeFieldError(w, http.StatusBadRequest, "bad_request", err.Error(), "label_enc")
-			return
-		}
 	}
 
-	retrieval := true
-	if req.RetrievalStep != nil {
-		retrieval = *req.RetrievalStep
+	files, ferr := decodeFileRefs(req.Files)
+	if ferr != nil {
+		writeFieldError(w, http.StatusBadRequest, "bad_request", ferr.message, ferr.field)
+		return
 	}
 
-	var notifyEnc []byte
-	if req.NotifyEmail != "" {
-		if s.cipher == nil {
-			writeFieldError(w, http.StatusServiceUnavailable, "no_master_key",
-				"This instance has no master key, so a notification address cannot be stored.", "notify_email")
+	inputs := make([]secrets.CreateInput, 0, len(blocks))
+	for _, b := range blocks {
+		in, ferr := s.recipientInput(b, creatorID, orgID)
+		if ferr != nil {
+			writeFieldError(w, http.StatusBadRequest, "bad_request", ferr.message, ferr.field)
 			return
 		}
-		sealed, err := s.cipher.SealString(pcrypto.PurposeEmail, strings.TrimSpace(req.NotifyEmail))
-		if err != nil {
-			s.log.Error("seal notification address", "error", err.Error())
-			writeError(w, r, http.StatusInternalServerError, "internal_error", "Internal error.")
-			return
-		}
-		notifyEnc = sealed
+		inputs = append(inputs, in)
 	}
+	// Attachments belong to the bundle, so they ride on the first link.
+	inputs[0].Files = files
 
-	created, err := s.secrets.Create(r.Context(), secrets.CreateInput{
-		CreatorID:        creatorID,
-		OrgID:            orgID,
-		ID:               req.ID,
-		Kind:             req.Kind,
-		Ciphertext:       ciphertext,
-		ReadTokenHash:    readHash,
-		ReceiptTokenHash: receiptHash,
-		KDF: pcrypto.KDFParams{
-			Salt:        salt,
-			MemoryKiB:   req.KDF.MemoryKiB,
-			Iterations:  req.KDF.Iterations,
-			Parallelism: req.KDF.Parallelism,
-		},
-		HasPassphrase:        req.HasPassphrase,
-		TTL:                  time.Duration(req.TTLSeconds) * time.Second,
-		Views:                req.Views,
-		RetrievalStep:        retrieval,
-		DeletableByRecipient: req.DeletableByRecipient,
-		LabelEnc:             label,
-		NotifyEmailEnc:       notifyEnc,
-		NotifyOnView:         notifyEnc != nil,
-	})
+	created, err := s.secrets.CreateMany(r.Context(), inputs)
 	switch {
 	case err == nil:
 	case errors.Is(err, secrets.ErrConflict):
@@ -318,18 +404,31 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.audit(r, store.AuditEvent{
-		SecretID: created.ID,
-		UserID:   creatorID,
-		Event:    store.EventCreated,
-		Detail: map[string]string{
-			"kind":           created.Kind,
-			"views_max":      strconv.Itoa(created.ViewsMax),
-			"has_passphrase": strconv.FormatBool(req.HasPassphrase),
-			"size_bytes":     strconv.Itoa(len(ciphertext)),
-		},
+	for i, c := range created {
+		s.audit(r, store.AuditEvent{
+			OrgID:    orgID,
+			SecretID: c.ID,
+			UserID:   creatorID,
+			Event:    store.EventCreated,
+			Detail: map[string]string{
+				"kind":           c.Kind,
+				"views_max":      strconv.Itoa(c.ViewsMax),
+				"has_passphrase": strconv.FormatBool(blocks[i].HasPassphrase),
+				"size_bytes":     strconv.Itoa(len(inputs[i].Ciphertext)),
+				"recipients":     strconv.Itoa(len(created)),
+				"files":          strconv.Itoa(len(files)),
+			},
+		})
+	}
+
+	if len(req.Recipients) == 0 {
+		writeJSON(w, http.StatusCreated, created[0])
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"bundle_id": created[0].BundleID,
+		"secrets":   created,
 	})
-	writeJSON(w, http.StatusCreated, created)
 }
 
 func (s *Server) handleSecretMeta(w http.ResponseWriter, r *http.Request) {
@@ -422,13 +521,27 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 			"views_remaining": strconv.Itoa(rev.ViewsRemaining),
 			"destroyed":       strconv.FormatBool(rev.Destroyed),
 		}})
-	writeJSON(w, http.StatusOK, map[string]any{
+
+	body := map[string]any{
 		"kind":            rev.Kind,
 		"ciphertext":      pcrypto.B64.EncodeToString(rev.Ciphertext),
 		"views_remaining": rev.ViewsRemaining,
 		"destroyed":       rev.Destroyed,
 		"size_bytes":      rev.SizeBytes,
-	})
+	}
+
+	// A one-view secret is already deleted by the time we get here, so the
+	// attachments would be unreachable the instant they became readable. The
+	// grant is what keeps them downloadable for a bounded while — and it is
+	// issued only to someone who just proved they hold the read token.
+	if grant, until, err := s.secrets.GrantDownloads(r.Context(), store.DefaultOrgID, rev.BundleID, id); err != nil {
+		s.log.Error("grant file downloads", "error", err.Error())
+	} else if grant != "" {
+		body["download_token"] = grant
+		body["download_expires_at"] = until
+	}
+
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) handleRecipientDelete(w http.ResponseWriter, r *http.Request) {

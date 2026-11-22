@@ -17,6 +17,7 @@ import (
 	"github.com/ShepaDesko/peek/internal/config"
 	pcrypto "github.com/ShepaDesko/peek/internal/crypto"
 	"github.com/ShepaDesko/peek/internal/server"
+	"github.com/ShepaDesko/peek/internal/storage"
 	"github.com/ShepaDesko/peek/internal/store"
 )
 
@@ -26,6 +27,7 @@ type harness struct {
 	internal http.Handler
 	public   http.Handler
 	cfg      *config.Config
+	blobs    *storage.Local
 }
 
 func newHarness(t *testing.T, tweak func(*config.Config)) *harness {
@@ -57,12 +59,21 @@ func newHarness(t *testing.T, tweak func(*config.Config)) *harness {
 		t.Fatal(err)
 	}
 
+	// Every harness gets real file storage in a temporary directory: the file
+	// paths are part of the behaviour under test, and a nil backend would
+	// make them silently refuse instead.
+	blobs, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	srv, err := server.New(server.Options{
 		Config:  &cfg,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store:   st,
 		Version: "test",
 		Cipher:  cipher,
+		Blobs:   blobs,
 	})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
@@ -72,6 +83,7 @@ func newHarness(t *testing.T, tweak func(*config.Config)) *harness {
 		internal: srv.Handler("internal"),
 		public:   srv.Handler("public"),
 		cfg:      &cfg,
+		blobs:    blobs,
 	}
 }
 

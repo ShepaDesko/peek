@@ -234,3 +234,21 @@ func htmlEscape(s string) string {
 func contextWithTimeout(r *http.Request, d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(r.Context(), d)
 }
+
+// mailRequestDeposited tells a requester that someone answered. It carries no
+// link and no content: the answer is readable only with the private key in the
+// requester's own receipt link, which Peek does not have.
+func (s *Server) mailRequestDeposited(ctx context.Context, to, requestID string) error {
+	theme := s.mailTheme(ctx)
+	text := fmt.Sprintf("Quelqu'un vient de déposer un secret sur votre demande %s (%s).\n\n"+
+		"Ouvrez votre lien de suivi pour le lire : lui seul contient la clé.\n%s",
+		requestID, theme.ServiceName, signature(theme))
+
+	return s.mailer.Send(ctx, mail.Message{
+		To:      []string{to},
+		Subject: fmt.Sprintf("Un secret a été déposé sur votre demande — %s", theme.ServiceName),
+		Text:    text,
+		HTML: s.brandedHTML(theme, "Un secret a été déposé sur votre demande.",
+			"Ouvrez votre lien de suivi pour le lire : lui seul contient la clé.", "", "", ""),
+	})
+}

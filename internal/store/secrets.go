@@ -43,7 +43,15 @@ type NewSecret struct {
 	MaxFailedAttempts    int
 	LabelEnc             []byte
 	GroupID              string
-	ExpiresAt            time.Time
+	// BundleID groups the links that share the same encrypted files. It
+	// defaults to the secret's own id, so a single-recipient secret is a
+	// bundle of one and nothing special-cases it.
+	BundleID string
+	// RequestID and WrappedKey are set when this secret is a deposit against a
+	// secret request: the content key, sealed to the requester's public key.
+	RequestID  string
+	WrappedKey []byte
+	ExpiresAt  time.Time
 	// NotifyEmailEnc is the sender's address, encrypted with the server master
 	// key so that a notification can be sent without storing it in the clear.
 	NotifyEmailEnc []byte
@@ -84,25 +92,73 @@ type Receipt struct {
 // Create inserts a secret. A duplicate identifier is a conflict, never an
 // overwrite: identifiers are generated client side and must stay unique.
 func (s *Store) Create(ctx context.Context, n NewSecret) error {
+	return s.CreateBundle(ctx, []NewSecret{n}, nil)
+}
+
+// CreateBundle inserts one or more secrets that share a set of uploaded files,
+// in a single transaction.
+//
+// Multi-recipient links are exactly this: N rows with their own keys, views,
+// expiry and audit trail, pointing at one bundle of blobs that was uploaded
+// once. Either every row and every file claim lands, or nothing does — a
+// half-created bundle would leave a recipient holding a link to a secret whose
+// attachments were never attached.
+func (s *Store) CreateBundle(ctx context.Context, secrets []NewSecret, claims []FileClaim) error {
+	if len(secrets) == 0 {
+		return errors.New("store: no secret to create")
+	}
+	bundleID := secrets[0].BundleID
+	if bundleID == "" {
+		bundleID = secrets[0].ID
+	}
+	orgID := secrets[0].OrgID
+
+	// Files outlive the shortest link: the bundle is reachable as long as any
+	// recipient can still read it.
+	latest := secrets[0].ExpiresAt
+	for _, n := range secrets {
+		if n.ExpiresAt.After(latest) {
+			latest = n.ExpiresAt
+		}
+	}
+
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		for _, n := range secrets {
+			n.BundleID = bundleID
+			if err := insertSecretTx(ctx, s, tx, n); err != nil {
+				return err
+			}
+		}
+		if len(claims) == 0 {
+			return nil
+		}
+		_, err := claimFilesTx(ctx, s, tx, claims, orgID, bundleID, latest, s.Now())
+		return err
+	})
+}
+
+func insertSecretTx(ctx context.Context, s *Store, tx *sql.Tx, n NewSecret) error {
 	if !pcrypto.ValidID(n.ID) {
 		return errors.New("store: malformed secret id")
 	}
 	now := unix(s.Now())
-	_, err := s.exec(ctx, `INSERT INTO secrets (
+	_, err := tx.ExecContext(ctx, s.rebind(`INSERT INTO secrets (
 		id, org_id, creator_id, kind, ciphertext, storage_ref, size_bytes,
 		read_token_hash, receipt_token_hash,
 		kdf_salt, kdf_memory_kib, kdf_iterations, kdf_parallelism,
 		has_passphrase, retrieval_step, deletable_by_recipient,
 		views_max, views_remaining, failed_attempts, max_failed_attempts,
-		label_enc, group_id, created_at, expires_at, last_viewed_at,
+		label_enc, group_id, bundle_id, request_id, wrapped_key,
+		created_at, expires_at, last_viewed_at,
 		notify_email_enc, notify_on_view
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`),
 		n.ID, n.OrgID, nullString(n.CreatorID), n.Kind, n.Ciphertext, nullString(n.StorageRef), n.SizeBytes,
 		n.ReadTokenHash, n.ReceiptTokenHash,
 		n.KDF.Salt, n.KDF.MemoryKiB, n.KDF.Iterations, n.KDF.Parallelism,
 		boolToInt(n.HasPassphrase), boolToInt(n.RetrievalStep), boolToInt(n.DeletableByRecipient),
 		n.ViewsMax, n.ViewsMax, n.MaxFailedAttempts,
-		n.LabelEnc, nullString(n.GroupID), now, unix(n.ExpiresAt),
+		n.LabelEnc, nullString(n.GroupID), nullString(n.BundleID), nullString(n.RequestID), n.WrappedKey,
+		now, unix(n.ExpiresAt),
 		n.NotifyEmailEnc, boolToInt(n.NotifyOnView))
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -163,6 +219,10 @@ type Reveal struct {
 	SizeBytes      int64
 	ViewsRemaining int
 	Destroyed      bool
+	// BundleID is where the attached files live. The caller turns it into a
+	// download grant, because the secret row may be gone by the time the
+	// recipient asks for the first blob.
+	BundleID string
 	// NotifyEmailEnc is set when the sender asked to be told about reads.
 	NotifyEmailEnc []byte
 }
@@ -200,16 +260,17 @@ func (s *Store) Consume(ctx context.Context, id string, readTokenHash []byte, no
 			creator    sql.NullString
 			createdAt  int64
 			groupID    sql.NullString
+			bundleID   sql.NullString
 			notifyEnc  []byte
 			notifyOn   int
 		)
 		err := tx.QueryRowContext(ctx, s.rebind(`SELECT read_token_hash, ciphertext, storage_ref, kind,
 			size_bytes, views_remaining, views_max, expires_at, org_id, creator_id, created_at, group_id,
-			notify_email_enc, notify_on_view
+			bundle_id, notify_email_enc, notify_on_view
 			FROM secrets WHERE id = ?`), id).Scan(
 			&storedHash, &ciphertext, &storageRef, &kind,
 			&size, &remaining, &viewsMax, &expires, &orgID, &creator, &createdAt, &groupID,
-			&notifyEnc, &notifyOn)
+			&bundleID, &notifyEnc, &notifyOn)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -246,6 +307,7 @@ func (s *Store) Consume(ctx context.Context, id string, readTokenHash []byte, no
 			StorageRef:     storageRef.String,
 			SizeBytes:      size,
 			ViewsRemaining: remaining - 1,
+			BundleID:       bundleID.String,
 		}
 		if notifyOn == 1 {
 			out.NotifyEmailEnc = notifyEnc

@@ -14,6 +14,7 @@ import (
 	"github.com/ShepaDesko/peek/internal/jobs"
 	"github.com/ShepaDesko/peek/internal/mail"
 	"github.com/ShepaDesko/peek/internal/server"
+	"github.com/ShepaDesko/peek/internal/storage"
 	"github.com/ShepaDesko/peek/internal/store"
 )
 
@@ -71,6 +72,15 @@ func runServe(ctx context.Context, args []string) error {
 	siem := audit.New(cfg.Audit.Syslog, log)
 	defer func() { _ = siem.Close() }()
 
+	// File storage. A backend that cannot be opened is fatal rather than
+	// silently absent: an instance that accepts file secrets and drops them
+	// would be worse than one that refuses to start.
+	blobs, err := storage.Open(cfg.Storage)
+	if err != nil {
+		return fmt.Errorf("storage: %w", err)
+	}
+	log.Info("file storage ready", "backend", blobs.Describe())
+
 	srv, err := server.New(server.Options{
 		Config:  &cfg,
 		Logger:  log,
@@ -79,12 +89,13 @@ func runServe(ctx context.Context, args []string) error {
 		Cipher:  cipher,
 		Mailer:  mailer,
 		SIEM:    siem,
+		Blobs:   blobs,
 	})
 	if err != nil {
 		return err
 	}
 
-	runner := jobs.New(&cfg, log, st, srv.Secrets())
+	runner := jobs.New(&cfg, log, st, srv.Secrets(), srv.Requests())
 
 	var wg sync.WaitGroup
 	wg.Add(1)

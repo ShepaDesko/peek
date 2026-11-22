@@ -15,16 +15,18 @@ import (
 	"time"
 
 	"github.com/ShepaDesko/peek/internal/config"
+	"github.com/ShepaDesko/peek/internal/requests"
 	"github.com/ShepaDesko/peek/internal/secrets"
 	"github.com/ShepaDesko/peek/internal/store"
 )
 
 // Runner owns the background tickers.
 type Runner struct {
-	cfg     *config.Config
-	log     *slog.Logger
-	store   *store.Store
-	secrets *secrets.Service
+	cfg      *config.Config
+	log      *slog.Logger
+	store    *store.Store
+	secrets  *secrets.Service
+	requests *requests.Service
 
 	// PurgeInterval defaults to one minute: an expired ciphertext should not
 	// outlive its expiry by more than that.
@@ -35,8 +37,9 @@ type Runner struct {
 	holder string
 }
 
-// New builds a Runner.
-func New(cfg *config.Config, log *slog.Logger, st *store.Store, svc *secrets.Service) *Runner {
+// New builds a Runner. The request service may be nil on a node that only
+// serves secrets; the request purge is then skipped rather than crashing.
+func New(cfg *config.Config, log *slog.Logger, st *store.Store, svc *secrets.Service, reqs *requests.Service) *Runner {
 	host, err := os.Hostname()
 	if err != nil || host == "" {
 		host = "node"
@@ -46,6 +49,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, svc *secrets.Ser
 		log:           log,
 		store:         st,
 		secrets:       svc,
+		requests:      reqs,
 		PurgeInterval: time.Minute,
 		AuditInterval: time.Hour,
 		holder:        host + "/" + strconv.Itoa(os.Getpid()),
@@ -106,6 +110,40 @@ func (r *Runner) purgeOnce(ctx context.Context) {
 				"count": strconv.Itoa(n),
 			},
 		})
+	}
+
+	r.purgeFiles(ctx)
+	r.purgeRequests(ctx)
+}
+
+// purgeFiles removes blobs nothing references any more, then the storage
+// objects no row points at. The second half is what catches a crash between
+// writing the blob and recording it: the object would otherwise sit there for
+// ever, taking space and telling an attacker how many secrets exist.
+func (r *Runner) purgeFiles(ctx context.Context) {
+	rows, orphans, err := r.secrets.PurgeFiles(ctx)
+	if err != nil {
+		r.log.Error("purge files", "error", err.Error())
+	}
+	if rows > 0 || orphans > 0 {
+		r.log.Info("purged files", "rows", rows, "orphans", orphans)
+	}
+}
+
+// purgeRequests removes secret requests that expired or filled up, once every
+// deposit they received is gone. Closing the door never takes an unread answer
+// with it.
+func (r *Runner) purgeRequests(ctx context.Context) {
+	if r.requests == nil {
+		return
+	}
+	n, err := r.requests.Purge(ctx)
+	if err != nil {
+		r.log.Error("purge secret requests", "error", err.Error())
+		return
+	}
+	if n > 0 {
+		r.log.Info("purged secret requests", "count", n)
 	}
 }
 

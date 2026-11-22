@@ -202,12 +202,20 @@ func (s *Server) logIP(ip string) string {
 func limitBody(maxBytes int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if maxBytes > 0 && r.Body != nil {
+			// File uploads are the one body that is legitimately large. They
+			// carry their own limit, taken from policy.max_file_bytes, so the
+			// JSON-sized ceiling here would only make the two settings
+			// contradict each other.
+			if maxBytes > 0 && r.Body != nil && !isUploadPath(r.URL.Path) {
 				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func isUploadPath(p string) bool {
+	return p == "/api/v1/files" || p == "/api/v1/files/"
 }
 
 // rateLimit applies a token bucket keyed on the real client IP.
