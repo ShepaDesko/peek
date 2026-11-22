@@ -548,7 +548,31 @@ export const auth = {
     request<void>("PATCH", `/api/v1/auth/passkeys/${encodeURIComponent(id)}`, { name }),
   deletePasskey: (id: string) =>
     request<void>("DELETE", `/api/v1/auth/passkeys/${encodeURIComponent(id)}`),
+
+  // API tokens. The clear text comes back from createToken and from nowhere
+  // else, ever: the server stores only its digest.
+  tokens: () =>
+    request<{ tokens: ApiTokenInfo[]; scopes: string[] }>("GET", "/api/v1/auth/tokens"),
+  createToken: (name: string, scopes: string[], ttl_seconds: number) =>
+    request<ApiTokenInfo & { token: string }>("POST", "/api/v1/auth/tokens", {
+      name,
+      scopes,
+      ttl_seconds,
+    }),
+  revokeToken: (id: string) =>
+    request<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`),
 };
+
+export interface ApiTokenInfo {
+  id: string;
+  name: string;
+  scopes: string[];
+  created_at: string;
+  expires_at?: string;
+  last_used_at?: string;
+  revoked: boolean;
+  revoked_at?: string;
+}
 
 export const admin = {
   users: () => request<{ users: User[] }>("GET", "/api/v1/users"),

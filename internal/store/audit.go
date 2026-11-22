@@ -29,13 +29,18 @@ const (
 	EventRequestDeposited = "request.deposited"
 	EventRequestClosed    = "request.closed"
 	EventRequestNotFound  = "request.not_found"
-	EventRateLimited      = "request.rate_limited"
-	EventAdminBlocked     = "request.admin_blocked"
-	EventConfigChanged    = "admin.config_changed"
-	EventBrandingChanged  = "admin.branding_changed"
-	EventBrandingReset    = "admin.branding_reset"
-	EventTestEmailSent    = "admin.test_email_sent"
-	EventUpdateApplied    = "admin.update_applied"
+
+	// API tokens.
+	EventTokenCreated    = "token.created"
+	EventTokenRevoked    = "token.revoked"
+	EventTokenBlocked    = "token.scope_refused"
+	EventRateLimited     = "request.rate_limited"
+	EventAdminBlocked    = "request.admin_blocked"
+	EventConfigChanged   = "admin.config_changed"
+	EventBrandingChanged = "admin.branding_changed"
+	EventBrandingReset   = "admin.branding_reset"
+	EventTestEmailSent   = "admin.test_email_sent"
+	EventUpdateApplied   = "admin.update_applied"
 
 	// Accounts and sessions.
 	EventLogin                  = "auth.login"

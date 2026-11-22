@@ -60,6 +60,7 @@ func run() int {
 		{"key", "rotate the server master key", runKey},
 		{"branding", "export or import the brand", runBranding},
 		{"admin", "manage administrator accounts", runAdmin},
+		{"token", "issue, list and revoke API tokens", runToken},
 		{"version", "print the version", runVersion},
 	}
 

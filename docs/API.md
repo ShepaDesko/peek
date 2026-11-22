@@ -59,6 +59,69 @@ is what restricts the admin surface.
 | 413 | `too_large` | File beyond `policy.max_file_bytes` |
 | 410 | `closed` | A secret request has had all the answers it accepts |
 | 503 | `no_storage` | No file storage configured on this instance |
+| 401 | `bad_api_token` | Unknown, revoked or expired API token |
+| 403 | `missing_scope` | The token does not carry the scope this call needs |
+| 403 | `session_required` | The call needs a session, not a token |
+
+## Authenticating as a script
+
+Two ways in. The interface uses a session cookie plus a double-submit CSRF
+header; a script uses a **bearer token**:
+
+```http
+Authorization: Bearer peek_<id>.<secret>
+```
+
+The `peek_` prefix is there so secret scanners recognise one on sight. A token
+sends no cookie, so no CSRF header is needed or wanted.
+
+A token belongs to a user and **can never exceed that user's role** — it
+narrows it. On top of the role it carries scopes:
+
+| Scope | What it opens |
+|---|---|
+| `secrets:write` | `POST /secrets`, `POST /files`, `POST /requests` |
+| `secrets:manage` | receipts, `burn`, `email`, request receipts, closing a request |
+| `audit:read` | `GET /audit`, `GET /audit/export` |
+| `instance:read` | `GET /instance` |
+
+Everything else is closed to a token, whatever its scopes: changing a password,
+listing sessions, managing users, editing the brand — and creating another
+token. One leaked string must not become a key factory.
+
+| Status | Code | Meaning |
+|---|---|---|
+| 401 | `bad_api_token` | Unknown, revoked or expired — one answer for all three |
+| 403 | `missing_scope` | Valid token, but not for this call |
+| 403 | `session_required` | This call needs a signed-in person |
+
+### Managing tokens
+
+From the account page, or from the shell on the server:
+
+```bash
+sudo peek token create --email ops@acme.com --name "CI" --scopes secrets:write --ttl 90d
+sudo peek token list --all
+sudo peek token revoke --id <id>
+```
+
+Over HTTP (session only, never with a token):
+
+```http
+GET    /api/v1/auth/tokens
+POST   /api/v1/auth/tokens      { "name": "CI", "scopes": ["secrets:write"], "ttl_seconds": 7776000 }
+DELETE /api/v1/auth/tokens/{id}
+```
+
+The creation response is the **only** place the clear text ever appears; the
+database holds its SHA-256. Revoking is a timestamp, not a deletion, so an
+audit entry that names a token can still be read. An administrator may revoke
+anyone's token — a colleague leaves, their scripts stop.
+
+```bash
+TOKEN=peek_...
+curl -sS -H "Authorization: Bearer $TOKEN" https://secrets.acme.com/api/v1/policy
+```
 
 ## Health
 
@@ -427,6 +490,7 @@ Events: `secret.created`, `secret.page_viewed`, `secret.revealed`,
 `secret.purged`, `secret.not_found`, `secret.file_uploaded`,
 `secret.file_downloaded`, `request.created`, `request.opened`,
 `request.deposited`, `request.closed`, `request.not_found`,
+`token.created`, `token.revoked`, `token.scope_refused`,
 `request.rate_limited`, `request.admin_blocked`. Secret content never appears,
 and a test asserts it.
 

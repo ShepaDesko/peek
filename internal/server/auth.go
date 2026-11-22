@@ -86,25 +86,83 @@ func sessionToken(r *http.Request) string {
 	return c.Value
 }
 
-// withPrincipal attaches the caller when a valid session cookie is present.
+// bearerToken returns the API token from the Authorization header.
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if len(h) <= len(prefix) || !strings.EqualFold(h[:len(prefix)], prefix) {
+		return ""
+	}
+	return strings.TrimSpace(h[len(prefix):])
+}
+
+// withPrincipal attaches the caller, from a session cookie or an API token.
 // It never rejects: routes decide for themselves whether they need one.
+//
+// The cookie wins when both are present. A browser that is signed in and also
+// sends a token is an odd thing, and picking the cookie means the interface
+// never behaves differently because something left a header behind.
 func (s *Server) withPrincipal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := sessionToken(r)
-		if token == "" || s.accounts == nil {
+		if s.accounts == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
-		p, err := s.accounts.Authenticate(r.Context(), token)
-		if err != nil {
+		if token := sessionToken(r); token != "" {
+			p, err := s.accounts.Authenticate(r.Context(), token)
+			if err == nil {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
+				return
+			}
 			if errors.Is(err, accounts.ErrAccountDisabled) {
 				s.clearSessionCookies(w, r)
 			}
 			next.ServeHTTP(w, r)
 			return
 		}
+		raw := bearerToken(r)
+		if raw == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		p, err := s.accounts.AuthenticateToken(r.Context(), raw)
+		if err != nil {
+			// A bad token is told so, unlike a bad cookie: a script has no
+			// sign-in page to be redirected to, and silently acting as an
+			// anonymous caller would produce a confusing 401 further down.
+			writeError(w, r, http.StatusUnauthorized, "bad_api_token",
+				"This API token is unknown, revoked or expired.")
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 	})
+}
+
+// requireScope refuses a token caller that does not carry one of these scopes.
+// A session caller passes: a signed-in person is bounded by their role, which
+// requireRole checks separately.
+func (s *Server) requireScope(scopes ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p := principalOf(r.Context())
+			if p == nil || p.HasScope(scopes...) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			s.audit(r, store.AuditEvent{
+				OrgID:  p.User.OrgID,
+				UserID: p.User.ID,
+				Event:  store.EventTokenBlocked,
+				Detail: map[string]string{
+					"token":    p.Token.Name,
+					"required": strings.Join(scopes, "|"),
+					"scopes":   strings.Join(p.Token.Scopes, " "),
+				},
+			})
+			writeError(w, r, http.StatusForbidden, "missing_scope",
+				"This API token does not carry the scope this call needs: "+strings.Join(scopes, " or ")+".")
+		})
+	}
 }
 
 // requireAuth refuses anonymous callers.
@@ -159,8 +217,10 @@ func (s *Server) requireCSRF(next http.Handler) http.Handler {
 			return
 		}
 		p := principalOf(r.Context())
-		if p == nil {
-			// No session: there is no cookie to ride on.
+		if p == nil || p.IsToken() {
+			// No session: there is no cookie to ride on. A bearer token is the
+			// same case — an attacker's page cannot make the browser attach a
+			// header it does not know.
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -596,3 +656,21 @@ func boolString(v bool) string {
 func isWeakPassword(err error) bool { return errors.Is(err, auth.ErrWeakPassword) }
 
 func isBadCode(err error) bool { return errors.Is(err, auth.ErrBadCode) }
+
+// requireSession refuses a bearer-token caller.
+//
+// It guards everything that changes credentials, users, sessions or the brand.
+// A token is for scripts that send and manage secrets; a token that could
+// change a password, mint another token or disable an account would turn one
+// leaked string into a permanent hold on the instance.
+func (s *Server) requireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := principalOf(r.Context())
+		if p != nil && p.IsToken() {
+			writeError(w, r, http.StatusForbidden, "session_required",
+				"This call needs a signed-in session, not an API token.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}

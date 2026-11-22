@@ -232,6 +232,7 @@ func (s *Server) Handler(listener string) http.Handler {
 			priv.Group(func(create chi.Router) {
 				create.Use(s.restrictCIDR(s.createCIDRs, "create"))
 				create.Use(s.rateLimit(s.limitCreate, "create"))
+				create.Use(s.requireScope(store.ScopeSecretsWrite))
 				create.Post("/secrets", s.handleCreate)
 				create.Post("/requests", s.handleCreateRequest)
 				// Uploading sits behind the creation gate, not the read one:
@@ -241,6 +242,7 @@ func (s *Server) Handler(listener string) http.Handler {
 			})
 			priv.Group(func(sender chi.Router) {
 				sender.Use(s.rateLimit(s.limitAPI, "api"))
+				sender.Use(s.requireScope(store.ScopeSecretsManage))
 				sender.Get("/secrets/{id}/receipt", s.handleReceipt)
 				sender.Post("/secrets/{id}/burn", s.handleBurn)
 				sender.Post("/secrets/{id}/email", s.handleSendLink)
@@ -253,6 +255,15 @@ func (s *Server) Handler(listener string) http.Handler {
 			priv.Group(func(account chi.Router) {
 				account.Use(s.rateLimit(s.limitAPI, "api"))
 				account.Use(s.requireAuth)
+				// The account surface changes credentials, sessions and
+				// passkeys. A bearer token has no business there, and a token
+				// that could mint tokens would turn one leak into a permanent
+				// foothold.
+				account.Use(s.requireSession)
+
+				account.Get("/auth/tokens", s.handleListTokens)
+				account.Post("/auth/tokens", s.handleCreateToken)
+				account.Delete("/auth/tokens/{id}", s.handleRevokeToken)
 
 				account.Post("/auth/password", s.handleChangePassword)
 				account.Post("/auth/totp/start", s.handleTOTPStart)
@@ -281,6 +292,7 @@ func (s *Server) Handler(listener string) http.Handler {
 				admin.Use(s.rateLimit(s.limitAPI, "api"))
 
 				admin.Group(func(manage chi.Router) {
+					manage.Use(s.requireSession)
 					manage.Use(s.requireRole(store.RoleManager))
 					manage.Get("/users", s.handleListUsers)
 					manage.Post("/users", s.handleCreateUser)
@@ -291,25 +303,36 @@ func (s *Server) Handler(listener string) http.Handler {
 					manage.Delete("/invitations/{id}", s.handleRevokeInvitation)
 				})
 
-				// The auditor role reads the trail and nothing else.
+				// The auditor role reads the trail and nothing else. Both of
+				// these are readable with a token: a SIEM pulling the trail
+				// and a probe reading the status are exactly what tokens are
+				// for.
 				admin.Group(func(audit chi.Router) {
 					audit.Use(s.requireRole(store.RoleManager, store.RoleAuditor))
+					audit.Use(s.requireScope(store.ScopeAuditRead))
 					audit.Get("/audit", s.handleAudit)
 					audit.Get("/audit/export", s.handleAuditExport)
 				})
 
 				admin.Group(func(instance chi.Router) {
 					instance.Use(s.requireRole(store.RoleAdmin))
+					instance.Use(s.requireScope(store.ScopeInstanceRead))
 					instance.Get("/instance", s.handleInstance)
 
-					// Customisation. A manager runs the users; the brand of
-					// the whole instance is an administrator's decision.
-					instance.Get("/branding/admin", s.handleBrandingOptions)
-					instance.Put("/branding/admin", s.handleSaveBranding)
-					instance.Delete("/branding/admin", s.handleResetBranding)
-					instance.Put("/branding/assets/{kind}", s.handleUploadAsset)
-					instance.Delete("/branding/assets/{kind}", s.handleDeleteAsset)
-					instance.Post("/branding/test-email", s.handleTestEmail)
+				})
+
+				// Customisation. A manager runs the users; the brand of the
+				// whole instance is an administrator's decision, made in the
+				// interface and not by a script.
+				admin.Group(func(brand chi.Router) {
+					brand.Use(s.requireSession)
+					brand.Use(s.requireRole(store.RoleAdmin))
+					brand.Get("/branding/admin", s.handleBrandingOptions)
+					brand.Put("/branding/admin", s.handleSaveBranding)
+					brand.Delete("/branding/admin", s.handleResetBranding)
+					brand.Put("/branding/assets/{kind}", s.handleUploadAsset)
+					brand.Delete("/branding/assets/{kind}", s.handleDeleteAsset)
+					brand.Post("/branding/test-email", s.handleTestEmail)
 				})
 			})
 		})

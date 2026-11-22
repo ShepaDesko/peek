@@ -2,12 +2,14 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -77,6 +79,22 @@ func OpenMemory(ctx context.Context) (*Store, error) {
 	return openSQLite(ctx, "file:peek-test-"+randomSuffix()+"?mode=memory&cache=shared")
 }
 
+// randomSuffix names one throwaway in-memory database.
+//
+// It has to be genuinely unique, not merely "probably": the DSN carries
+// cache=shared, so two stores that land on the same name are one database.
+// The first version used the nanosecond clock, which on Windows ticks in
+// hundreds of nanoseconds or worse — two harnesses built in the same test
+// binary shared a store, and a token created by one test authenticated
+// against another test's data. Hence a counter and sixteen random bits.
+var memoryCounter atomic.Uint64
+
 func randomSuffix() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	var noise [8]byte
+	if _, err := rand.Read(noise[:]); err != nil {
+		// Unreachable in practice; the counter alone still separates stores
+		// inside one process.
+		return fmt.Sprintf("%d-%d", memoryCounter.Add(1), time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%d-%x", memoryCounter.Add(1), noise)
 }

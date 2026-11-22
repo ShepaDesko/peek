@@ -59,6 +59,26 @@ type Principal struct {
 	User      store.User
 	Session   store.Session
 	CSRFToken string
+	// Token is set when the caller authenticated with an API token rather
+	// than a session cookie. It narrows what the principal may do: the role
+	// is the ceiling, the token's scopes the actual permission.
+	Token *store.APIToken
+}
+
+// IsToken reports a bearer-token caller.
+func (p *Principal) IsToken() bool { return p != nil && p.Token != nil }
+
+// HasScope reports whether the principal may act under one of these scopes.
+// A session caller is limited only by their role, so they always may; a token
+// caller must carry the scope.
+func (p *Principal) HasScope(wanted ...string) bool {
+	if p == nil {
+		return false
+	}
+	if p.Token == nil {
+		return true
+	}
+	return p.Token.HasScope(wanted...)
 }
 
 // Can reports whether the principal holds at least the required role.

@@ -415,6 +415,36 @@ const fr = {
   "dashboard.requests": "Demandes de secret",
   "dashboard.requests.none": "Aucune demande en cours.",
   "dashboard.requests.deposits": "{used} / {max} dépôts",
+
+  "tokens.title": "Jetons d'API",
+  "tokens.subtitle":
+    "Pour les scripts. Un jeton ne peut jamais dépasser votre rôle : il le restreint. Il ne peut ni changer un mot de passe, ni créer un autre jeton.",
+  "tokens.none": "Aucun jeton.",
+  "tokens.name": "Nom",
+  "tokens.name.placeholder": "Script de déploiement CI",
+  "tokens.scopes": "Portées",
+  "tokens.expiry": "Expiration",
+  "tokens.expiry.never": "Jamais",
+  "tokens.expiry.30d": "30 jours",
+  "tokens.expiry.90d": "90 jours",
+  "tokens.expiry.1y": "1 an",
+  "tokens.create": "Créer un jeton",
+  "tokens.creating": "Création…",
+  "tokens.revoke": "Révoquer",
+  "tokens.revoked": "Révoqué",
+  "tokens.expired": "Expiré",
+  "tokens.active": "Actif",
+  "tokens.lastUsed": "Dernière utilisation",
+  "tokens.lastUsed.never": "jamais",
+  "tokens.created.title": "Jeton créé",
+  "tokens.created.body":
+    "Copiez-le maintenant. Il n'apparaîtra plus jamais : le serveur n'en conserve qu'une empreinte.",
+  "tokens.created.usage": "Utilisation :",
+  "tokens.error": "Opération impossible",
+  "tokens.scope.secrets:write": "Créer des secrets, envoyer des fichiers, ouvrir des demandes",
+  "tokens.scope.secrets:manage": "Consulter ses reçus et brûler ses secrets",
+  "tokens.scope.audit:read": "Lire le journal d'audit",
+  "tokens.scope.instance:read": "Lire l'état de l'instance",
 } as const;
 
 type Key = keyof typeof fr;
@@ -816,6 +846,36 @@ const en: Record<Key, string> = {
   "dashboard.requests": "Secret requests",
   "dashboard.requests.none": "No open request.",
   "dashboard.requests.deposits": "{used} / {max} answers",
+
+  "tokens.title": "API tokens",
+  "tokens.subtitle":
+    "For scripts. A token can never exceed your role; it narrows it. It cannot change a password, and it cannot create another token.",
+  "tokens.none": "No token.",
+  "tokens.name": "Name",
+  "tokens.name.placeholder": "CI deployment script",
+  "tokens.scopes": "Scopes",
+  "tokens.expiry": "Expiry",
+  "tokens.expiry.never": "Never",
+  "tokens.expiry.30d": "30 days",
+  "tokens.expiry.90d": "90 days",
+  "tokens.expiry.1y": "1 year",
+  "tokens.create": "Create a token",
+  "tokens.creating": "Creating…",
+  "tokens.revoke": "Revoke",
+  "tokens.revoked": "Revoked",
+  "tokens.expired": "Expired",
+  "tokens.active": "Active",
+  "tokens.lastUsed": "Last used",
+  "tokens.lastUsed.never": "never",
+  "tokens.created.title": "Token created",
+  "tokens.created.body":
+    "Copy it now. It will never be shown again: the server keeps only a digest of it.",
+  "tokens.created.usage": "Use it like this:",
+  "tokens.error": "Could not do that",
+  "tokens.scope.secrets:write": "Create secrets, upload files, open requests",
+  "tokens.scope.secrets:manage": "Read its own receipts and burn its own secrets",
+  "tokens.scope.audit:read": "Read the audit trail",
+  "tokens.scope.instance:read": "Read the instance status",
 };
 
 const dictionaries: Record<Lang, Record<Key, string>> = { fr, en };

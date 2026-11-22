@@ -1,3 +1,4 @@
+import ApiTokens from "../components/ApiTokens";
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { auth, type Me, type PasskeyInfo, type SessionInfo } from "../lib/api";
@@ -43,6 +44,8 @@ export default function Account({ t, lang, me, refresh }: Props) {
       <TOTPCard t={t} me={me} refresh={refresh} onError={setError} />
       {me.passkeys ? <PasskeysCard t={t} lang={lang} onError={setError} /> : null}
       <SessionsCard t={t} lang={lang} onError={setError} />
+      {/* An auditor may hold a reading token, so the card is for everyone. */}
+      <ApiTokens t={t} lang={lang} />
     </div>
   );
 }
