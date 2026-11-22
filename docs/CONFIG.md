@@ -67,8 +67,34 @@ two instances at one SQLite file on NFS.
 
 | Key | Default | What it does |
 |---|---|---|
-| `backend` | `local` | `local`, or `s3` (milestone M7). |
-| `path` | `/var/lib/peek/files` | Encrypted blobs. May be a shared mount in HA. |
+| `backend` | `local` | `local`, or `s3`. |
+| `path` | `/var/lib/peek/files` | Encrypted blobs, local backend. May be a shared mount in HA. |
+| `s3_bucket` | — | Required for `s3`. |
+| `s3_region` | `us-east-1` | Signing region. Most S3-compatible appliances accept anything consistent. |
+| `s3_endpoint` | — | Full URL of the endpoint. Empty means AWS. |
+| `s3_prefix` | — | Key prefix inside the bucket, letters, digits, `-`, `_`, `.` and `/`. |
+| `s3_path_style` | implied | Bucket in the path rather than in the host name. Set automatically when `s3_endpoint` is given, because appliances rarely have a wildcard certificate. |
+| `s3_access_key` / `s3_secret_key` | — | Credentials. The secret is redacted in `peek config show`. |
+
+Peek signs S3 requests itself (SigV4) and uses `PUT`, `GET`, `HEAD`, `DELETE`
+and `ListObjectsV2` — nothing else. There is no AWS SDK in the binary, which
+also means **no credential chain**: the keys come from this file and nowhere
+else, and nothing ever probes an instance-metadata endpoint. The reasoning is
+in [DECISIONS.md](DECISIONS.md).
+
+```toml
+[storage]
+backend       = "s3"
+s3_bucket     = "peek-secrets"
+s3_endpoint   = "https://minio.acme.internal:9000"
+s3_region     = "eu-west-3"
+s3_access_key = "…"
+s3_secret_key = "…"
+```
+
+Whatever the backend, a blob is already encrypted when it arrives: the bucket
+holds opaque streams and their lengths, and the keys are in payloads the server
+cannot read.
 
 ## `[security]`
 
@@ -105,9 +131,17 @@ database in M9.
 | `require_passphrase` | `false` | Refuse creation without a passphrase. |
 | `force_retrieval_step` | `false` | Force the click-to-reveal step. |
 | `allowed_kinds` | `["text","url","file"]` | Kinds this instance accepts. |
-| `max_file_bytes` | `104857600` | 100 MiB (milestone M7). |
+| `max_file_bytes` | `104857600` | 100 MiB of plaintext per file. The accepted upload is a little larger: the chunked format adds a 17-byte header and 16 bytes per mebibyte. |
 | `max_secret_bytes` | `1048576` | Ciphertext cap for a text secret. |
-| `max_recipients` | `10` | Multi-recipient links (milestone M7). |
+| `max_recipients` | `10` | Links per multi-recipient bundle. |
+| `max_files_per_secret` | `10` | Attachments per bundle. |
+| `upload_window` | `2h` | How long an uploaded blob waits for a secret to claim it. A sender who closes the tab leaves nothing behind for longer than this. |
+| `download_window` | `30m` | How long a recipient keeps access to the attachments after revealing. The secret row is already gone by then; this is what lets a large download finish. |
+| `max_deposits` | `1` | Answers a secret request may accept. |
+
+Raising `download_window` keeps blobs on disk longer after they have been read;
+lowering it can cut off a slow download of a large file. Thirty minutes is
+roughly a 100 MiB file over a poor connection, with room to spare.
 
 ## `[mail]`
 

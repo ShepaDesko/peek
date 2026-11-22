@@ -96,18 +96,121 @@ Fifty simultaneous reads of a one-read secret therefore produce exactly one
 success. That property is tested at the store level and over HTTP
 (`internal/store/store_test.go`, `internal/server/server_test.go`).
 
-## 6. Link formats
+## 6. Files
+
+A file never reaches the server in the clear, and it is never held whole in a
+tab either: it is sealed chunk by chunk as it is read, and streamed out.
+
+```
+stream = header || chunk[0] || chunk[1] || … || chunk[n-1]
+header = "PEEKF1" || chunk size (uint32 BE) || nonce prefix (7 B)   = 17 bytes
+```
+
+The per-file key `F` is a fresh random 256 bits, carried **inside the sealed
+payload** of each recipient's secret — which is why one upload can serve ten
+links while the server learns nothing.
+
+```
+file enc key = HKDF-Expand(F, "peek-file-v1", 32)
+nonce[i]     = nonce prefix || i (uint32 BE) || final flag (0x00 or 0x01)
+chunk[i]     = AES-256-GCM(file enc key, nonce[i], plaintext[i], AAD = header)
+```
+
+This is the STREAM construction (Rogaway & Hoang), the same shape `age` uses,
+and every part of it earns its place:
+
+- the **counter inside the nonce** authenticates order: swap two chunks and
+  neither opens, because each was sealed under the counter of its own position;
+- the **final flag** authenticates the end of the stream: a truncated file is
+  missing the chunk that carries it, so the reader refuses the whole thing
+  instead of handing back something shorter. Appending chunks fails the same
+  way;
+- the **header as AAD** binds the chunk size and the nonce prefix, so neither
+  can be rewritten in transit.
+
+Every chunk but the last is exactly `chunk size` bytes of plaintext (1 MiB by
+default). An empty file still produces one chunk, final and empty, so the
+stream of a zero-byte file is 33 bytes and not a special case anywhere.
+
+The encrypted length is therefore exact and known before the first byte is
+read — `17 + plaintext + 16 per chunk` — which is what lets the server check an
+announced upload size and sign a non-chunked S3 `PUT`.
+
+Names and MIME types are **not** in the stream. They are in the payload:
+
+```json
+{ "v": 1, "kind": "file", "message": "…",
+  "files": [ { "id": "…", "name": "vpn.ovpn", "mime": "application/x-openvpn-profile",
+               "size": 4096, "key": "<base64url(F)>", "chunk_size": 1048576 } ] }
+```
+
+## 7. Secret requests
+
+A secret request inverts the usual direction: the person asking must be the
+only one who can read, and the person answering must not be able to read back
+what they deposited — nor must anyone who merely holds the request link.
+
+The requester generates a **P-256 key pair**. The public half is stored on the
+server so a deposit can be sealed to it; the private half never leaves the
+fragment of the requester's own tracking link. A separate symmetric **request
+key** `R` travels in the deposit link and plays exactly the role a content key
+plays for a secret: `HKDF` gives an encryption key that seals the prompt and a
+read token whose digest the server stores.
+
+A deposit is an ordinary v1 secret. What makes it a deposit is that its content
+key `K` is wrapped to the requester's public key with ECIES:
+
+```
+Z   = ECDH(ephemeral private, requester public)        // 32-byte X coordinate
+key = HKDF-SHA256(ikm = Z || ephemeral public || requester public,
+                  salt = nil, info = "peek-request-v1")
+box = ephemeral public (65 B) || nonce (12 B) || AES-256-GCM(key, nonce, K,
+                                                 AAD = "peek-req-v1|" || request id)
+```
+
+Both public keys are in the IKM, so the derivation is bound to the exact pair
+involved: substituting another ephemeral key lands on different key material
+and the box no longer opens. The AAD binds the box to one request, so a deposit
+captured from one cannot be replayed into another.
+
+**P-256 and not X25519.** X25519 only reached Safari and Firefox recently, and
+Peek runs in managed enterprise browsers that are routinely several versions
+behind; P-256 ECDH has been in every WebCrypto implementation for a decade.
+The trade is recorded in [DECISIONS.md](DECISIONS.md).
+
+**The public key travels in the link, never through the API.** This is the
+load-bearing part. A compromised server that could hand out its own public key
+would read every answer; a browser that only ever takes it from the fragment
+cannot be fooled that way. Nothing in the deposit page asks the server for a
+key.
+
+Invalid points are refused on the way in, both when a request is created and
+when a link is parsed: feeding a point that is not on the curve into someone
+else's ECDH is a known attack, and it costs one check to close.
+
+## 8. Link formats
 
 ```
 recipient:  https://host/s/<id>#v1.<base64url(K)>
 sender:     https://host/r/<id>#v1.<base64url(K)>~<base64url(receipt token)>
+deposit:    https://host/q/<id>#v1q.<base64url(R || requester public key)>
+tracking:   https://host/qs/<id>#v1r.<base64url(private || public)>~<R>~<receipt token>
 ```
 
 The sender's page holds both tokens: the content key, to rebuild the recipient
 link, and the receipt token, which authorises status checks and burning. Both
 stay in the fragment.
 
-## 7. What the server can and cannot do
+Each prefix is distinct — `v1`, `v1q`, `v1r` — so the three kinds can never be
+mistaken for one another: one is a symmetric key, one carries a public key, one
+carries a private key. Parsing the wrong kind fails rather than half-works, and
+a test asserts it on both sides.
+
+The tracking link carries the private key of the request, which means losing it
+means losing the answers. The page says so in as many words; the server has no
+copy, by construction.
+
+## 9. What the server can and cannot do
 
 **Cannot**: read a secret, recover a passphrase, brute-force a key (256-bit,
 uniformly random), prove which secret a given ciphertext belongs to without its
@@ -123,13 +226,23 @@ capture what they type. Zero-knowledge protects data at rest and in transit, not
 a backend you no longer control. [THREAT-MODEL.md](THREAT-MODEL.md) says what
 to do about it.
 
-## 8. Test vectors
+## 10. Test vectors
 
-`crypto/vectors/v1.json` holds four cases: without a passphrase, with a
-passphrase at the default parameters, with a passphrase at cheap parameters,
-and an empty plaintext. Each case fixes the inputs **and the expected
-outputs** — final key, encryption key, read token, its digest, the sealed blob
-for a fixed nonce, and the fragment.
+`crypto/vectors/v1.json` holds three families of cases, all with fixed inputs
+**and fixed expected outputs**:
+
+- **secrets** — without a passphrase, with a passphrase at the default
+  parameters, with a passphrase at cheap parameters, and an empty plaintext.
+  Each fixes the final key, the encryption key, the read token, its digest, the
+  sealed blob for a fixed nonce, and the fragment.
+- **files** — an empty file, a short one, one that is exactly one chunk (no
+  spurious trailing chunk), and one of several chunks plus a remainder. Each
+  fixes the derived key and the whole stream for a fixed nonce prefix. These
+  are the boundaries that get got wrong.
+- **secret requests** — a wrapped content key for a fixed key pair, ephemeral
+  key and nonce. The box is not reproducible from the TypeScript side without
+  the ephemeral private key, so the browser test opens what Go sealed instead:
+  one format, two implementations.
 
 ```bash
 go test ./internal/crypto/...      # Go reads the vectors
@@ -140,7 +253,7 @@ go run ./tools/genvectors          # regenerate; CI fails if the file changes
 CI regenerates the vectors and fails on any diff: changing the format without
 bumping its version is caught before it ships.
 
-## 9. Changing the format
+## 11. Changing the format
 
 Version `v1` is frozen. A new format gets `v2`, a new set of `info` strings and
 its own vectors; `v1` stays readable so existing links keep working. The

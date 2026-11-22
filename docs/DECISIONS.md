@@ -93,3 +93,40 @@ Business rules are in `internal/secrets`, data access in `internal/store`, and
 
 The end-to-end suite starts the real binary with its embedded interface rather
 than a dev server, so what CI exercises is what ships.
+
+### P-256 for secret requests, not X25519
+
+The specification allowed either. X25519 only reached Safari and Firefox
+recently, and Peek is deployed in managed enterprise browsers that are
+routinely several versions behind the release channel; P-256 ECDH has been in
+every WebCrypto implementation for a decade. A key exchange that works
+everywhere beats a slightly nicer curve that fails for a tenth of the users
+with an error they cannot act on.
+
+A consequence worth knowing: WebCrypto cannot import a P-256 private key from
+the raw scalar alone — a JWK needs `x` and `y`, and support for a PKCS#8 key
+without its public half varies between browsers. So the tracking link carries
+both halves. It costs 65 bytes in a URL and removes a whole class of
+browser-specific failure.
+
+### No AWS SDK for the S3 backend
+
+Peek signs SigV4 itself and speaks the five S3 operations it needs. Two
+reasons, neither of them about the SDK's quality. It would add roughly ten
+megabytes to a binary with a sixty-megabyte budget. And its default credential
+chain probes the instance-metadata endpoint, which is an outbound call Peek
+promises not to make: credentials come from `peek.toml` and nowhere else.
+
+The signing code is about two hundred lines, and the test suite verifies it
+against an independent transcription of the specification, then against a real
+MinIO before each release.
+
+### A download grant, rather than keeping the secret alive
+
+The row of a one-read secret is deleted inside the transaction that consumes
+the last read. Without something else, a 100 MiB attachment would become
+unreachable at the instant it became readable. A successful reveal therefore
+hands out a short-lived grant, stored hashed like every other token, and the
+blobs' expiry is pushed past the end of it. Keeping the secret row alive "just
+for the files" would have been the other option, and it would have meant a
+secret that is readable after it was supposed to be gone.
