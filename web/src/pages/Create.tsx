@@ -142,7 +142,14 @@ export default function Create({ t, policy, policyError }: Props) {
       const key = `${file.name}-${file.size}-${Math.random().toString(36).slice(2)}`;
       setAttachments((list) => [
         ...list,
-        { key, name: file.name, size: file.size, state: "working", phase: "encrypting", percent: 0 },
+        {
+          key,
+          name: file.name,
+          size: file.size,
+          state: "working",
+          phase: "encrypting",
+          percent: 0,
+        },
       ]);
       try {
         const pending = await encryptAndUpload(file, chunk, (p) => {
@@ -161,7 +168,14 @@ export default function Create({ t, policy, policyError }: Props) {
         setAttachments((list) =>
           list.map((a) =>
             a.key === key
-              ? { ...a, state: "done", phase: "done", percent: 100, ref: pending.ref, claim: pending.claim }
+              ? {
+                  ...a,
+                  state: "done",
+                  phase: "done",
+                  percent: 100,
+                  ref: pending.ref,
+                  claim: pending.claim,
+                }
               : a,
           ),
         );
@@ -351,7 +365,9 @@ export default function Create({ t, policy, policyError }: Props) {
     return (
       <Card className="space-y-5">
         <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("create.result.title", { n: results.length })}</h1>
+          <h1 className="text-xl font-semibold">
+            {t("create.result.title", { n: results.length })}
+          </h1>
           <p className="peek-muted text-sm leading-relaxed">{t("create.result.hint")}</p>
         </header>
         <ol className="space-y-4">
@@ -775,8 +791,15 @@ export default function Create({ t, policy, policyError }: Props) {
 function LinkRow({ label, value, t }: { label: string; value: string; t: Translate }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="peek-muted w-40 shrink-0 text-xs font-semibold">{label}</span>
-      <input readOnly className="peek-input flex-1 font-mono text-xs" value={value} />
+      <span className="peek-muted w-40 shrink-0 text-xs font-semibold" aria-hidden="true">
+        {label}
+      </span>
+      <input
+        readOnly
+        aria-label={label}
+        className="peek-input flex-1 font-mono text-xs"
+        value={value}
+      />
       <CopyButton value={value} label={t("reveal.copy")} copiedLabel={t("reveal.copied")} />
     </div>
   );

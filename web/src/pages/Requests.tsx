@@ -527,6 +527,10 @@ export function RequestStatus({
     null,
   );
   const [receipt, setReceipt] = useState<SecretRequestReceipt | null>(null);
+  // Deposits accumulate and are never dropped. Reading one consumes it, so the
+  // very next refresh would otherwise make the answer vanish from under the
+  // person who asked for it.
+  const [seen, setSeen] = useState<DepositInfo[]>([]);
   const [read, setRead] = useState<Record<string, ReadDeposit>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
@@ -563,7 +567,13 @@ export function RequestStatus({
   const refresh = useCallback(async () => {
     if (!tokens) return;
     try {
-      setReceipt(await api.requestReceipt(id, b64urlEncode(tokens.receipt)));
+      const fresh = await api.requestReceipt(id, b64urlEncode(tokens.receipt));
+      setReceipt(fresh);
+      setSeen((current) => {
+        const known = new Set(current.map((d) => d.secret_id));
+        const added = fresh.deposits.filter((d) => !known.has(d.secret_id));
+        return added.length > 0 ? [...current, ...added] : current;
+      });
       setError(null);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
@@ -695,11 +705,11 @@ export function RequestStatus({
 
       <Card className="space-y-4">
         <h2 className="text-lg font-semibold">{t("qstatus.deposits")}</h2>
-        {!receipt || receipt.deposits.length === 0 ? (
+        {seen.length === 0 ? (
           <p className="peek-muted text-sm leading-relaxed">{t("qstatus.none")}</p>
         ) : (
           <ol className="space-y-4">
-            {receipt.deposits.map((d, i) => {
+            {seen.map((d, i) => {
               const got = read[d.secret_id];
               return (
                 <li

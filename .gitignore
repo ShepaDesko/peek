@@ -3,6 +3,7 @@
 /dist/
 /web/dist/
 /web/node_modules/
+/test/e2e/.e2e/
 /test/e2e/node_modules/
 /test/e2e/playwright-report/
 /test/e2e/test-results/

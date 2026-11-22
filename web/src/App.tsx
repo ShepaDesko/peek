@@ -108,8 +108,14 @@ export default function App() {
 
   // The policy lives on the internal listener only: a 404 is how a public,
   // recipient-only instance tells us not to offer creation here.
+  //
+  // Three pages need it: creating a secret, asking for one, and answering a
+  // request — the deposit page uses the instance's KDF parameters and expiry
+  // ceiling. On the public listener it 404s there too, and the page falls back
+  // to the format defaults rather than refusing to work.
+  const needsPolicy = route.name === "create" || route.name === "ask" || route.name === "deposit";
   useEffect(() => {
-    if (route.name !== "create") return;
+    if (!needsPolicy) return;
     api
       .policy()
       .then((p) => {
@@ -117,7 +123,11 @@ export default function App() {
         setPolicyError(null);
       })
       .catch((err) => {
-        if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+        if (
+          route.name === "create" &&
+          err instanceof ApiError &&
+          (err.status === 404 || err.status === 403)
+        ) {
           setPolicyError(
             lang === "fr"
               ? "La création de secrets n'est pas disponible depuis ce réseau. Utilisez l'adresse interne du service, ou contactez votre administrateur."
@@ -127,7 +137,7 @@ export default function App() {
         }
         setPolicyError(null);
       });
-  }, [route.name, lang]);
+  }, [needsPolicy, route.name, lang]);
 
   useEffect(() => {
     document.documentElement.lang = lang;

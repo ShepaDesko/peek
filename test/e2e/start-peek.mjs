@@ -36,6 +36,10 @@ dsn = ${JSON.stringify(join(work, "peek.db"))}
 backend = "local"
 path = ${JSON.stringify(join(work, "files"))}
 
+[policy]
+# Several answers per request, so the suite can exercise the choice at all.
+max_deposits = 3
+
 [security]
 anonymous_create = true
 max_passphrase_attempts = 3
