@@ -171,3 +171,40 @@ export async function decodeRequestFragment(fragment: string): Promise<RequestKe
   if (!equalBytes(back, probe)) throw new Error("peek: malformed secret-request key");
   return key;
 }
+
+/**
+ * The deposit link's fragment carries the symmetric request key — which
+ * decrypts the prompt and proves possession to the server — and the
+ * requester's public key.
+ *
+ * The public key is in the link rather than fetched from the server on
+ * purpose. A server that served its own public key instead could read every
+ * deposit; a browser that only ever takes it from the fragment cannot be
+ * fooled that way, and that is what makes a secret request safe against the
+ * instance hosting it.
+ */
+const DEPOSIT_FRAGMENT_V1 = "v1q";
+export const DEPOSIT_SECRET_LEN = 32 + REQUEST_PUBLIC_KEY_LEN;
+
+export function encodeDepositFragment(requestKey: Uint8Array, pub: Uint8Array): string {
+  if (requestKey.length !== 32 || pub.length !== REQUEST_PUBLIC_KEY_LEN) {
+    throw new Error("peek: malformed secret-request key");
+  }
+  return `${DEPOSIT_FRAGMENT_V1}.${b64urlEncode(concat(requestKey, pub))}`;
+}
+
+export function decodeDepositFragment(fragment: string): {
+  requestKey: Uint8Array;
+  pub: Uint8Array;
+} {
+  const trimmed = fragment.trim().replace(/^#/, "");
+  const dot = trimmed.indexOf(".");
+  if (dot < 0 || trimmed.slice(0, dot) !== DEPOSIT_FRAGMENT_V1) {
+    throw new Error("peek: unsupported request link format");
+  }
+  const blob = b64urlDecode(trimmed.slice(dot + 1));
+  if (blob.length !== DEPOSIT_SECRET_LEN) throw new Error("peek: malformed secret-request key");
+  const pub = blob.slice(32);
+  if (pub[0] !== 0x04) throw new Error("peek: malformed secret-request key");
+  return { requestKey: blob.slice(0, 32), pub };
+}

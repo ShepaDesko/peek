@@ -3,7 +3,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { b64urlDecode, b64urlEncode } from "./bytes";
 import {
+  decodeDepositFragment,
   decodeRequestFragment,
+  encodeDepositFragment,
   encodeRequestFragment,
   generateRequestKey,
   openFromRequest,
@@ -108,5 +110,25 @@ describe("secret requests", () => {
     const other = await generateRequestKey();
     const mixed = encodeRequestFragment({ priv: key.priv, pub: other.pub });
     await expect(decodeRequestFragment(mixed)).rejects.toThrow();
+  });
+});
+
+describe("deposit links", () => {
+  it("round trips the deposit fragment", async () => {
+    const key = await generateRequestKey();
+    const requestKey = crypto.getRandomValues(new Uint8Array(32));
+    const frag = encodeDepositFragment(requestKey, key.pub);
+    const back = decodeDepositFragment("#" + frag);
+    expect(back.requestKey).toEqual(requestKey);
+    expect(back.pub).toEqual(key.pub);
+  });
+
+  it("keeps the three fragment kinds apart", async () => {
+    const key = await generateRequestKey();
+    const requestKey = crypto.getRandomValues(new Uint8Array(32));
+    const deposit = encodeDepositFragment(requestKey, key.pub);
+    const tracking = encodeRequestFragment(key);
+    expect(() => decodeDepositFragment(tracking)).toThrow();
+    await expect(decodeRequestFragment(deposit)).rejects.toThrow();
   });
 });

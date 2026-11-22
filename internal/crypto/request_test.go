@@ -220,3 +220,47 @@ func TestSealToRequestWithEphemeralIsDeterministic(t *testing.T) {
 		t.Error("deterministic box does not open to the content key")
 	}
 }
+
+func TestDepositFragment(t *testing.T) {
+	k, err := NewRequestKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqKey, err := NewContentKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	frag, err := EncodeDepositFragment(reqKey, k.Pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotKey, gotPub, err := DecodeDepositFragment("#" + frag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotKey, reqKey) || !bytes.Equal(gotPub, k.Pub) {
+		t.Error("deposit fragment round trip mismatch")
+	}
+
+	// The three fragment kinds must never be interchangeable.
+	if _, err := DecodeFragment(frag); err == nil {
+		t.Error("a deposit fragment parsed as a secret fragment")
+	}
+	if _, err := ParseRequestFragment(frag); err == nil {
+		t.Error("a deposit fragment parsed as a request fragment")
+	}
+	if _, _, err := DecodeDepositFragment(k.Fragment()); err == nil {
+		t.Error("a request fragment parsed as a deposit fragment")
+	}
+
+	// An off-curve public key in a link is refused here, before any ECDH.
+	bent := append([]byte{}, k.Pub...)
+	bent[len(bent)-1] ^= 0x01
+	bad, err := EncodeDepositFragment(reqKey, bent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := DecodeDepositFragment(bad); err == nil {
+		t.Error("a deposit fragment with an off-curve point was accepted")
+	}
+}

@@ -259,3 +259,46 @@ type DepositEnvelope struct {
 	// Sealed is the ordinary v1 sealed payload (nonce || ciphertext).
 	Sealed []byte `json:"sealed"`
 }
+
+// The deposit link's fragment carries two things: the symmetric request key,
+// which decrypts the prompt and proves possession to the server, and the
+// requester's public key.
+//
+// The public key is in the link and not fetched from the server on purpose. A
+// server that handed out its own public key instead would be able to read
+// every deposit; a browser that only ever takes it from the fragment cannot be
+// fooled that way, and that is the whole reason secret requests are safe
+// against the instance that hosts them.
+const depositFragmentV1 = "v1q"
+
+// DepositSecretLen is the fragment payload: request key || SEC1 point.
+const DepositSecretLen = ContentKeyLen + RequestPublicKeyLen
+
+// EncodeDepositFragment renders the fragment of a deposit link.
+func EncodeDepositFragment(requestKey, pub []byte) (string, error) {
+	if len(requestKey) != ContentKeyLen || len(pub) != RequestPublicKeyLen {
+		return "", ErrRequestKey
+	}
+	blob := make([]byte, 0, DepositSecretLen)
+	blob = append(blob, requestKey...)
+	blob = append(blob, pub...)
+	return depositFragmentV1 + "." + B64.EncodeToString(blob), nil
+}
+
+// DecodeDepositFragment parses a deposit link fragment.
+func DecodeDepositFragment(fragment string) (requestKey, pub []byte, err error) {
+	f := strings.TrimPrefix(strings.TrimSpace(fragment), "#")
+	v, b64, ok := strings.Cut(f, ".")
+	if !ok || v != depositFragmentV1 {
+		return nil, nil, errors.New("peek/crypto: unsupported deposit fragment format")
+	}
+	blob, derr := B64.DecodeString(b64)
+	if derr != nil || len(blob) != DepositSecretLen {
+		return nil, nil, ErrRequestKey
+	}
+	pub = blob[ContentKeyLen:]
+	if !ValidRequestPublicKey(pub) {
+		return nil, nil, ErrRequestKey
+	}
+	return blob[:ContentKeyLen], pub, nil
+}

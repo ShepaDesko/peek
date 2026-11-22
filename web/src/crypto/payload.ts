@@ -2,11 +2,21 @@
 
 export type PayloadKind = "text" | "url" | "file";
 
+/**
+ * One attachment. The name, the type and above all the key are here, inside
+ * the sealed payload: the server stores the id and the byte count and has no
+ * way to learn the rest.
+ */
 export interface FileRef {
   id: string;
   name: string;
   mime?: string;
+  /** Plaintext size, for the interface. The stored stream is a little longer. */
   size: number;
+  /** base64url per-file key. */
+  key: string;
+  /** Plaintext chunk size the stream was sealed with. */
+  chunk_size: number;
 }
 
 export interface Payload {

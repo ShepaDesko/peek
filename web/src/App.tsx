@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import { AcceptInvitation, Bootstrap, ResetPassword } from "./pages/Onboarding";
 import Receipt from "./pages/Receipt";
+import { AskSecret, Deposit, RequestStatus } from "./pages/Requests";
 import Reveal from "./pages/Reveal";
 import { Banner, Card, Spinner } from "./ui";
 
@@ -23,6 +24,9 @@ type Route =
   | { name: "create" }
   | { name: "reveal"; id: string; fragment: string }
   | { name: "receipt"; id: string; fragment: string }
+  | { name: "ask" }
+  | { name: "deposit"; id: string; fragment: string }
+  | { name: "qstatus"; id: string; fragment: string }
   | { name: "login" }
   | { name: "bootstrap" }
   | { name: "invitation" }
@@ -39,6 +43,12 @@ function parseRoute(): Route {
   if (reveal) return { name: "reveal", id: reveal[1], fragment };
   const receipt = /^\/r\/([A-Za-z0-9_-]{22})$/.exec(path);
   if (receipt) return { name: "receipt", id: receipt[1], fragment };
+  // Secret requests: /q is where you answer one, /qs is where the person who
+  // asked follows it. "/r" already belongs to a sender's receipt.
+  const deposit = /^\/q\/([A-Za-z0-9_-]{22})$/.exec(path);
+  if (deposit) return { name: "deposit", id: deposit[1], fragment };
+  const qstatus = /^\/qs\/([A-Za-z0-9_-]{22})$/.exec(path);
+  if (qstatus) return { name: "qstatus", id: qstatus[1], fragment };
 
   switch (path) {
     case "/login":
@@ -49,6 +59,8 @@ function parseRoute(): Route {
       return { name: "invitation" };
     case "/reset":
       return { name: "reset" };
+    case "/ask":
+      return { name: "ask" };
     case "/dashboard":
       return { name: "dashboard" };
     case "/account":
@@ -162,6 +174,7 @@ export default function App() {
               className="flex flex-wrap items-center gap-1 text-sm"
             >
               <NavLink href="/" label={t("app.create")} active={route.name === "create"} />
+              <NavLink href="/ask" label={t("nav.ask")} active={route.name === "ask"} />
               <NavLink
                 href="/dashboard"
                 label={t("app.dashboard")}
@@ -297,6 +310,16 @@ function Routes({
       return <Reveal key={route.id} id={route.id} fragment={route.fragment} t={t} lang={lang} />;
     case "receipt":
       return <Receipt key={route.id} id={route.id} fragment={route.fragment} t={t} lang={lang} />;
+    case "ask":
+      return <AskSecret t={t} policy={policy} />;
+    case "deposit":
+      return (
+        <Deposit key={route.id} id={route.id} fragment={route.fragment} t={t} policy={policy} />
+      );
+    case "qstatus":
+      return (
+        <RequestStatus key={route.id} id={route.id} fragment={route.fragment} t={t} lang={lang} />
+      );
     case "login":
       return (
         <Login

@@ -101,6 +101,12 @@ export interface Policy {
   max_file_bytes: number;
   max_secret_bytes: number;
   max_recipients: number;
+  max_files_per_secret: number;
+  max_deposits: number;
+  upload_window_seconds: number;
+  download_window_seconds: number;
+  file_chunk_size: number;
+  storage: boolean;
   max_passphrase_attempts: number;
   kdf: { memory_kib: number; iterations: number; parallelism: number };
 }
@@ -134,6 +140,9 @@ export interface RevealResponse {
   views_remaining: number;
   destroyed: boolean;
   size_bytes: number;
+  /** Handed out by a successful reveal; the only way to fetch the blobs. */
+  download_token?: string;
+  download_expires_at?: string;
 }
 
 export interface Receipt {
@@ -163,6 +172,8 @@ export interface CreateRequest {
   retrieval_step: boolean;
   deletable_by_recipient: boolean;
   label_enc?: string;
+  /** Attachments, on the first recipient of a bundle: they belong to it. */
+  files?: FileClaim[];
 }
 
 export const api = {
@@ -190,7 +201,196 @@ export const api = {
     ),
   deleteByRecipient: (id: string, readToken: string) =>
     request<void>("DELETE", `/api/v1/secrets/${encodeURIComponent(id)}`, undefined, readToken),
+
+  /** Several links sharing one set of attachments. */
+  createBundle: (recipients: CreateRequest[], files: FileClaim[] = []) =>
+    request<BundleResponse>("POST", "/api/v1/secrets", { recipients, files }),
+
+  uploadFile,
+  downloadFile,
+
+  // --- secret requests ------------------------------------------------------
+  createSecretRequest: (body: CreateSecretRequest) =>
+    request<SecretRequestCreated>("POST", "/api/v1/requests", body),
+  requestMeta: (id: string) =>
+    request<SecretRequestMeta>("GET", `/api/v1/requests/${encodeURIComponent(id)}`),
+  openRequest: (id: string, readToken: string) =>
+    request<SecretRequestOpened>("POST", `/api/v1/requests/${encodeURIComponent(id)}/open`, {
+      read_token: readToken,
+    }),
+  deposit: (id: string, body: DepositRequest) =>
+    request<{ id: string; created_at: string }>(
+      "POST",
+      `/api/v1/requests/${encodeURIComponent(id)}/deposit`,
+      body,
+    ),
+  requestReceipt: (id: string, receiptToken: string) =>
+    request<SecretRequestReceipt>(
+      "POST",
+      `/api/v1/requests/${encodeURIComponent(id)}/receipt`,
+      { receipt_token: receiptToken },
+    ),
+  closeRequest: (id: string, receiptToken: string) =>
+    request<void>("DELETE", `/api/v1/requests/${encodeURIComponent(id)}`, {
+      receipt_token: receiptToken,
+    }),
+  listRequests: () =>
+    request<{ requests: SecretRequestSummary[] }>("GET", "/api/v1/dashboard/requests"),
 };
+
+/** One blob already uploaded, with the token proving we uploaded it. */
+export interface FileClaim {
+  id: string;
+  token: string;
+}
+
+export interface BundleResponse {
+  bundle_id: string;
+  secrets: CreateResponse[];
+}
+
+export interface UploadResponse {
+  id: string;
+  token: string;
+  size: number;
+  expires_at: string;
+}
+
+export interface CreateSecretRequest {
+  id: string;
+  public_key: string;
+  read_token_hash: string;
+  receipt_token_hash: string;
+  prompt_enc: string;
+  kdf: { salt: string; memory_kib: number; iterations: number; parallelism: number };
+  label_enc?: string;
+  ttl_seconds: number;
+  max_deposits: number;
+  notify_email?: string;
+}
+
+export interface SecretRequestCreated {
+  id: string;
+  max_deposits: number;
+  expires_at: string;
+  created_at: string;
+  url: string;
+}
+
+export interface SecretRequestMeta {
+  id: string;
+  deposits_remaining: number;
+  expires_at: string;
+  kdf: { salt: string; memory_kib: number; iterations: number; parallelism: number };
+}
+
+export interface SecretRequestOpened {
+  id: string;
+  prompt_enc: string;
+  expires_at: string;
+}
+
+export interface DepositRequest {
+  read_token: string;
+  wrapped_key: string;
+  secret: CreateRequest;
+  files?: FileClaim[];
+}
+
+export interface DepositInfo {
+  secret_id: string;
+  wrapped_key: string;
+  has_passphrase: boolean;
+  size_bytes: number;
+  created_at: string;
+  views_remaining: number;
+  kdf: { salt: string; memory_kib: number; iterations: number; parallelism: number };
+}
+
+export interface SecretRequestReceipt {
+  id: string;
+  label_enc: string;
+  max_deposits: number;
+  deposits_used: number;
+  deposits_remaining: number;
+  created_at: string;
+  expires_at: string;
+  deposits: DepositInfo[];
+}
+
+export interface SecretRequestSummary {
+  id: string;
+  label_enc: string;
+  max_deposits: number;
+  deposits_used: number;
+  deposits_remaining: number;
+  created_at: string;
+  expires_at: string;
+}
+
+/**
+ * uploadFile sends one already-encrypted blob.
+ *
+ * XMLHttpRequest rather than fetch, for one reason: fetch still has no upload
+ * progress event, and a hundred-megabyte upload with no progress bar looks
+ * exactly like a hung page.
+ */
+function uploadFile(blob: Blob, onProgress?: (sent: number, total: number) => void) {
+  return new Promise<UploadResponse>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/v1/files", true);
+    xhr.withCredentials = true;
+    xhr.responseType = "text";
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    const csrf = csrfToken();
+    if (csrf) xhr.setRequestHeader("X-Peek-CSRF", csrf);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(e.loaded, e.total);
+    };
+    xhr.onerror = () => reject(new ApiError(0, null, "network error"));
+    xhr.onabort = () => reject(new ApiError(0, null, "upload cancelled"));
+    xhr.onload = () => {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(xhr.responseText);
+      } catch {
+        parsed = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(parsed as UploadResponse);
+        return;
+      }
+      reject(new ApiError(xhr.status, parsed as ApiErrorBody | null, xhr.statusText));
+    };
+    xhr.send(blob);
+  });
+}
+
+/**
+ * downloadFile fetches one blob with a grant from a successful reveal.
+ *
+ * The grant travels in a header, never in the URL: proxies log URLs, and a
+ * download grant in somebody's access log is a readable secret.
+ */
+async function downloadFile(id: string, grant: string): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/files/${encodeURIComponent(id)}`, {
+      method: "GET",
+      headers: { "X-Peek-Download": grant },
+      credentials: "same-origin",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+    });
+  } catch (cause) {
+    throw new ApiError(0, null, cause instanceof Error ? cause.message : "network error");
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, null, response.statusText);
+  }
+  return response.blob();
+}
 
 // --- accounts ----------------------------------------------------------------
 

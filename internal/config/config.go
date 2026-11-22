@@ -523,8 +523,10 @@ func (c *Config) SecretURL(id string) string {
 
 // RequestURL is the deposit link of a secret request. Like a secret link, the
 // key it needs lives in the fragment and never reaches the server.
+//
+// "/q" for question: "/r" already belongs to a sender's receipt page.
 func (c *Config) RequestURL(id string) string {
-	return strings.TrimRight(c.PublicURL, "/") + "/r/" + id
+	return strings.TrimRight(c.PublicURL, "/") + "/q/" + id
 }
 
 // SQLitePath returns the on-disk path of the SQLite database, if that is the driver.

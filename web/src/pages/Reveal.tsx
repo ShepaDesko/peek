@@ -9,6 +9,7 @@ import {
   unmarshalPayload,
   type Payload,
 } from "../crypto";
+import Attachments from "../components/Attachments";
 import { ApiError, api, type SecretMeta } from "../lib/api";
 import { formatWhen } from "../lib/format";
 import type { Lang, Translate } from "../lib/i18n";
@@ -36,6 +37,9 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
   const [lastView, setLastView] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [readToken, setReadToken] = useState<Uint8Array | null>(null);
+  // Handed out by the reveal; the only way to fetch the attachments, and the
+  // reason this tab must stay open until the downloads are done.
+  const [grant, setGrant] = useState<string | undefined>(undefined);
 
   let contentKey: Uint8Array | null = null;
   let keyError = false;
@@ -101,6 +105,7 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
       const plain = await openSealed(keys.enc, aad(id), sealed);
       setPayload(unmarshalPayload(plain));
       setReadToken(keys.readToken);
+      setGrant(response.download_token);
       setLastView(response.destroyed);
       setPhase("revealed");
       setPassphrase("");
@@ -155,6 +160,7 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
 
   if (phase === "revealed" && payload) {
     const text = payload.kind === "url" ? (payload.url ?? "") : (payload.text ?? "");
+    const files = payload.files ?? [];
     return (
       <div className="space-y-5">
         <Card className="space-y-4">
@@ -196,31 +202,38 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
             </div>
           ) : (
             <div className="space-y-3">
-              <pre
-                className="max-h-80 overflow-auto rounded-xl border p-3 font-mono text-sm whitespace-pre-wrap break-all"
-                style={{ borderColor: "var(--peek-border)" }}
-              >
-                {visible ? text : "•".repeat(Math.min(text.length, 48))}
-              </pre>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="peek-btn peek-btn-ghost"
-                  onClick={() => setVisible((v) => !v)}
-                >
-                  {visible ? t("reveal.hide") : t("reveal.show")}
+              {text ? (
+                <>
+                  <pre
+                    className="max-h-80 overflow-auto rounded-xl border p-3 font-mono text-sm whitespace-pre-wrap break-all"
+                    style={{ borderColor: "var(--peek-border)" }}
+                  >
+                    {visible ? text : "•".repeat(Math.min(text.length, 48))}
+                  </pre>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="peek-btn peek-btn-ghost"
+                      onClick={() => setVisible((v) => !v)}
+                    >
+                      {visible ? t("reveal.hide") : t("reveal.show")}
+                    </button>
+                    <CopyButton
+                      value={text}
+                      label={t("reveal.copy")}
+                      copiedLabel={t("reveal.copied")}
+                    />
+                  </div>
+                </>
+              ) : null}
+
+              <Attachments files={files} grant={grant} t={t} />
+
+              {meta?.deletable_by_recipient && !deleted ? (
+                <button type="button" className="peek-btn peek-btn-danger" onClick={removeNow}>
+                  {t("reveal.delete")}
                 </button>
-                <CopyButton
-                  value={text}
-                  label={t("reveal.copy")}
-                  copiedLabel={t("reveal.copied")}
-                />
-                {meta?.deletable_by_recipient && !deleted ? (
-                  <button type="button" className="peek-btn peek-btn-danger" onClick={removeNow}>
-                    {t("reveal.delete")}
-                  </button>
-                ) : null}
-              </div>
+              ) : null}
             </div>
           )}
 

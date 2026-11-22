@@ -13,13 +13,21 @@ const (
 	KindFile = "file"
 )
 
-// FileRef describes one encrypted attachment. Name and MIME type live inside
-// the sealed payload; only the opaque storage id and byte size are server side.
+// FileRef describes one encrypted attachment. The name, the MIME type and the
+// per-file key live inside the sealed payload; the server holds only the
+// opaque storage id and the byte count.
 type FileRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	MIME string `json:"mime,omitempty"`
-	Size int64  `json:"size"`
+	// Size is the plaintext length; the stored stream is a header and a tag
+	// per chunk longer.
+	Size int64 `json:"size"`
+	// Key is the base64url per-file key. It is the reason this structure is
+	// never written anywhere but inside a sealed payload.
+	Key string `json:"key,omitempty"`
+	// ChunkSize is the plaintext chunk size the stream was sealed with.
+	ChunkSize int `json:"chunk_size,omitempty"`
 }
 
 // Payload is the plaintext structure sealed into every secret. Keep it in sync

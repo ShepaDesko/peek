@@ -8,10 +8,12 @@ import {
   newId,
   newKdfParams,
   seal,
+  type FileRef,
 } from "../crypto";
 import { randomBytes } from "../crypto/bytes";
 import { sha256 } from "../crypto/hkdf";
-import { ApiError, api, type Policy } from "../lib/api";
+import { ApiError, api, type CreateRequest, type FileClaim, type Policy } from "../lib/api";
+import { encryptAndUpload, humanSize } from "../lib/files";
 import {
   defaultPasswordOptions,
   entropyBits,
@@ -21,7 +23,7 @@ import {
 } from "../lib/password";
 import type { Translate } from "../lib/i18n";
 import { isCryptoAvailable, isSecureContext } from "../lib/secure";
-import { Banner, Card, Field, Spinner, Toggle } from "../ui";
+import { Banner, Card, CopyButton, Field, Spinner, Toggle } from "../ui";
 
 interface Props {
   t: Translate;
@@ -29,7 +31,36 @@ interface Props {
   policyError: string | null;
 }
 
-type Kind = "text" | "url";
+type Kind = "text" | "url" | "file";
+
+/** One attachment in flight, as the form sees it. */
+interface Attachment {
+  key: string;
+  name: string;
+  size: number;
+  state: "working" | "done" | "failed";
+  phase: "encrypting" | "uploading" | "done";
+  percent: number;
+  ref?: FileRef;
+  claim?: FileClaim;
+  error?: string;
+}
+
+/** One recipient of a multi-recipient bundle, with its own settings. */
+interface Recipient {
+  key: string;
+  label: string;
+  ttl: number;
+  views: number;
+  passphrase: string;
+}
+
+/** A created link, shown once on the result card. */
+interface CreatedLink {
+  label: string;
+  share: string;
+  receipt: string;
+}
 
 const EXPIRY_CHOICES: {
   seconds: number;
@@ -53,6 +84,10 @@ export default function Create({ t, policy, policyError }: Props) {
   const [deletable, setDeletable] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
   const [genOpts, setGenOpts] = useState<PasswordOptions>(defaultPasswordOptions);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [multi, setMulti] = useState(false);
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [results, setResults] = useState<CreatedLink[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Without WebCrypto there is nothing to submit: App already explains why.
@@ -79,77 +114,224 @@ export default function Create({ t, policy, policyError }: Props) {
   }, [policy]);
 
   const passphraseRequired = policy?.require_passphrase ?? false;
+  const filesAllowed = (policy?.allowed_kinds ?? []).includes("file") && policy?.storage !== false;
+  const maxFiles = policy?.max_files_per_secret ?? 10;
+  const maxRecipients = policy?.max_recipients ?? 10;
   const bits = entropyBits(genOpts);
   const entropy = entropyLabel(bits);
+  const uploading = attachments.some((a) => a.state === "working");
+  const readyFiles = attachments.filter((a) => a.state === "done" && a.ref && a.claim);
+
+  async function addFiles(list: FileList | null) {
+    if (!list || list.length === 0) return;
+    setError(null);
+    const chunk = policy?.file_chunk_size ?? 1 << 20;
+    const maxBytes = policy?.max_file_bytes ?? 0;
+
+    const chosen = Array.from(list);
+    if (attachments.length + chosen.length > maxFiles) {
+      setError(t("create.files.tooMany", { n: maxFiles }));
+      return;
+    }
+
+    for (const file of chosen) {
+      if (maxBytes > 0 && file.size > maxBytes) {
+        setError(t("create.files.tooLarge", { name: file.name, size: humanSize(maxBytes) }));
+        continue;
+      }
+      const key = `${file.name}-${file.size}-${Math.random().toString(36).slice(2)}`;
+      setAttachments((list) => [
+        ...list,
+        { key, name: file.name, size: file.size, state: "working", phase: "encrypting", percent: 0 },
+      ]);
+      try {
+        const pending = await encryptAndUpload(file, chunk, (p) => {
+          setAttachments((list) =>
+            list.map((a) =>
+              a.key === key
+                ? {
+                    ...a,
+                    phase: p.phase,
+                    percent: p.total > 0 ? Math.round((p.sent / p.total) * 100) : 0,
+                  }
+                : a,
+            ),
+          );
+        });
+        setAttachments((list) =>
+          list.map((a) =>
+            a.key === key
+              ? { ...a, state: "done", phase: "done", percent: 100, ref: pending.ref, claim: pending.claim }
+              : a,
+          ),
+        );
+      } catch (err) {
+        const text = describeError(err, t);
+        setAttachments((list) =>
+          list.map((a) => (a.key === key ? { ...a, state: "failed", error: text } : a)),
+        );
+        setError(t("create.files.failed", { name: file.name, error: text }));
+      }
+    }
+  }
+
+  function removeAttachment(key: string) {
+    // The blob stays on the server until its upload window closes, then the
+    // purge collects it. Nothing points at it in the meantime.
+    setAttachments((list) => list.filter((a) => a.key !== key));
+  }
+
+  function addRecipient() {
+    setRecipients((list) =>
+      list.length >= maxRecipients
+        ? list
+        : [
+            ...list,
+            {
+              key: Math.random().toString(36).slice(2),
+              label: "",
+              ttl,
+              views,
+              passphrase: "",
+            },
+          ],
+    );
+  }
+
+  function toggleMulti(on: boolean) {
+    setMulti(on);
+    if (on && recipients.length === 0) {
+      setRecipients([
+        { key: "a", label: "", ttl, views, passphrase: "" },
+        { key: "b", label: "", ttl, views, passphrase: "" },
+      ]);
+    }
+  }
+
+  function patchRecipient(key: string, patch: Partial<Recipient>) {
+    setRecipients((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  /** buildOne seals the payload for one recipient and returns its request. */
+  async function buildOne(
+    recipientPassphrase: string,
+    recipientTtl: number,
+    recipientViews: number,
+    files: FileRef[],
+  ): Promise<{ body: CreateRequest; share: string; receipt: string }> {
+    const id = newId();
+    const contentKey = newContentKey();
+    const kdf = newKdfParams();
+    if (policy?.kdf) {
+      kdf.memoryKiB = policy.kdf.memory_kib;
+      kdf.iterations = policy.kdf.iterations;
+      kdf.parallelism = policy.kdf.parallelism;
+    }
+    const keys = await deriveKeys(contentKey, recipientPassphrase, kdf);
+
+    const trimmed = secret.trim();
+    const payload = marshalPayload({
+      v: 1,
+      kind: files.length > 0 ? "file" : kind === "url" ? "url" : "text",
+      text: kind === "text" && trimmed ? trimmed : undefined,
+      url: kind === "url" && trimmed ? trimmed : undefined,
+      message: message.trim() || undefined,
+      files: files.length > 0 ? files : undefined,
+    });
+    const sealed = await seal(keys.enc, aad(id), payload);
+
+    // The receipt token authorises status checks and burning. It is random,
+    // and the server only stores its hash.
+    const receiptToken = randomBytes(32);
+    const receiptTokenHash = await sha256(receiptToken);
+
+    const body: CreateRequest = {
+      id,
+      kind: files.length > 0 ? "file" : kind,
+      ciphertext: b64urlEncode(sealed),
+      read_token_hash: b64urlEncode(keys.readTokenHash),
+      receipt_token_hash: b64urlEncode(receiptTokenHash),
+      kdf: {
+        salt: b64urlEncode(kdf.salt),
+        memory_kib: kdf.memoryKiB,
+        iterations: kdf.iterations,
+        parallelism: kdf.parallelism,
+      },
+      has_passphrase: recipientPassphrase !== "",
+      ttl_seconds: recipientTtl,
+      views: recipientViews,
+      retrieval_step: retrievalStep,
+      deletable_by_recipient: deletable,
+    };
+    const origin = window.location.origin;
+    return {
+      body,
+      share: `${origin}/s/${id}#v1.${b64urlEncode(contentKey)}`,
+      // Both tokens live in the fragment, so neither the server nor any proxy
+      // in between ever sees them.
+      receipt: `${origin}/r/${id}#v1.${b64urlEncode(contentKey)}~${b64urlEncode(receiptToken)}`,
+    };
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
 
     const trimmed = secret.trim();
-    if (!trimmed) {
+    const files = readyFiles.map((a) => a.ref!);
+    if (kind === "file") {
+      if (files.length === 0) {
+        setError(t("create.files.empty"));
+        return;
+      }
+    } else if (!trimmed) {
       setError(t("create.empty"));
       return;
     }
-    if (passphraseRequired && passphrase === "") {
+    if (uploading) return;
+
+    const blocks: Recipient[] = multi
+      ? recipients
+      : [{ key: "one", label: "", ttl, views, passphrase }];
+    if (passphraseRequired && blocks.some((r) => r.passphrase === "")) {
       setError(t("create.passphrase.required"));
+      return;
+    }
+    if (blocks.length > maxRecipients) {
+      setError(t("create.recipients.max", { n: maxRecipients }));
       return;
     }
 
     setBusy(true);
     try {
       // Everything below happens in this tab. The server receives the sealed
-      // payload, two digests and the chosen limits — never the key.
-      const id = newId();
-      const contentKey = newContentKey();
-      const kdf = newKdfParams();
-      if (policy?.kdf) {
-        kdf.memoryKiB = policy.kdf.memory_kib;
-        kdf.iterations = policy.kdf.iterations;
-        kdf.parallelism = policy.kdf.parallelism;
+      // payloads, two digests per link and the chosen limits — never a key.
+      const built = [];
+      for (const r of blocks) {
+        built.push({
+          ...(await buildOne(r.passphrase, r.ttl, r.views, files)),
+          label: r.label,
+        });
       }
-      const keys = await deriveKeys(contentKey, passphrase, kdf);
+      const claims: FileClaim[] = readyFiles.map((a) => a.claim!);
 
-      const payload = marshalPayload({
-        v: 1,
-        kind,
-        text: kind === "text" ? trimmed : undefined,
-        url: kind === "url" ? trimmed : undefined,
-        message: message.trim() || undefined,
-      });
-      const sealed = await seal(keys.enc, aad(id), payload);
+      if (built.length === 1) {
+        await api.create(claims.length > 0 ? { ...built[0].body, files: claims } : built[0].body);
+        // Replace, so Back does not return to a form holding the plaintext.
+        const target = built[0].receipt.slice(window.location.origin.length);
+        window.history.replaceState(null, "", target);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+        return;
+      }
 
-      // The receipt token authorises status checks and burning. It is random,
-      // and the server only stores its hash.
-      const receiptToken = randomBytes(32);
-      const receiptTokenHash = await sha256(receiptToken);
-
-      const created = await api.create({
-        id,
-        kind,
-        ciphertext: b64urlEncode(sealed),
-        read_token_hash: b64urlEncode(keys.readTokenHash),
-        receipt_token_hash: b64urlEncode(receiptTokenHash),
-        kdf: {
-          salt: b64urlEncode(kdf.salt),
-          memory_kib: kdf.memoryKiB,
-          iterations: kdf.iterations,
-          parallelism: kdf.parallelism,
-        },
-        has_passphrase: passphrase !== "",
-        ttl_seconds: ttl,
-        views,
-        retrieval_step: retrievalStep,
-        deletable_by_recipient: deletable,
-      });
-
-      // Both tokens live in the fragment of the receipt URL, so neither the
-      // server nor any proxy in between ever sees them.
-      const fragment = `v1.${b64urlEncode(contentKey)}~${b64urlEncode(receiptToken)}`;
-      const target = `/r/${created.id}#${fragment}`;
-      // Replace, so Back does not return to a form holding the plaintext.
-      window.history.replaceState(null, "", target);
-      window.dispatchEvent(new PopStateEvent("popstate"));
+      await api.createBundle(
+        built.map((b) => b.body),
+        claims,
+      );
+      setResults(built.map((b) => ({ label: b.label, share: b.share, receipt: b.receipt })));
+      setSecret("");
+      setAttachments([]);
+      setBusy(false);
     } catch (err) {
       setError(describeError(err, t));
       setBusy(false);
@@ -161,6 +343,45 @@ export default function Create({ t, policy, policyError }: Props) {
       <Card>
         <h1 className="text-xl font-semibold">{t("create.disabled.title")}</h1>
         <p className="peek-muted mt-2 text-sm leading-relaxed">{policyError}</p>
+      </Card>
+    );
+  }
+
+  if (results) {
+    return (
+      <Card className="space-y-5">
+        <header className="space-y-1">
+          <h1 className="text-xl font-semibold">{t("create.result.title", { n: results.length })}</h1>
+          <p className="peek-muted text-sm leading-relaxed">{t("create.result.hint")}</p>
+        </header>
+        <ol className="space-y-4">
+          {results.map((r, i) => (
+            <li
+              key={r.share}
+              className="rounded-xl border p-4"
+              style={{ borderColor: "var(--peek-border)" }}
+            >
+              <p className="text-sm font-semibold">
+                {r.label || t("create.recipients.n", { n: i + 1 })}
+              </p>
+              <div className="mt-3 space-y-2">
+                <LinkRow label={t("create.result.link")} value={r.share} t={t} />
+                <LinkRow label={t("create.result.receipt")} value={r.receipt} t={t} />
+              </div>
+            </li>
+          ))}
+        </ol>
+        <button
+          type="button"
+          className="peek-btn peek-btn-primary"
+          onClick={() => {
+            setResults(null);
+            setMulti(false);
+            setRecipients([]);
+          }}
+        >
+          {t("create.result.new")}
+        </button>
       </Card>
     );
   }
@@ -178,52 +399,62 @@ export default function Create({ t, policy, policyError }: Props) {
           className="inline-flex rounded-xl border p-1"
           style={{ borderColor: "var(--peek-border)" }}
         >
-          {(["text", "url"] as Kind[]).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={kind === option}
-              onClick={() => setKind(option)}
-              className="rounded-lg px-3 py-1.5 text-sm font-medium"
-              style={
-                kind === option
-                  ? { background: "var(--peek-primary)", color: "var(--peek-on-primary)" }
-                  : undefined
-              }
-            >
-              {option === "text" ? t("create.kind.text") : t("create.kind.url")}
-            </button>
-          ))}
+          {(filesAllowed ? (["text", "url", "file"] as Kind[]) : (["text", "url"] as Kind[])).map(
+            (option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={kind === option}
+                onClick={() => setKind(option)}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium"
+                style={
+                  kind === option
+                    ? { background: "var(--peek-primary)", color: "var(--peek-on-primary)" }
+                    : undefined
+                }
+              >
+                {t(
+                  option === "text"
+                    ? "create.kind.text"
+                    : option === "url"
+                      ? "create.kind.url"
+                      : "create.kind.file",
+                )}
+              </button>
+            ),
+          )}
         </div>
 
-        <Field label={t("create.secret")} htmlFor="secret">
-          {kind === "text" ? (
-            <textarea
-              id="secret"
-              required
-              rows={4}
-              className="peek-input font-mono"
-              placeholder={t("create.secret.placeholder")}
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-              autoCapitalize="off"
-            />
-          ) : (
-            <input
-              id="secret"
-              required
-              type="url"
-              inputMode="url"
-              className="peek-input font-mono"
-              placeholder={t("create.url.placeholder")}
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              autoComplete="off"
-            />
-          )}
-        </Field>
+        {kind !== "file" ? (
+          <Field label={t("create.secret")} htmlFor="secret">
+            {kind === "text" ? (
+              <textarea
+                id="secret"
+                required
+                rows={4}
+                className="peek-input font-mono"
+                placeholder={t("create.secret.placeholder")}
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="off"
+              />
+            ) : (
+              <input
+                id="secret"
+                required
+                type="url"
+                inputMode="url"
+                className="peek-input font-mono"
+                placeholder={t("create.url.placeholder")}
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                autoComplete="off"
+              />
+            )}
+          </Field>
+        ) : null}
 
         {kind === "text" ? (
           <div className="space-y-3">
@@ -299,6 +530,56 @@ export default function Create({ t, policy, policyError }: Props) {
           </div>
         ) : null}
 
+        {filesAllowed ? (
+          <Field
+            label={t("create.files")}
+            htmlFor="files"
+            hint={t("create.files.hint", { size: humanSize(policy?.max_file_bytes ?? 0) })}
+          >
+            <input
+              id="files"
+              type="file"
+              multiple
+              className="peek-input"
+              onChange={(e) => {
+                void addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </Field>
+        ) : null}
+
+        {attachments.length > 0 ? (
+          <ul className="space-y-2">
+            {attachments.map((a) => (
+              <li
+                key={a.key}
+                className="flex items-center gap-3 rounded-xl border px-3 py-2 text-sm"
+                style={{ borderColor: "var(--peek-border)" }}
+              >
+                <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
+                <span className="peek-muted shrink-0 text-xs">{humanSize(a.size)}</span>
+                <span className="peek-muted shrink-0 text-xs">
+                  {a.state === "failed"
+                    ? a.error
+                    : a.state === "done"
+                      ? "✓"
+                      : a.phase === "encrypting"
+                        ? t("create.files.encrypting")
+                        : t("create.files.uploading", { percent: a.percent })}
+                </span>
+                <button
+                  type="button"
+                  className="peek-btn peek-btn-ghost shrink-0 text-xs"
+                  onClick={() => removeAttachment(a.key)}
+                >
+                  {t("create.files.remove")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
         <Field label={t("create.message")} htmlFor="message">
           <input
             id="message"
@@ -312,53 +593,57 @@ export default function Create({ t, policy, policyError }: Props) {
       </Card>
 
       <Card className="space-y-5">
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field label={t("create.expiry")} htmlFor="ttl">
-            <select
-              id="ttl"
-              className="peek-input"
-              value={ttl}
-              onChange={(e) => setTtl(Number(e.target.value))}
-            >
-              {expiryChoices.map((choice) => (
-                <option key={choice.seconds} value={choice.seconds}>
-                  {t(choice.key)}
-                </option>
-              ))}
-            </select>
-          </Field>
+        {multi ? null : (
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field label={t("create.expiry")} htmlFor="ttl">
+              <select
+                id="ttl"
+                className="peek-input"
+                value={ttl}
+                onChange={(e) => setTtl(Number(e.target.value))}
+              >
+                {expiryChoices.map((choice) => (
+                  <option key={choice.seconds} value={choice.seconds}>
+                    {t(choice.key)}
+                  </option>
+                ))}
+              </select>
+            </Field>
 
-          <Field label={t("create.views")} htmlFor="views">
-            <select
-              id="views"
-              className="peek-input"
-              value={views}
-              onChange={(e) => setViews(Number(e.target.value))}
-            >
-              {viewChoices.map((v) => (
-                <option key={v} value={v}>
-                  {v === 1 ? t("create.views.one") : t("create.views.many", { n: v })}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+            <Field label={t("create.views")} htmlFor="views">
+              <select
+                id="views"
+                className="peek-input"
+                value={views}
+                onChange={(e) => setViews(Number(e.target.value))}
+              >
+                {viewChoices.map((v) => (
+                  <option key={v} value={v}>
+                    {v === 1 ? t("create.views.one") : t("create.views.many", { n: v })}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        )}
 
-        <Field
-          label={t("create.passphrase")}
-          htmlFor="passphrase"
-          hint={t("create.passphrase.hint")}
-        >
-          <input
-            id="passphrase"
-            type="password"
-            className="peek-input"
-            value={passphrase}
-            onChange={(e) => setPassphrase(e.target.value)}
-            autoComplete="new-password"
-            required={passphraseRequired}
-          />
-        </Field>
+        {multi ? null : (
+          <Field
+            label={t("create.passphrase")}
+            htmlFor="passphrase"
+            hint={t("create.passphrase.hint")}
+          >
+            <input
+              id="passphrase"
+              type="password"
+              className="peek-input"
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              autoComplete="new-password"
+              required={passphraseRequired}
+            />
+          </Field>
+        )}
 
         <div className="space-y-3">
           <Toggle
@@ -375,7 +660,99 @@ export default function Create({ t, policy, policyError }: Props) {
             onChange={setDeletable}
             label={t("create.deletable")}
           />
+          {maxRecipients > 1 ? (
+            <Toggle
+              id="multi"
+              checked={multi}
+              onChange={toggleMulti}
+              label={t("create.recipients")}
+              hint={t("create.recipients.hint")}
+            />
+          ) : null}
         </div>
+
+        {multi ? (
+          <div className="space-y-3">
+            {recipients.map((r, i) => (
+              <fieldset
+                key={r.key}
+                className="rounded-xl border p-4"
+                style={{ borderColor: "var(--peek-border)" }}
+              >
+                <legend className="px-1 text-xs font-semibold">
+                  {t("create.recipients.n", { n: i + 1 })}
+                </legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label={t("create.recipients.label")} htmlFor={`label-${r.key}`}>
+                    <input
+                      id={`label-${r.key}`}
+                      className="peek-input"
+                      value={r.label}
+                      onChange={(e) => patchRecipient(r.key, { label: e.target.value })}
+                      maxLength={80}
+                    />
+                  </Field>
+                  <Field label={t("create.passphrase")} htmlFor={`pass-${r.key}`}>
+                    <input
+                      id={`pass-${r.key}`}
+                      type="password"
+                      className="peek-input"
+                      value={r.passphrase}
+                      onChange={(e) => patchRecipient(r.key, { passphrase: e.target.value })}
+                      autoComplete="new-password"
+                      required={passphraseRequired}
+                    />
+                  </Field>
+                  <Field label={t("create.expiry")} htmlFor={`ttl-${r.key}`}>
+                    <select
+                      id={`ttl-${r.key}`}
+                      className="peek-input"
+                      value={r.ttl}
+                      onChange={(e) => patchRecipient(r.key, { ttl: Number(e.target.value) })}
+                    >
+                      {expiryChoices.map((choice) => (
+                        <option key={choice.seconds} value={choice.seconds}>
+                          {t(choice.key)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label={t("create.views")} htmlFor={`views-${r.key}`}>
+                    <select
+                      id={`views-${r.key}`}
+                      className="peek-input"
+                      value={r.views}
+                      onChange={(e) => patchRecipient(r.key, { views: Number(e.target.value) })}
+                    >
+                      {viewChoices.map((v) => (
+                        <option key={v} value={v}>
+                          {v === 1 ? t("create.views.one") : t("create.views.many", { n: v })}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                {recipients.length > 2 ? (
+                  <button
+                    type="button"
+                    className="peek-btn peek-btn-ghost mt-3 text-xs"
+                    onClick={() => setRecipients((l) => l.filter((x) => x.key !== r.key))}
+                  >
+                    {t("create.recipients.remove")}
+                  </button>
+                ) : null}
+              </fieldset>
+            ))}
+            <button
+              type="button"
+              className="peek-btn peek-btn-ghost text-sm"
+              onClick={addRecipient}
+              disabled={recipients.length >= maxRecipients}
+            >
+              {t("create.recipients.add")}
+            </button>
+          </div>
+        ) : null}
 
         {error ? (
           <Banner tone="danger" title={t("create.error")}>
@@ -386,12 +763,22 @@ export default function Create({ t, policy, policyError }: Props) {
         <button
           type="submit"
           className="peek-btn peek-btn-primary w-full sm:w-auto"
-          disabled={busy || !cryptoReady}
+          disabled={busy || uploading || !cryptoReady}
         >
           {busy ? <Spinner label={t("create.submitting")} /> : t("create.submit")}
         </button>
       </Card>
     </form>
+  );
+}
+
+function LinkRow({ label, value, t }: { label: string; value: string; t: Translate }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="peek-muted w-40 shrink-0 text-xs font-semibold">{label}</span>
+      <input readOnly className="peek-input flex-1 font-mono text-xs" value={value} />
+      <CopyButton value={value} label={t("reveal.copy")} copiedLabel={t("reveal.copied")} />
+    </div>
   );
 }
 
