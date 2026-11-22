@@ -268,19 +268,37 @@ func (s *Server) Handler(listener string) http.Handler {
 				admin.Group(func(instance chi.Router) {
 					instance.Use(s.requireRole(store.RoleAdmin))
 					instance.Get("/instance", s.handleInstance)
+
+					// Customisation. A manager runs the users; the brand of
+					// the whole instance is an administrator's decision.
+					instance.Get("/branding/admin", s.handleBrandingOptions)
+					instance.Put("/branding/admin", s.handleSaveBranding)
+					instance.Delete("/branding/admin", s.handleResetBranding)
+					instance.Put("/branding/assets/{kind}", s.handleUploadAsset)
+					instance.Delete("/branding/assets/{kind}", s.handleDeleteAsset)
+					instance.Post("/branding/test-email", s.handleTestEmail)
 				})
 			})
 		})
 	})
 
 	// Branding stylesheet: served as a file so the CSP needs no inline styles.
-	r.With(noStore).Get("/branding.css", s.handleBrandingCSS)
+	r.Get("/branding.css", s.handleBrandingCSS)
+	// Logos and the favicon, on both listeners: a recipient page needs them.
+	r.Get("/branding/{kind}", s.handleBrandingAsset)
 
 	// Single-page application. The recipient pages are the only ones the
 	// public listener needs, but the SPA is one bundle: it is served on both
 	// listeners and the API gate above is what actually protects creation.
 	r.NotFound(s.ui.ServeHTTP)
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		// On the public listener a 405 would say "this path exists, you used
+		// the wrong verb" — which is exactly what the internal-only routes
+		// must not admit. Out there, everything unmatched is simply absent.
+		if listener == listenerPublic {
+			writeError(w, r, http.StatusNotFound, "not_found", "Not found.")
+			return
+		}
 		writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
 	})
 	return r

@@ -63,6 +63,8 @@ function parseRoute(): Route {
 export default function App() {
   const [route, setRoute] = useState<Route>(parseRoute);
   const [branding, setBranding] = useState<Branding | null>(null);
+  // Bumped after the brand is edited, to refetch it without a page reload.
+  const [brandVersion, setBrandVersion] = useState(0);
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>(() => storedLang() ?? browserLang() ?? "fr");
@@ -90,7 +92,7 @@ export default function App() {
         }
       })
       .catch(() => setBranding(null));
-  }, [lang]);
+  }, [lang, brandVersion]);
 
   // The policy lives on the internal listener only: a 404 is how a public,
   // recipient-only instance tells us not to offer creation here.
@@ -243,7 +245,7 @@ export default function App() {
             lang={lang}
             policy={policy}
             policyError={policyError}
-            session={session}
+            session={{ ...session, onBrandChanged: () => setBrandVersion((v) => v + 1) }}
           />
         )}
       </main>
@@ -285,7 +287,7 @@ function Routes({
   lang: Lang;
   policy: Policy | null;
   policyError: string | null;
-  session: ReturnType<typeof useSession>;
+  session: ReturnType<typeof useSession> & { onBrandChanged: () => void };
 }) {
   const me = session.me;
   const signedIn = !!me?.authenticated;
@@ -320,7 +322,7 @@ function Routes({
       );
     case "admin":
       return signedIn && me && (me.can_manage || me.can_audit) ? (
-        <Admin t={t} lang={lang} me={me} />
+        <Admin t={t} lang={lang} me={me} onBrandChanged={session.onBrandChanged} />
       ) : (
         <SignInFirst t={t} />
       );

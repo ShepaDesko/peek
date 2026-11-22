@@ -10,25 +10,29 @@ import {
 import { formatWhen } from "../lib/format";
 import type { Lang, Translate } from "../lib/i18n";
 import { Banner, Card, CopyButton, Field, Spinner } from "../ui";
+import Branding from "./Branding";
 import { describeError } from "./Create";
 
 interface Props {
   t: Translate;
   lang: Lang;
   me: Me;
+  /** Called after the brand changes, so the shell reloads it. */
+  onBrandChanged: () => void;
 }
 
-type Tab = "users" | "audit" | "instance";
+type Tab = "users" | "audit" | "branding" | "instance";
 
 const ROLES: Role[] = ["admin", "manager", "member", "auditor"];
 
-export default function Admin({ t, lang, me }: Props) {
+export default function Admin({ t, lang, me, onBrandChanged }: Props) {
   const [tab, setTab] = useState<Tab>(me.can_manage ? "users" : "audit");
   const [error, setError] = useState<string | null>(null);
 
   const tabs: { id: Tab; label: string; visible: boolean }[] = [
     { id: "users", label: t("admin.tab.users"), visible: !!me.can_manage },
     { id: "audit", label: t("admin.tab.audit"), visible: !!me.can_audit },
+    { id: "branding", label: t("admin.tab.branding"), visible: !!me.can_administer },
     { id: "instance", label: t("admin.tab.instance"), visible: !!me.can_administer },
   ];
 
@@ -68,6 +72,9 @@ export default function Admin({ t, lang, me }: Props) {
         <UsersTab t={t} lang={lang} me={me} onError={setError} />
       ) : null}
       {tab === "audit" && me.can_audit ? <AuditTab t={t} lang={lang} onError={setError} /> : null}
+      {tab === "branding" && me.can_administer ? (
+        <Branding t={t} lang={lang} onChanged={onBrandChanged} />
+      ) : null}
       {tab === "instance" && me.can_administer ? <InstanceTab t={t} onError={setError} /> : null}
     </div>
   );

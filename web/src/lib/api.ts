@@ -429,3 +429,101 @@ export const secretMail = {
     body: { link: string; to: string; message: string; has_passphrase: boolean },
   ) => request<{ sent: boolean }>("POST", `/api/v1/secrets/${encodeURIComponent(id)}/email`, body),
 };
+
+// --- branding administration -------------------------------------------------
+
+export interface ResolvedTheme {
+  service_name: string;
+  primary_color: string;
+  accent_color: string;
+  background_color?: string;
+  font: string;
+  font_stack: string;
+  corner_radius: string;
+  corner_radius_value: string;
+  button_style: string;
+  hide_powered_by: boolean;
+  support_url: string;
+  legal_url: string;
+  privacy_url: string;
+  contact_email?: string;
+  language: string;
+  palette: Record<string, string>;
+  texts?: Record<string, Record<string, string>>;
+  assets?: Record<string, string>;
+  has_custom_css: boolean;
+  warnings?: string[];
+  version: number;
+}
+
+export interface BrandingPayload {
+  service_name: string;
+  primary_color: string;
+  accent_color: string;
+  background_color: string;
+  corner_radius: string;
+  font: string;
+  button_style: string;
+  hide_powered_by: boolean;
+  support_url: string;
+  legal_url: string;
+  privacy_url: string;
+  contact_email: string;
+  texts: Record<string, Record<string, string>>;
+  custom_css: string;
+}
+
+export interface BrandingAdminState {
+  theme: ResolvedTheme;
+  saved: boolean;
+  custom_css: string;
+  texts: Record<string, Record<string, string>>;
+  assets: { kind: string; content_type: string; size_bytes: number; url: string }[];
+  options: {
+    fonts: { id: string; label: string; stack: string }[];
+    radii: { id: string; label: string; value: string }[];
+    button_styles: { id: string; label: string }[];
+    text_keys: string[];
+    languages: string[];
+    asset_kinds: string[];
+    max_css_bytes: number;
+    max_asset_bytes: number;
+  };
+  mail_configured: boolean;
+}
+
+export const brandingAdmin = {
+  get: () => request<BrandingAdminState>("GET", "/api/v1/branding/admin"),
+  save: (body: BrandingPayload) => request<ResolvedTheme>("PUT", "/api/v1/branding/admin", body),
+  reset: () => request<ResolvedTheme>("DELETE", "/api/v1/branding/admin"),
+  testEmail: (to: string) =>
+    request<{ sent: boolean; to: string }>("POST", "/api/v1/branding/test-email", { to }),
+
+  /**
+   * Uploads one image as a raw body rather than a multipart form: there is
+   * exactly one file, and a byte stream is a smaller target than a parser.
+   */
+  uploadAsset: async (kind: string, file: File) => {
+    const csrf = csrfToken();
+    const response = await fetch(`/api/v1/branding/assets/${encodeURIComponent(kind)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+        ...(csrf ? { "X-Peek-CSRF": csrf } : {}),
+      },
+      body: file,
+      credentials: "same-origin",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+    });
+    const text = await response.text();
+    const parsed: unknown = text ? JSON.parse(text) : null;
+    if (!response.ok) {
+      throw new ApiError(response.status, parsed as ApiErrorBody | null, response.statusText);
+    }
+    return parsed as { kind: string; url: string };
+  },
+
+  deleteAsset: (kind: string) =>
+    request<void>("DELETE", `/api/v1/branding/assets/${encodeURIComponent(kind)}`),
+};

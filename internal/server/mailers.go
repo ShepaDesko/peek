@@ -3,76 +3,102 @@ package server
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
+	"github.com/ShepaDesko/peek/internal/branding"
 	"github.com/ShepaDesko/peek/internal/mail"
 	"github.com/ShepaDesko/peek/internal/store"
 )
 
 // The messages Peek sends.
 //
-// They are deliberately plain: a link, what it is for, how long it lasts, and
-// nothing that would open it on its own. Branded HTML templates arrive with
-// the branding editor in M6; the text here is what a mail client that refuses
-// HTML will always see.
+// They carry a link, what it is for, and how long it lasts — never a
+// passphrase and never a key. They are branded from the instance theme, and
+// every one of them also exists as plain text, because a mail client that
+// refuses HTML must still be usable.
 
 func (s *Server) publicLink(path string) string {
 	return strings.TrimRight(s.cfg.PublicURL, "/") + path
 }
 
+// mailTheme resolves the brand outside a request, for the background sends.
+func (s *Server) mailTheme(ctx context.Context) branding.Resolved {
+	var stored *store.Branding
+	if saved, err := s.store.Branding(ctx, store.DefaultOrgID); err == nil {
+		stored = &saved
+	}
+	assets, _ := s.store.ListAssets(ctx, store.DefaultOrgID)
+	return branding.Resolve(s.cfg, stored, assets, languages)
+}
+
+// brandText returns an administrator's override for a key, or the fallback.
+func brandText(theme branding.Resolved, key, fallback string) string {
+	if entries, ok := theme.Texts[theme.Language]; ok {
+		if value := strings.TrimSpace(entries[key]); value != "" {
+			return value
+		}
+	}
+	return fallback
+}
+
 // mailInvitation sends an invitation link.
 func (s *Server) mailInvitation(ctx context.Context, to, token, inviter string) error {
+	theme := s.mailTheme(ctx)
 	link := s.publicLink("/invitation#" + token)
-	brand := s.brandName()
 	from := "Un administrateur"
 	if inviter != "" {
 		from = inviter
 	}
 
-	text := fmt.Sprintf(`%s vous invite a rejoindre %s.
+	text := fmt.Sprintf(`%s vous invite à rejoindre %s.
 
-%s sert a partager des secrets par liens ephemeres, chiffres de bout en bout.
+%s sert à partager des secrets par liens éphémères, chiffrés de bout en bout.
 
-Pour creer votre compte, ouvrez ce lien :
+Pour créer votre compte, ouvrez ce lien :
 
 %s
 
 Ce lien est valable 7 jours et ne fonctionne qu'une fois.
 Si vous n'attendiez pas cette invitation, ignorez ce message.
-`, from, brand, brand, link)
+%s`, from, theme.ServiceName, theme.ServiceName, link, signature(theme))
 
 	return s.mailer.Send(ctx, mail.Message{
 		To:      []string{to},
-		Subject: fmt.Sprintf("Invitation a rejoindre %s", brand),
+		Subject: fmt.Sprintf("Invitation à rejoindre %s", theme.ServiceName),
 		Text:    text,
-		HTML: s.simpleHTML(fmt.Sprintf("%s vous invite a rejoindre %s.", from, brand), "Creer mon compte", link,
-			"Ce lien est valable 7 jours et ne fonctionne qu'une fois."),
+		HTML: s.brandedHTML(theme,
+			fmt.Sprintf("%s vous invite à rejoindre %s.", from, theme.ServiceName),
+			"Ce lien est valable 7 jours et ne fonctionne qu'une fois.",
+			"Créer mon compte", link, ""),
 	})
 }
 
 // mailPasswordReset sends a reset link.
 func (s *Server) mailPasswordReset(ctx context.Context, user store.User, token string) error {
+	theme := s.mailTheme(ctx)
 	link := s.publicLink("/reset#" + token)
-	brand := s.brandName()
 
-	text := fmt.Sprintf(`Une reinitialisation de mot de passe a ete demandee pour votre compte %s.
+	text := fmt.Sprintf(`Une réinitialisation de mot de passe a été demandée pour votre compte %s.
 
 Pour choisir un nouveau mot de passe, ouvrez ce lien :
 
 %s
 
 Ce lien expire dans une heure et ne fonctionne qu'une fois.
-Si vous n'etes pas a l'origine de cette demande, ignorez ce message :
+Si vous n'êtes pas à l'origine de cette demande, ignorez ce message :
 votre mot de passe actuel reste valable.
-`, brand, link)
+%s`, theme.ServiceName, link, signature(theme))
 
 	return s.mailer.Send(ctx, mail.Message{
 		To:      []string{user.Email},
-		Subject: fmt.Sprintf("Reinitialiser votre mot de passe %s", brand),
+		Subject: fmt.Sprintf("Réinitialiser votre mot de passe %s", theme.ServiceName),
 		Text:    text,
-		HTML: s.simpleHTML("Une reinitialisation de mot de passe a ete demandee.",
-			"Choisir un nouveau mot de passe", link,
-			"Ce lien expire dans une heure. Si vous n'etes pas a l'origine de cette demande, ignorez ce message."),
+		HTML: s.brandedHTML(theme,
+			"Une réinitialisation de mot de passe a été demandée.",
+			"Ce lien expire dans une heure. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.",
+			"Choisir un nouveau mot de passe", link, ""),
 	})
 }
 
@@ -81,71 +107,113 @@ votre mot de passe actuel reste valable.
 // The passphrase is never included, even when one exists: the whole point of a
 // passphrase is that it travels by another route.
 func (s *Server) mailSecretLink(ctx context.Context, to, link, message string, hasPassphrase bool) error {
-	brand := s.brandName()
+	theme := s.mailTheme(ctx)
+
 	var b strings.Builder
-	fmt.Fprintf(&b, "Un secret vous a ete partage via %s.\n\n", brand)
+	fmt.Fprintf(&b, "Un secret vous a été partagé via %s.\n\n", theme.ServiceName)
 	if message != "" {
-		fmt.Fprintf(&b, "Message de l'expediteur :\n%s\n\n", message)
+		fmt.Fprintf(&b, "Message de l'expéditeur :\n%s\n\n", message)
 	}
 	fmt.Fprintf(&b, "Ouvrez ce lien pour le consulter :\n\n%s\n\n", link)
-	b.WriteString("Le lien expire et ne peut etre consulte qu'un nombre limite de fois.\n")
+	b.WriteString("Le lien expire et ne peut être consulté qu'un nombre limité de fois.\n")
 	if hasPassphrase {
-		b.WriteString("\nUne passphrase est necessaire. L'expediteur vous la transmet par un autre canal :\nelle n'est jamais envoyee par e-mail.\n")
+		b.WriteString("\nUne passphrase est nécessaire. L'expéditeur vous la transmet par un autre canal :\n" +
+			"elle n'est jamais envoyée par e-mail.\n")
 	}
+	b.WriteString(signature(theme))
 
-	note := "Le lien expire et ne peut etre consulte qu'un nombre limite de fois."
+	note := "Le lien expire et ne peut être consulté qu'un nombre limité de fois."
 	if hasPassphrase {
-		note += " Une passphrase est necessaire ; elle ne circule jamais par e-mail."
+		note += " Une passphrase est nécessaire ; elle ne circule jamais par e-mail."
 	}
 	return s.mailer.Send(ctx, mail.Message{
 		To:      []string{to},
-		Subject: fmt.Sprintf("Un secret vous a ete partage via %s", brand),
+		Subject: fmt.Sprintf("Un secret vous a été partagé via %s", theme.ServiceName),
 		Text:    b.String(),
-		HTML:    s.simpleHTML(fmt.Sprintf("Un secret vous a ete partage via %s.", brand), "Consulter le secret", link, note),
+		HTML: s.brandedHTML(theme,
+			fmt.Sprintf("Un secret vous a été partagé via %s.", theme.ServiceName),
+			note, "Consulter le secret", link, message),
 	})
 }
 
 // mailSecretViewed tells a sender their secret was read.
 func (s *Server) mailSecretViewed(ctx context.Context, to, secretID string, destroyed bool) error {
-	brand := s.brandName()
+	theme := s.mailTheme(ctx)
 	state := "Il reste encore des lectures disponibles."
 	if destroyed {
-		state = "C'etait la derniere lecture : le secret a ete detruit."
+		state = "C'était la dernière lecture : le secret a été détruit."
 	}
-	text := fmt.Sprintf(`Votre secret %s vient d'etre consulte sur %s.
-
-%s
-`, secretID, brand, state)
+	text := fmt.Sprintf("Votre secret %s vient d'être consulté sur %s.\n\n%s\n%s",
+		secretID, theme.ServiceName, state, signature(theme))
 
 	return s.mailer.Send(ctx, mail.Message{
 		To:      []string{to},
-		Subject: fmt.Sprintf("Votre secret a ete consulte - %s", brand),
+		Subject: fmt.Sprintf("Votre secret a été consulté — %s", theme.ServiceName),
 		Text:    text,
+		HTML:    s.brandedHTML(theme, "Votre secret vient d'être consulté.", state, "", "", ""),
 	})
 }
 
-// simpleHTML renders the one layout these messages use.
+func signature(theme branding.Resolved) string {
+	custom := brandText(theme, "email.signature", "")
+	if custom == "" {
+		return ""
+	}
+	return "\n--\n" + custom + "\n"
+}
+
+// brandedHTML renders the one layout these messages use.
 //
 // Tables and inline styles, because that is what mail clients render
-// predictably; no image, no web font, nothing loaded from a server, so the
-// message looks the same offline and leaks no read receipt.
-func (s *Server) simpleHTML(lead, action, link, note string) string {
-	primary := s.cfg.Branding.PrimaryColor
+// predictably. Nothing is loaded from a server — no image, no web font — so
+// the message looks the same offline and carries no read receipt. The logo is
+// deliberately absent for that reason: a remote image in a mail is a tracker,
+// whoever sends it.
+func (s *Server) brandedHTML(theme branding.Resolved, lead, note, action, link, message string) string {
+	primary := theme.PrimaryColor
 	if primary == "" {
 		primary = "#4f46e5"
 	}
+	onPrimary := theme.Palette["on-primary"]
+	if onPrimary == "" {
+		onPrimary = "#ffffff"
+	}
+	radius := theme.RadiusValue
+	if radius == "" {
+		radius = "10px"
+	}
+
+	var body strings.Builder
+	fmt.Fprintf(&body,
+		`<p style="margin:0 0 8px;font-size:18px;font-weight:600">%s</p>`, htmlEscape(lead))
+	if message != "" {
+		fmt.Fprintf(&body,
+			`<p style="margin:0 0 16px;padding:12px;border-radius:%s;background:#f6f7fb;font-size:14px;line-height:1.6;color:#15182a">%s</p>`,
+			htmlEscape(radius), htmlEscape(message))
+	}
+	fmt.Fprintf(&body,
+		`<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#5b6079">%s</p>`, htmlEscape(note))
+	if action != "" && link != "" {
+		fmt.Fprintf(&body,
+			`<p style="margin:0 0 20px"><a href="%s" style="display:inline-block;background:%s;color:%s;text-decoration:none;padding:12px 20px;border-radius:%s;font-weight:600;font-size:14px">%s</a></p>`+
+				`<p style="margin:0;font-size:12px;line-height:1.6;color:#5b6079;word-break:break-all">Si le bouton ne fonctionne pas, copiez cette adresse :<br>%s</p>`,
+			htmlEscape(link), htmlEscape(primary), htmlEscape(onPrimary), htmlEscape(radius),
+			htmlEscape(action), htmlEscape(link))
+	}
+
+	footer := theme.ServiceName
+	if sig := brandText(theme, "email.signature", ""); sig != "" {
+		footer = sig
+	}
+
 	return fmt.Sprintf(`<!doctype html>
 <html lang="fr"><body style="margin:0;padding:24px;background:#f6f7fb;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#15182a">
 <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e5ee;border-radius:14px">
 <tr><td style="padding:28px">
-<p style="margin:0 0 8px;font-size:18px;font-weight:600">%s</p>
-<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#5b6079">%s</p>
-<p style="margin:0 0 20px"><a href="%s" style="display:inline-block;background:%s;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600;font-size:14px">%s</a></p>
-<p style="margin:0;font-size:12px;line-height:1.6;color:#5b6079;word-break:break-all">Si le bouton ne fonctionne pas, copiez cette adresse :<br>%s</p>
+%s
 </td></tr></table>
 <p style="max-width:560px;margin:16px auto 0;font-size:11px;color:#5b6079;text-align:center">%s</p>
-</body></html>`, htmlEscape(lead), htmlEscape(note), htmlEscape(link), htmlEscape(primary),
-		htmlEscape(action), htmlEscape(link), htmlEscape(s.brandName()))
+</body></html>`, body.String(), htmlEscape(footer))
 }
 
 // htmlEscape is deliberately strict: everything placed in these templates
@@ -160,4 +228,9 @@ func htmlEscape(s string) string {
 		"'", "&#39;",
 	)
 	return r.Replace(s)
+}
+
+// contextWithTimeout bounds a send started from a request.
+func contextWithTimeout(r *http.Request, d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(r.Context(), d)
 }

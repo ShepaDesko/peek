@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/ShepaDesko/peek/internal/backup"
-	"github.com/ShepaDesko/peek/internal/branding"
 	"github.com/ShepaDesko/peek/internal/config"
 	"github.com/ShepaDesko/peek/internal/doctor"
 	"github.com/ShepaDesko/peek/internal/setup"
@@ -515,94 +514,6 @@ func runKey(_ context.Context, args []string) error {
 	fmt.Println("and server-side encrypted metadata (SMTP and SSO secrets) arrives in milestone M5.")
 	fmt.Println("back this file up separately from the database, and restart the service.")
 	return nil
-}
-
-// ---------------------------------------------------------------------------
-// peek branding export / import
-// ---------------------------------------------------------------------------
-
-type brandFile struct {
-	Format   int               `json:"format"`
-	Exported time.Time         `json:"exported_at"`
-	Theme    branding.Theme    `json:"theme"`
-	Texts    map[string]string `json:"texts,omitempty"`
-}
-
-func runBranding(_ context.Context, args []string) error {
-	if len(args) == 0 {
-		return fail("usage: peek branding export|import [--config PATH] [FILE]")
-	}
-	sub := args[0]
-	fs := flag.NewFlagSet("branding "+sub, flag.ContinueOnError)
-	configPath := fs.String("config", defaultConfigPath(), "path to peek.toml")
-	if err := fs.Parse(args[1:]); err != nil {
-		return err
-	}
-	cfg, err := config.Load(*configPath, false)
-	if err != nil {
-		return err
-	}
-
-	switch sub {
-	case "export":
-		out := brandFile{Format: 1, Exported: time.Now().UTC(), Theme: branding.FromConfig(&cfg)}
-		buf, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return err
-		}
-		buf = append(buf, '\n')
-		if fs.NArg() == 1 {
-			if err := os.WriteFile(fs.Arg(0), buf, 0o644); err != nil { //nolint:gosec // a brand file is not a secret
-				return err
-			}
-			fmt.Printf("brand exported to %s\n", fs.Arg(0))
-			return nil
-		}
-		_, err = os.Stdout.Write(buf)
-		return err
-
-	case "import":
-		if fs.NArg() != 1 {
-			return fail("usage: peek branding import FILE")
-		}
-		buf, err := os.ReadFile(fs.Arg(0)) //nolint:gosec // the operator names the brand file
-		if err != nil {
-			return err
-		}
-		var in brandFile
-		if err := json.Unmarshal(buf, &in); err != nil {
-			return fmt.Errorf("%s is not a valid brand file: %w", fs.Arg(0), err)
-		}
-		if in.Format != 1 {
-			return fail("brand file format %d is not supported", in.Format)
-		}
-		cfg.Branding.ServiceName = in.Theme.ServiceName
-		cfg.Branding.PrimaryColor = in.Theme.PrimaryColor
-		cfg.Branding.AccentColor = in.Theme.AccentColor
-		cfg.Branding.HidePoweredBy = in.Theme.HidePoweredBy
-		cfg.Branding.SupportURL = in.Theme.SupportURL
-		cfg.Branding.LegalURL = in.Theme.LegalURL
-		cfg.Branding.PrivacyURL = in.Theme.PrivacyURL
-		if err := cfg.Validate(); err != nil {
-			return err
-		}
-		marshalled, err := cfg.Marshal()
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(*configPath, marshalled, 0o640); err != nil { //nolint:gosec // G306: a brand file is not a secret
-			return err
-		}
-		fmt.Printf("brand imported into %s\n", *configPath)
-		for _, w := range in.Theme.Warnings {
-			fmt.Printf("warning: %s\n", w)
-		}
-		fmt.Println("restart the service to serve it: sudo systemctl restart peek")
-		return nil
-
-	default:
-		return fail("unknown subcommand %q (expected export or import)", sub)
-	}
 }
 
 // ---------------------------------------------------------------------------
