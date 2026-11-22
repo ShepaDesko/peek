@@ -226,6 +226,8 @@ func (s *Server) Handler(listener string) http.Handler {
 				open.Get("/auth/me", s.handleMe)
 				open.Post("/auth/logout", s.handleLogout)
 				open.Get("/policy", s.handlePolicy)
+				// The API describes itself, from its own route table.
+				open.Get("/openapi.json", s.handleOpenAPI)
 			})
 
 			// --- creating and following your own secrets -------------------

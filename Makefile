@@ -100,6 +100,10 @@ test-web: ## Run the TypeScript tests (crypto vectors included)
 vectors: ## Regenerate the shared crypto test vectors
 	$(GO) run ./tools/genvectors
 
+.PHONY: openapi
+openapi: ## Regenerate api/openapi.json from the route table
+	$(GO) run ./tools/genopenapi
+
 .PHONY: lint
 lint: ## Run gofmt, go vet, golangci-lint and ESLint
 	@test -z "$$(gofmt -l cmd internal tools)" || (echo "gofmt needed:"; gofmt -l cmd internal tools; exit 1)

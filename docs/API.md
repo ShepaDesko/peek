@@ -506,6 +506,28 @@ GET /api/v1/instance
   "public_listener": true }
 ```
 
+## The machine-readable description
+
+```http
+GET /api/v1/openapi.json
+```
+
+An OpenAPI 3.1 document, **generated from the instance's own route table** —
+not written beside it. A route with no description makes a test fail by name,
+and a description left behind after a route is removed fails the same test, so
+the document cannot quietly drift out of date. It carries, per operation, which
+listener serves it, what authentication it takes and which token scope it
+needs.
+
+A committed copy lives at [`api/openapi.json`](../api/openapi.json) for reading
+or for generating a client without a running server; CI regenerates it and
+fails on any diff. Regenerate it yourself with `make openapi`.
+
+```bash
+# a client, straight from the instance
+curl -sS https://secrets.acme.com/api/v1/openapi.json -o openapi.json
+```
+
 ## Scripting it
 
 `peek-cli` already does all of this and encrypts locally:

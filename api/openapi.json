@@ -1,0 +1,3776 @@
+{
+  "components": {
+    "schemas": {
+      "AuditPage": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "properties": {
+                "at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "detail": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "event": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "integer"
+                },
+                "ip": {
+                  "type": "string"
+                },
+                "org_id": {
+                  "type": "string"
+                },
+                "secret_id": {
+                  "type": "string"
+                },
+                "user_agent": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ClientAddress": {
+        "properties": {
+          "client_ip": {
+            "type": "string"
+          },
+          "forwarded_honoured": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string"
+          },
+          "listener": {
+            "enum": [
+              "internal",
+              "public"
+            ],
+            "type": "string"
+          },
+          "peer_addr": {
+            "type": "string"
+          },
+          "scheme": {
+            "type": "string"
+          },
+          "trusted_peer": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "CreateRequest": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kdf": {
+            "description": "Argon2id parameters. The salt is public; it is useless without the key.",
+            "properties": {
+              "iterations": {
+                "default": 2,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "memory_kib": {
+                "default": 19456,
+                "minimum": 8192,
+                "type": "integer"
+              },
+              "parallelism": {
+                "default": 1,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "salt": {
+                "description": "16 bytes of salt. base64url, unpadded.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "salt",
+              "memory_kib",
+              "iterations",
+              "parallelism"
+            ],
+            "type": "object"
+          },
+          "label_enc": {
+            "description": "Private label. base64url, unpadded.",
+            "type": "string"
+          },
+          "max_deposits": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "notify_email": {
+            "format": "email",
+            "type": "string"
+          },
+          "prompt_enc": {
+            "description": "The prompt, sealed with the request key. base64url, unpadded.",
+            "type": "string"
+          },
+          "public_key": {
+            "description": "65 bytes: an uncompressed SEC1 P-256 point. base64url, unpadded.",
+            "type": "string"
+          },
+          "read_token_hash": {
+            "description": "SHA-256 of the request read token. base64url, unpadded.",
+            "type": "string"
+          },
+          "receipt_token_hash": {
+            "description": "SHA-256 of the requester's receipt token. base64url, unpadded.",
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "public_key",
+          "read_token_hash",
+          "receipt_token_hash",
+          "kdf"
+        ],
+        "type": "object"
+      },
+      "CreateSecret": {
+        "allOf": [
+          {
+            "properties": {
+              "ciphertext": {
+                "description": "Nonce followed by the AES-256-GCM payload. base64url, unpadded.",
+                "type": "string"
+              },
+              "deletable_by_recipient": {
+                "type": "boolean"
+              },
+              "has_passphrase": {
+                "type": "boolean"
+              },
+              "id": {
+                "pattern": "^[A-Za-z0-9_-]{22}$",
+                "type": "string"
+              },
+              "kdf": {
+                "description": "Argon2id parameters. The salt is public; it is useless without the key.",
+                "properties": {
+                  "iterations": {
+                    "default": 2,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "memory_kib": {
+                    "default": 19456,
+                    "minimum": 8192,
+                    "type": "integer"
+                  },
+                  "parallelism": {
+                    "default": 1,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "salt": {
+                    "description": "16 bytes of salt. base64url, unpadded.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "salt",
+                  "memory_kib",
+                  "iterations",
+                  "parallelism"
+                ],
+                "type": "object"
+              },
+              "kind": {
+                "enum": [
+                  "text",
+                  "url",
+                  "file"
+                ],
+                "type": "string"
+              },
+              "label_enc": {
+                "description": "Sender-only label, sealed client side. base64url, unpadded.",
+                "type": "string"
+              },
+              "notify_email": {
+                "format": "email",
+                "type": "string"
+              },
+              "read_token_hash": {
+                "description": "SHA-256 of the read token. base64url, unpadded.",
+                "type": "string"
+              },
+              "receipt_token_hash": {
+                "description": "SHA-256 of the sender's receipt token. base64url, unpadded.",
+                "type": "string"
+              },
+              "retrieval_step": {
+                "default": true,
+                "type": "boolean"
+              },
+              "ttl_seconds": {
+                "type": "integer"
+              },
+              "views": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "ciphertext",
+              "read_token_hash",
+              "receipt_token_hash",
+              "kdf"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "Either one recipient inline, or a `recipients` list. Both at once is refused: it would be ambiguous which settings apply.",
+        "properties": {
+          "files": {
+            "description": "Attachments, declared once for the whole bundle.",
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "token": {
+                  "description": "The claim token returned by the upload. base64url, unpadded.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "token"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "recipients": {
+            "description": "Several links sharing one set of attachments.",
+            "items": {
+              "properties": {
+                "ciphertext": {
+                  "description": "Nonce followed by the AES-256-GCM payload. base64url, unpadded.",
+                  "type": "string"
+                },
+                "deletable_by_recipient": {
+                  "type": "boolean"
+                },
+                "has_passphrase": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "pattern": "^[A-Za-z0-9_-]{22}$",
+                  "type": "string"
+                },
+                "kdf": {
+                  "description": "Argon2id parameters. The salt is public; it is useless without the key.",
+                  "properties": {
+                    "iterations": {
+                      "default": 2,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "memory_kib": {
+                      "default": 19456,
+                      "minimum": 8192,
+                      "type": "integer"
+                    },
+                    "parallelism": {
+                      "default": 1,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "salt": {
+                      "description": "16 bytes of salt. base64url, unpadded.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "salt",
+                    "memory_kib",
+                    "iterations",
+                    "parallelism"
+                  ],
+                  "type": "object"
+                },
+                "kind": {
+                  "enum": [
+                    "text",
+                    "url",
+                    "file"
+                  ],
+                  "type": "string"
+                },
+                "label_enc": {
+                  "description": "Sender-only label, sealed client side. base64url, unpadded.",
+                  "type": "string"
+                },
+                "notify_email": {
+                  "format": "email",
+                  "type": "string"
+                },
+                "read_token_hash": {
+                  "description": "SHA-256 of the read token. base64url, unpadded.",
+                  "type": "string"
+                },
+                "receipt_token_hash": {
+                  "description": "SHA-256 of the sender's receipt token. base64url, unpadded.",
+                  "type": "string"
+                },
+                "retrieval_step": {
+                  "default": true,
+                  "type": "boolean"
+                },
+                "ttl_seconds": {
+                  "type": "integer"
+                },
+                "views": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "ciphertext",
+                "read_token_hash",
+                "receipt_token_hash",
+                "kdf"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "CreateToken": {
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "enum": [
+                "secrets:write",
+                "secrets:manage",
+                "audit:read",
+                "instance:read"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "ttl_seconds": {
+            "description": "0 means no expiry.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "type": "object"
+      },
+      "Created": {
+        "properties": {
+          "bundle_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "url": {
+            "description": "The recipient page. The key goes in the fragment, client side.",
+            "format": "uri",
+            "type": "string"
+          },
+          "views_max": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Deposit": {
+        "properties": {
+          "files": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "token": {
+                  "description": "The claim token returned by the upload. base64url, unpadded.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "token"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "read_token": {
+            "description": "Derived from the request key. base64url, unpadded.",
+            "type": "string"
+          },
+          "secret": {
+            "properties": {
+              "ciphertext": {
+                "description": "Nonce followed by the AES-256-GCM payload. base64url, unpadded.",
+                "type": "string"
+              },
+              "deletable_by_recipient": {
+                "type": "boolean"
+              },
+              "has_passphrase": {
+                "type": "boolean"
+              },
+              "id": {
+                "pattern": "^[A-Za-z0-9_-]{22}$",
+                "type": "string"
+              },
+              "kdf": {
+                "description": "Argon2id parameters. The salt is public; it is useless without the key.",
+                "properties": {
+                  "iterations": {
+                    "default": 2,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "memory_kib": {
+                    "default": 19456,
+                    "minimum": 8192,
+                    "type": "integer"
+                  },
+                  "parallelism": {
+                    "default": 1,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "salt": {
+                    "description": "16 bytes of salt. base64url, unpadded.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "salt",
+                  "memory_kib",
+                  "iterations",
+                  "parallelism"
+                ],
+                "type": "object"
+              },
+              "kind": {
+                "enum": [
+                  "text",
+                  "url",
+                  "file"
+                ],
+                "type": "string"
+              },
+              "label_enc": {
+                "description": "Sender-only label, sealed client side. base64url, unpadded.",
+                "type": "string"
+              },
+              "notify_email": {
+                "format": "email",
+                "type": "string"
+              },
+              "read_token_hash": {
+                "description": "SHA-256 of the read token. base64url, unpadded.",
+                "type": "string"
+              },
+              "receipt_token_hash": {
+                "description": "SHA-256 of the sender's receipt token. base64url, unpadded.",
+                "type": "string"
+              },
+              "retrieval_step": {
+                "default": true,
+                "type": "boolean"
+              },
+              "ttl_seconds": {
+                "type": "integer"
+              },
+              "views": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "ciphertext",
+              "read_token_hash",
+              "receipt_token_hash",
+              "kdf"
+            ],
+            "type": "object"
+          },
+          "wrapped_key": {
+            "description": "125 bytes: the ephemeral public key, the nonce and the content key sealed to the requester. base64url, unpadded.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "read_token",
+          "wrapped_key",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "Deposited": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "error": {
+            "properties": {
+              "attempts_left": {
+                "type": "integer"
+              },
+              "code": {
+                "type": "string"
+              },
+              "field": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "Instance": {
+        "properties": {
+          "active_secrets": {
+            "type": "integer"
+          },
+          "crypto_version": {
+            "type": "string"
+          },
+          "driver": {
+            "type": "string"
+          },
+          "multi_org": {
+            "type": "boolean"
+          },
+          "public_listener": {
+            "type": "boolean"
+          },
+          "uptime_seconds": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Login": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "OpenRequest": {
+        "properties": {
+          "read_token": {
+            "description": "Derived from the request key in the link. base64url, unpadded.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "read_token"
+        ],
+        "type": "object"
+      },
+      "Policy": {
+        "additionalProperties": true,
+        "description": "The ceilings a client must respect, and the KDF parameters to use.",
+        "type": "object"
+      },
+      "Readiness": {
+        "properties": {
+          "checks": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "ok": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "Receipt": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_passphrase": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_viewed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "viewed",
+              "expired",
+              "burned",
+              "deleted",
+              "locked"
+            ],
+            "type": "string"
+          },
+          "views_max": {
+            "type": "integer"
+          },
+          "views_remaining": {
+            "type": "integer"
+          },
+          "views_used": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RequestCreated": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "max_deposits": {
+            "type": "integer"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RequestMeta": {
+        "properties": {
+          "deposits_remaining": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kdf": {
+            "description": "Argon2id parameters. The salt is public; it is useless without the key.",
+            "properties": {
+              "iterations": {
+                "default": 2,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "memory_kib": {
+                "default": 19456,
+                "minimum": 8192,
+                "type": "integer"
+              },
+              "parallelism": {
+                "default": 1,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "salt": {
+                "description": "16 bytes of salt. base64url, unpadded.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "salt",
+              "memory_kib",
+              "iterations",
+              "parallelism"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "RequestOpened": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "prompt_enc": {
+            "description": "The sealed prompt. base64url, unpadded.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RequestReceipt": {
+        "properties": {
+          "deposits": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "has_passphrase": {
+                  "type": "boolean"
+                },
+                "kdf": {
+                  "description": "Argon2id parameters. The salt is public; it is useless without the key.",
+                  "properties": {
+                    "iterations": {
+                      "default": 2,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "memory_kib": {
+                      "default": 19456,
+                      "minimum": 8192,
+                      "type": "integer"
+                    },
+                    "parallelism": {
+                      "default": 1,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "salt": {
+                      "description": "16 bytes of salt. base64url, unpadded.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "salt",
+                    "memory_kib",
+                    "iterations",
+                    "parallelism"
+                  ],
+                  "type": "object"
+                },
+                "secret_id": {
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "type": "integer"
+                },
+                "views_remaining": {
+                  "type": "integer"
+                },
+                "wrapped_key": {
+                  "description": "Unwrap it with the private key from your own link. base64url, unpadded.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "deposits_remaining": {
+            "type": "integer"
+          },
+          "deposits_used": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "max_deposits": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Reveal": {
+        "properties": {
+          "ciphertext": {
+            "description": "Nonce followed by the sealed payload. base64url, unpadded.",
+            "type": "string"
+          },
+          "destroyed": {
+            "type": "boolean"
+          },
+          "download_expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "download_token": {
+            "description": "Present when the secret has attachments: the grant that fetches them, valid for `policy.download_window`. base64url, unpadded.",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "views_remaining": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RevealRequest": {
+        "properties": {
+          "read_token": {
+            "description": "32 bytes, derived from the key in the fragment. base64url, unpadded.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "read_token"
+        ],
+        "type": "object"
+      },
+      "SecretMeta": {
+        "description": "Deliberately says nothing about the content.",
+        "properties": {
+          "attempts_left": {
+            "type": "integer"
+          },
+          "deletable_by_recipient": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_passphrase": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kdf": {
+            "description": "Argon2id parameters. The salt is public; it is useless without the key.",
+            "properties": {
+              "iterations": {
+                "default": 2,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "memory_kib": {
+                "default": 19456,
+                "minimum": 8192,
+                "type": "integer"
+              },
+              "parallelism": {
+                "default": 1,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "salt": {
+                "description": "16 bytes of salt. base64url, unpadded.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "salt",
+              "memory_kib",
+              "iterations",
+              "parallelism"
+            ],
+            "type": "object"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "retrieval_step": {
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "views_max": {
+            "type": "integer"
+          },
+          "views_remaining": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "SendLink": {
+        "properties": {
+          "link": {
+            "description": "The full link including its fragment. The server strips the fragment before storing anything.",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "to": {
+            "format": "email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to"
+        ],
+        "type": "object"
+      },
+      "TokenCreated": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "token": {
+            "description": "`peek_\u003cid\u003e.\u003csecret\u003e`. The only time the clear text exists outside your own storage.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TokenList": {
+        "properties": {
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tokens": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "expires_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "last_used_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "revoked": {
+                  "type": "boolean"
+                },
+                "scopes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "Upload": {
+        "properties": {
+          "expires_at": {
+            "description": "After this, an unclaimed blob is collected.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "token": {
+            "description": "The claim token. Shown once; attaching needs it. base64url, unpadded.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerToken": {
+        "description": "`Authorization: Bearer peek_\u003cid\u003e.\u003csecret\u003e`. A token never exceeds its owner's role; scopes narrow it further.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "sessionCookie": {
+        "description": "The interface's session. State-changing calls must also echo the `peek_csrf` cookie in `X-Peek-CSRF`.",
+        "in": "cookie",
+        "name": "peek_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Every byte of content in this API is already encrypted when it arrives and still encrypted when it leaves. The server holds ciphertext, digests and counters; the keys live in URL fragments, which browsers do not transmit.\n\nWriting a client means implementing format v1: start from docs/CRYPTO.md and make crypto/vectors/v1.json pass.",
+    "license": {
+      "name": "Proprietary"
+    },
+    "summary": "Ephemeral secret sharing, encrypted in the browser.",
+    "title": "Peek",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/audit": {
+      "get": {
+        "description": "Filterable by secret and by event. Secret content never appears, and a test asserts it.\n\n**Authentication**: session or token, manager or auditor.\n\n**Token scope**: `audit:read`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "audit:read"
+            ]
+          }
+        ],
+        "summary": "Read the audit trail",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/audit/export": {
+      "get": {
+        "description": "The same trail as CSV or NDJSON, for a SIEM that pulls.\n\n**Authentication**: session or token, manager or auditor.\n\n**Token scope**: `audit:read`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "audit:read"
+            ]
+          }
+        ],
+        "summary": "Export the audit trail",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/auth/bootstrap": {
+      "post": {
+        "description": "Served only while the instance has no account at all.\n\n**Authentication**: none.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Create the first administrator",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "E-mail and password. Answers `mfa_required` when a second factor is due.\n\n**Authentication**: none.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Sign in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Sign out",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "The signed-in account and what it may do.\n\n**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Who am I",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/mfa": {
+      "post": {
+        "description": "A TOTP code or a recovery code, finishing a pending sign-in.\n\n**Authentication**: a pending session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Second factor",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys": {
+      "get": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List passkeys",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/login/finish": {
+      "post": {
+        "description": "**Authentication**: a passkey challenge.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Finish a passkey sign-in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/login/start": {
+      "post": {
+        "description": "**Authentication**: none.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Begin a passkey sign-in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/register/finish": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Finish passkey registration",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/register/start": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Begin passkey registration",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/{id}": {
+      "delete": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Remove a passkey",
+        "tags": [
+          "account"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Rename a passkey",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/password": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Change password",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/password/forgot": {
+      "post": {
+        "description": "Always answers the same, whether or not the address exists.\n\n**Authentication**: none.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Request a reset",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/password/reset": {
+      "post": {
+        "description": "With the token from the e-mail.\n\n**Authentication**: a reset token.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Reset a password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/recovery-codes": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Reissue recovery codes",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Active sessions",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/revoke-others": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Revoke every other session",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Revoke a session",
+        "tags": [
+          "account"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/auth/tokens": {
+      "get": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenList"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List API tokens",
+        "tags": [
+          "tokens"
+        ]
+      },
+      "post": {
+        "description": "The clear text is in the response and nowhere else, ever.\n\n**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenCreated"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Create an API token",
+        "tags": [
+          "tokens"
+        ]
+      }
+    },
+    "/api/v1/auth/tokens/{id}": {
+      "delete": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Revoke an API token",
+        "tags": [
+          "tokens"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/auth/totp/confirm": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Confirm TOTP",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/totp/disable": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Disable TOTP",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/totp/start": {
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Begin TOTP enrolment",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/branding": {
+      "get": {
+        "description": "The resolved theme, with an ETag.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Theme as JSON",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/branding/admin": {
+      "delete": {
+        "description": "**Authentication**: session, administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Reset the brand",
+        "tags": [
+          "branding"
+        ]
+      },
+      "get": {
+        "description": "**Authentication**: session, administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Brand as stored",
+        "tags": [
+          "branding"
+        ]
+      },
+      "put": {
+        "description": "**Authentication**: session, administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Save the brand",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/branding/assets/{kind}": {
+      "delete": {
+        "description": "**Authentication**: session, administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Remove a brand asset",
+        "tags": [
+          "branding"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "kind",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "description": "**Authentication**: session, administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Upload a brand asset",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/branding/test-email": {
+      "post": {
+        "description": "**Authentication**: session, administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Send a test e-mail",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/dashboard/requests": {
+      "get": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Own secret requests",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/dashboard/secrets": {
+      "get": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Own secrets",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/dashboard/secrets/{id}/burn": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "**Authentication**: session.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Burn an owned secret",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/files": {
+      "post": {
+        "description": "Accepts an already-encrypted stream. `Content-Length` is required: the storage backend writes exactly that many bytes. Returns the blob id and the claim token that attaches it to a secret.\n\n**Authentication**: session or token.\n\n**Token scope**: `secrets:write`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upload"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "411": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No Content-Length."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Larger than `policy.max_file_bytes`."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No file storage configured."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:write"
+            ]
+          }
+        ],
+        "summary": "Upload an attachment",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{id}": {
+      "get": {
+        "description": "Streams one encrypted blob. Needs the download grant a successful reveal handed out, in `X-Peek-Download`. Everything that can go wrong answers 404.\n\n**Authentication**: a download grant.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Download an attachment",
+        "tags": [
+          "files"
+        ]
+      },
+      "head": {
+        "description": "The headers of the download, without the body.\n\n**Authentication**: a download grant.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Attachment size",
+        "tags": [
+          "files"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/instance": {
+      "get": {
+        "description": "Version, driver, uptime and live secret count.\n\n**Authentication**: session or token, administrator.\n\n**Token scope**: `instance:read`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "instance:read"
+            ]
+          }
+        ],
+        "summary": "Instance status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/invitations": {
+      "get": {
+        "description": "**Authentication**: session, manager.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Pending invitations",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/invitations/accept": {
+      "post": {
+        "description": "**Authentication**: an invitation token.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Accept an invitation",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/invitations/preview": {
+      "post": {
+        "description": "**Authentication**: an invitation token.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Preview an invitation",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/invitations/{id}": {
+      "delete": {
+        "description": "**Authentication**: session, manager.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Revoke an invitation",
+        "tags": [
+          "admin"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/ip": {
+      "get": {
+        "description": "What Peek believes your address is, and whether your proxy is trusted. The fastest way to find out whether a reverse-proxy configuration works.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientAddress"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Resolved client address",
+        "tags": [
+          "diagnostics"
+        ]
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "description": "The OpenAPI 3.1 description of this instance, generated from its own route table. A route with no description makes a test fail, which is how it stays true.\n\n**Authentication**: none.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "This document",
+        "tags": [
+          "diagnostics"
+        ]
+      }
+    },
+    "/api/v1/policy": {
+      "get": {
+        "description": "Everything a client must respect: expiry and read ceilings, size limits, the KDF parameters to use, and the chunk size for files.\n\n**Authentication**: session or token.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Policy"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Instance limits",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
+    "/api/v1/requests": {
+      "post": {
+        "description": "\"Send me the password for X\". Stores the requester's P-256 public key so a deposit can be sealed to it; the private half never leaves their own link.\n\n**Authentication**: session or token.\n\n**Token scope**: `secrets:write`.\n\nInternal listener only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestCreated"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:write"
+            ]
+          }
+        ],
+        "summary": "Open a secret request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{id}": {
+      "delete": {
+        "description": "No new answer can arrive. Answers already received keep their own lifecycle: closing the door does not burn what is inside.\n\n**Authentication**: the request receipt token.\n\n**Token scope**: `secrets:manage`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:manage"
+            ]
+          }
+        ],
+        "summary": "Close a request",
+        "tags": [
+          "requests"
+        ]
+      },
+      "get": {
+        "description": "What a depositor may see before proving possession of the request key.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestMeta"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Request metadata",
+        "tags": [
+          "requests"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/requests/{id}/deposit": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "An ordinary secret, plus its content key wrapped to the requester's public key with ECIES. The counter and the secret move together, so a single-use request accepts exactly one answer even across nodes.\n\n**Authentication**: the request key.\n\nServed on both listeners.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Deposit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deposited"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Already answered as many times as it accepts."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Answer a request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{id}/open": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Releases the sealed prompt. Consumes nothing: the prompt is not the answer.\n\n**Authentication**: the request key from the deposit link.\n\nServed on both listeners.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestOpened"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Read the prompt",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{id}/receipt": {
+      "get": {
+        "description": "The requester's own view, with every wrapped key received so far.\n\n**Authentication**: the request receipt token.\n\n**Token scope**: `secrets:manage`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestReceipt"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:manage"
+            ]
+          }
+        ],
+        "summary": "Follow a request",
+        "tags": [
+          "requests"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Same as the GET, with the token in the body rather than a header.\n\n**Authentication**: the request receipt token.\n\n**Token scope**: `secrets:manage`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestReceipt"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:manage"
+            ]
+          }
+        ],
+        "summary": "Follow a request (body form)",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/secrets": {
+      "post": {
+        "description": "One secret, or a bundle of recipient links sharing one set of attachments. Everything in the body is already ciphertext or a digest: the server sees no key.\n\n**Authentication**: session or token.\n\n**Token scope**: `secrets:write`.\n\nInternal listener only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSecret"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Identifier already used."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Refused by policy."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:write"
+            ]
+          }
+        ],
+        "summary": "Create a secret",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/v1/secrets/{id}": {
+      "delete": {
+        "description": "Destroys the secret, when the sender allowed it. The read token goes in `X-Peek-Token` so it stays out of proxy logs.\n\n**Authentication**: the read token.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Destroyed."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not allowed, or already gone."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Recipient deletion",
+        "tags": [
+          "secrets"
+        ]
+      },
+      "get": {
+        "description": "What a recipient may see before proving possession of the key. **No read is consumed**, which is what makes link-preview bots harmless.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretMeta"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unknown, expired, consumed or burned — deliberately indistinguishable."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Secret metadata",
+        "tags": [
+          "secrets"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/secrets/{id}/burn": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Destroys it immediately. Answers 204.\n\n**Authentication**: the receipt token.\n\n**Token scope**: `secrets:manage`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:manage"
+            ]
+          }
+        ],
+        "summary": "Burn a secret",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/v1/secrets/{id}/email": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Sends the recipient link by e-mail. The passphrase is never included.\n\n**Authentication**: the receipt token.\n\n**Token scope**: `secrets:manage`.\n\nInternal listener only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendLink"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:manage"
+            ]
+          }
+        ],
+        "summary": "E-mail the link",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/v1/secrets/{id}/receipt": {
+      "get": {
+        "description": "Status of a secret, alive or not: it keeps answering from the tombstone.\n\n**Authentication**: the receipt token in `X-Peek-Token`.\n\n**Token scope**: `secrets:manage`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Receipt"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "secrets:manage"
+            ]
+          }
+        ],
+        "summary": "Sender receipt",
+        "tags": [
+          "secrets"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/secrets/{id}/reveal": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Consumes one read and returns the sealed payload. A wrong token costs no read; once the attempt budget is exhausted the secret is destroyed.\n\n**Authentication**: the read token, derived from the key in the link fragment.\n\nServed on both listeners.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reveal"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Wrong read token or passphrase; carries `attempts_left`."
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Destroyed after too many failed attempts."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Reveal a secret",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "description": "**Authentication**: session, manager.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List accounts",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "**Authentication**: session, manager.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Create or invite an account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/users/{id}": {
+      "delete": {
+        "description": "**Authentication**: session, manager.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Delete an account",
+        "tags": [
+          "admin"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "description": "**Authentication**: session, manager.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Update an account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/users/{id}/password": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "**Authentication**: session, manager.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Set a password",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/branding.css": {
+      "get": {
+        "description": "The instance theme as CSS custom properties. Supports If-None-Match.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Theme as CSS",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/branding/{kind}": {
+      "get": {
+        "description": "Logo, dark logo or favicon. `kind` is one of `logo`, `logo_dark`, `favicon`.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Brand asset",
+        "tags": [
+          "branding"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "kind",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/healthz": {
+      "get": {
+        "description": "Returns `ok`. Cheap enough for a load balancer to poll.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Liveness",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "description": "503 when a dependency is unavailable. Point your load balancer here.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Readiness",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/robots.txt": {
+      "get": {
+        "description": "Disallows everything: a secret link must never be indexed.\n\n**Authentication**: none.\n\nServed on both listeners.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Robots policy",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://secrets.example.com"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Liveness and readiness.",
+      "name": "health"
+    },
+    {
+      "description": "What the server thinks of your network.",
+      "name": "diagnostics"
+    },
+    {
+      "description": "The limits a client must respect.",
+      "name": "policy"
+    },
+    {
+      "description": "Creating, revealing and burning.",
+      "name": "secrets"
+    },
+    {
+      "description": "Encrypted attachments.",
+      "name": "files"
+    },
+    {
+      "description": "Asking someone for a secret.",
+      "name": "requests"
+    },
+    {
+      "description": "Signing in.",
+      "name": "auth"
+    },
+    {
+      "description": "Your own account.",
+      "name": "account"
+    },
+    {
+      "description": "API tokens, for scripts.",
+      "name": "tokens"
+    },
+    {
+      "description": "The append-only trail.",
+      "name": "audit"
+    },
+    {
+      "description": "Accounts and the instance.",
+      "name": "admin"
+    },
+    {
+      "description": "White-labelling.",
+      "name": "branding"
+    }
+  ]
+}

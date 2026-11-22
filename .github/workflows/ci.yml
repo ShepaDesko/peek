@@ -109,6 +109,13 @@ jobs:
           go run ./tools/genvectors
           git diff --exit-code crypto/vectors/v1.json
 
+      # The committed OpenAPI document is generated from the route table. A
+      # diff here means a route changed and the copy in the repository did not.
+      - name: the API description is current
+        run: |
+          go run ./tools/genopenapi
+          git diff --exit-code api/openapi.json
+
       - run: go test ./internal/crypto/...
       - run: npm ci && npm run test
         working-directory: web
