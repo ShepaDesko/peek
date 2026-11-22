@@ -142,8 +142,10 @@ sudo peek doctor
 ```
 
 It inspects the configuration and its permissions, the master key, every
-directory and its free space, the database and its migrations, both listeners,
-the proxy trust settings, TLS and certificate expiry, the clock and SMTP. Each
+directory and its free space, the file storage — and for an S3 bucket, that it
+really answers with the configured credentials — the database and its
+migrations, both listeners, the proxy trust settings, TLS and certificate
+expiry, the clock and SMTP. Each
 line is `OK`, `WARN`, `FAIL` or `SKIP`, with the command that fixes it. The
 exit code is non-zero if anything failed, so it drops straight into Ansible or
 a monitoring check (`--json` gives machine-readable output).
@@ -157,6 +159,19 @@ sudo peek doctor --external
 This additionally checks the public URL, the certificate chain, which client IP
 Peek resolves through the proxy, and whether the admin surface is reachable
 from outside.
+
+It really does verify the chain, which means a **self-signed certificate makes
+it fail** with `certificate signed by unknown authority` — the check is working,
+not broken. On a lab or an internal instance, trust the certificate on the host
+and run it again:
+
+```bash
+sudo cp /etc/peek/tls/peek.crt /usr/local/share/ca-certificates/peek-lab.crt
+sudo update-ca-certificates                       # Debian, Ubuntu
+# RHEL, Rocky, Alma:
+# sudo cp /etc/peek/tls/peek.crt /etc/pki/ca-trust/source/anchors/
+# sudo update-ca-trust
+```
 
 ## 5. Service management
 
@@ -175,8 +190,25 @@ systemd-analyze security peek
 
 ## 6. First use
 
-Open the public URL. Accounts, roles and SSO arrive in milestone M5; until
-then, creation is controlled by two settings:
+Open the public URL. A fresh instance has no account, so the interface offers
+to create the first one: an **administrator**, with its e-mail address, its
+password and — if `security.require_totp` is on — its second factor. That page
+is only served while no account exists; afterwards it is gone, so there is no
+window in which a stranger can claim the instance.
+
+From there the administrator invites the rest, and `peek admin` does the same
+things from the shell when a browser is inconvenient:
+
+```bash
+sudo peek admin create --email ops@acme.com --role manager
+sudo peek admin list
+```
+
+Roles: `admin` administers the instance, `manager` runs users and policies,
+`member` sends secrets, `auditor` reads the audit trail and nothing else.
+
+Creating a secret **without** an account is off by default, and two settings
+control it:
 
 ```toml
 [security]
@@ -184,8 +216,8 @@ anonymous_create     = true               # off by default
 create_allowed_cidrs = ["10.0.0.0/8"]     # and optionally restrict who
 ```
 
-Recipients never need either: a link plus, where applicable, the passphrase is
-all it takes.
+Recipients never need an account either way: a link plus, where applicable,
+the passphrase is all it takes.
 
 ## 7. Uninstall
 

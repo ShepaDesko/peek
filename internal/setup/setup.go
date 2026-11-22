@@ -352,11 +352,21 @@ func enableService(w *wizard, cfg config.Config) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
-	if out, err := exec.CommandContext(ctx, "systemctl", "enable", "--now", "peek.service").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "systemctl", "enable", "peek.service").CombinedOutput(); err != nil {
 		w.sayf("systemctl: %v\n%s\n", err, strings.TrimSpace(string(out)))
 		return "failed"
 	}
-	w.say("peek.service enabled and started\n")
+	// restart, and not "enable --now": on an instance that is already running,
+	// --now is a no-op, so the process keeps serving the configuration it
+	// started with while the new one sits unused on disk. Re-running setup to
+	// change the exposure — to move administration off a public port, say —
+	// then reports success and changes nothing, and the readiness probe below
+	// blames the new port for not answering.
+	if out, err := exec.CommandContext(ctx, "systemctl", "restart", "peek.service").CombinedOutput(); err != nil {
+		w.sayf("systemctl: %v\n%s\n", err, strings.TrimSpace(string(out)))
+		return "failed"
+	}
+	w.say("peek.service enabled and restarted\n")
 
 	// The daily backup is part of the product, not an afterthought: enable its
 	// timer here, since the package cannot do it before a configuration exists.

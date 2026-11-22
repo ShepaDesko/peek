@@ -10,6 +10,13 @@ version: 2
 
 project_name: peek
 
+# The signing public key is baked into the binary so `peek update` can verify a
+# release before applying it. A release sets it; a local snapshot has no key
+# and must still build, so it defaults to empty here rather than failing with
+# "map has no entry for key".
+env:
+  - PEEK_SIGNING_PUBKEY={{ if index .Env "PEEK_SIGNING_PUBKEY" }}{{ .Env.PEEK_SIGNING_PUBKEY }}{{ end }}
+
 before:
   hooks:
     # The interface must be built and staged before the Go build embeds it.

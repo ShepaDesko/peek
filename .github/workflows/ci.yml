@@ -222,6 +222,7 @@ jobs:
     steps:
       # No toolchain action runs inside the container on purpose: the binary
       # arrives built, which is also how a customer receives it.
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: peek-linux-amd64
@@ -231,9 +232,24 @@ jobs:
         run: |
           set -eux
           install -m 0755 /tmp/peek-bin/peek /usr/bin/peek
-          id peek >/dev/null 2>&1 || useradd --system --home-dir /var/lib/peek --no-create-home --shell /sbin/nologin peek
-          install -d -o peek -g peek -m 0750 /var/lib/peek /var/backups/peek
-          install -d -m 0750 /etc/peek
+
+          # Run the package's own post-installation script rather than a
+          # hand-rolled useradd. Creating the account here instead is how a
+          # broken scriptlet went unnoticed: the RPM one used Debian's
+          # addgroup, which does not exist on RHEL, so it aborted and the
+          # service account was never created.
+          case "${{ matrix.distro }}" in
+            rocky-*) sh packaging/rpm/postinstall.sh 1 ;;
+            *)       sh packaging/deb/postinst.sh configure ;;
+          esac
+
+          # What the scriptlet must have produced, on every distribution.
+          getent passwd peek
+          test "$(getent passwd peek | cut -d: -f7)" != ""
+          test "$(stat -c '%U:%G %a' /var/lib/peek)" = "peek:peek 750"
+          test "$(stat -c '%U:%G %a' /var/lib/peek/files)" = "peek:peek 750"
+          test "$(stat -c '%U:%G %a' /var/backups/peek)" = "peek:peek 750"
+          test "$(stat -c '%U:%G %a' /etc/peek)" = "root:peek 750"
 
           peek version
           peek setup --non-interactive --force             --public-url http://127.0.0.1:8080             --mode internal             --internal-listen 127.0.0.1:8080             --anonymous-create

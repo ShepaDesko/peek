@@ -1,5 +1,13 @@
 #!/bin/sh
 # RHEL/Rocky/Alma post-installation. Idempotent: it runs on install and upgrade.
+#
+# The account is created with shadow-utils, not with Debian's adduser. This
+# file used to be a copy of the Debian script, and on RHEL that meant
+# `addgroup` (which does not exist there) aborting the whole scriptlet under
+# `set -e`: no service account, no directories, nothing. `adduser` does exist,
+# but only as a symlink to `useradd`, which rejects --ingroup, --home and
+# --gecos. Hence the explicit short options below, which are the same on every
+# shadow-utils release.
 set -e
 
 PEEK_USER=peek
@@ -7,12 +15,16 @@ PEEK_HOME=/var/lib/peek
 
 create_user() {
     if ! getent group "$PEEK_USER" >/dev/null; then
-        addgroup --system "$PEEK_USER"
+        groupadd --system "$PEEK_USER"
     fi
     if ! getent passwd "$PEEK_USER" >/dev/null; then
-        adduser --system --ingroup "$PEEK_USER" --home "$PEEK_HOME" \
-            --no-create-home --shell /usr/sbin/nologin \
-            --gecos "Peek service account" "$PEEK_USER"
+        useradd --system \
+            -g "$PEEK_USER" \
+            -d "$PEEK_HOME" \
+            -M \
+            -s /sbin/nologin \
+            -c "Peek service account" \
+            "$PEEK_USER"
     fi
 }
 

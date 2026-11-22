@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/ShepaDesko/peek/internal/config"
+	"github.com/ShepaDesko/peek/internal/storage"
 	"github.com/ShepaDesko/peek/internal/store"
 )
 
@@ -129,6 +130,7 @@ func Run(ctx context.Context, opts Options) *Report {
 
 	checkMasterKey(r, cfg)
 	checkDirs(r, cfg)
+	checkStorage(ctx, r, cfg)
 	checkDatabase(ctx, r, cfg)
 	checkListeners(r, cfg)
 	checkProxyTrust(r, cfg)
@@ -347,7 +349,7 @@ func checkTLS(r *Report, cfg *config.Config) {
 		}
 		left := time.Until(leaf.NotAfter)
 		detail := fmt.Sprintf("certificate for %s, expires %s (%d days)",
-			strings.Join(leaf.DNSNames, ", "), leaf.NotAfter.Format(time.DateOnly), int(left.Hours()/24))
+			certNames(leaf), leaf.NotAfter.Format(time.DateOnly), int(left.Hours()/24))
 		switch {
 		case left <= 0:
 			r.add("TLS", FAIL, detail, "the certificate has expired")
@@ -566,3 +568,56 @@ func orDash(s string) string {
 
 // unusedPath keeps filepath imported for the platform-specific helpers.
 var _ = filepath.Clean
+
+// certNames describes who a certificate is for, the way an operator reading
+// one line needs it: every DNS name and every IP address it covers, and the
+// subject when it covers neither.
+//
+// Listing only DNSNames was misleading in exactly the case that matters on a
+// lab or an appliance — a certificate issued for an IP address reported itself
+// as being "for localhost", because that was the only DNS name in it.
+func certNames(leaf *x509.Certificate) string {
+	names := make([]string, 0, len(leaf.DNSNames)+len(leaf.IPAddresses))
+	names = append(names, leaf.DNSNames...)
+	for _, ip := range leaf.IPAddresses {
+		names = append(names, ip.String())
+	}
+	if len(names) == 0 {
+		if leaf.Subject.CommonName != "" {
+			return leaf.Subject.CommonName
+		}
+		return "an unnamed subject"
+	}
+	return strings.Join(names, ", ")
+}
+
+// checkStorage reports where encrypted attachments live, and for a remote
+// backend whether Peek can actually reach it.
+//
+// The local backend is already covered by checkDirs, which inspects the
+// directory and its free space. An S3 bucket was covered by nothing at all: a
+// wrong key, a wrong region or an unreachable endpoint only showed up when a
+// user tried to send their first file. A listing is the lightest request that
+// proves credentials, signature and reachability at once, and it writes
+// nothing.
+func checkStorage(ctx context.Context, r *Report, cfg *config.Config) {
+	backend, err := storage.Open(cfg.Storage)
+	if err != nil {
+		r.add("file storage", FAIL, err.Error(), "check the [storage] section of peek.toml")
+		return
+	}
+	if cfg.Storage.Backend == "local" || cfg.Storage.Backend == "" {
+		r.add("file storage", OK, backend.Describe())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	keys, err := backend.List(ctx)
+	if err != nil {
+		r.add("file storage", FAIL, backend.Describe()+": "+err.Error(),
+			"check storage.s3_endpoint, the credentials and the region; the bucket must exist and allow listing")
+		return
+	}
+	r.add("file storage", OK, fmt.Sprintf("%s — reachable, %d object(s)", backend.Describe(), len(keys)))
+}

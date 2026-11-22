@@ -126,7 +126,10 @@ e2e: build ## Run the Playwright end-to-end suite
 .PHONY: snapshot
 snapshot: web-build ## Build release artefacts locally (no publishing)
 	@command -v goreleaser >/dev/null 2>&1 || (echo "install goreleaser first: https://goreleaser.com"; exit 1)
-	goreleaser release --snapshot --clean --skip=sign
+	# sign needs the minisign key, sbom needs syft; CI installs both for a real
+	# release. A local snapshot is for looking at the packages, so skip them
+	# rather than fail on the last step with every artefact already built.
+	goreleaser release --snapshot --clean --skip=sign,sbom
 
 .PHONY: clean
 clean: ## Remove build outputs
