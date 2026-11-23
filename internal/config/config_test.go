@@ -229,3 +229,30 @@ func TestWebhookBackoffIsBounded(t *testing.T) {
 		t.Error("the backoff does not grow")
 	}
 }
+
+// TestRedactDSNHidesThePassword: peek config check, peek config show and
+// peek restore all print the DSN, and those are the three outputs somebody
+// pastes into a ticket when they are asking for help.
+func TestRedactDSNHidesThePassword(t *testing.T) {
+	const password = "a-database-password"
+	for dsn, want := range map[string]string{
+		"postgres://peek:" + password + "@db:5432/peek":              "postgres://peek:***@db:5432/peek",
+		"postgresql://peek:" + password + "@db/peek?sslmode=require": "postgresql://peek:***@db/peek?sslmode=require",
+		// No password: nothing to hide, and the DSN stays readable.
+		"postgres://peek@db:5432/peek": "postgres://peek@db:5432/peek",
+		// The key/value form.
+		"host=db user=peek password=" + password + " dbname=peek": "host=db user=peek password=*** dbname=peek",
+		"host=db user=peek dbname=peek":                           "host=db user=peek dbname=peek",
+		// A SQLite path is not a DSN with a password.
+		"/var/lib/peek/peek.db": "/var/lib/peek/peek.db",
+		"":                      "",
+	} {
+		got := config.RedactDSN(dsn)
+		if got != want {
+			t.Errorf("RedactDSN(%q)\n got: %q\nwant: %q", dsn, got, want)
+		}
+		if strings.Contains(got, password) {
+			t.Errorf("RedactDSN(%q) still carries the password", dsn)
+		}
+	}
+}

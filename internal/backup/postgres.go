@@ -50,16 +50,22 @@ func snapshotPostgres(ctx context.Context, cfg *config.Config, dest string) erro
 	ctx, cancel := context.WithTimeout(ctx, dumpTimeout)
 	defer cancel()
 
-	// The DSN goes in the environment, not in argv: /proc/<pid>/cmdline is
-	// world-readable, and the DSN carries the database password.
+	// Connection parameters in the environment, the password in a 0600 file
+	// that is removed afterwards. Never in argv: /proc/<pid>/cmdline is
+	// world-readable for as long as the dump runs. See dsn.go.
+	pg, err := pgEnvFromDSN(cfg.Database.DSN, filepath.Dir(dest))
+	if err != nil {
+		return err
+	}
+	defer pg.cleanup()
+
 	cmd := exec.CommandContext(ctx, tool, //nolint:gosec // the tool path comes from exec.LookPath
 		"--format=custom",
 		"--no-owner",
 		"--no-privileges",
 		"--file", dest,
 	)
-	cmd.Env = append(os.Environ(), "PGCONNECT_TIMEOUT=10")
-	cmd.Env = append(cmd.Env, "PGDATABASE="+cfg.Database.DSN)
+	cmd.Env = pg.env
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -90,7 +96,17 @@ func restorePostgres(ctx context.Context, cfg *config.Config, src string, clean 
 	ctx, cancel := context.WithTimeout(ctx, dumpTimeout)
 	defer cancel()
 
-	args := []string{"--no-owner", "--no-privileges", "--single-transaction"}
+	pg, err := pgEnvFromDSN(cfg.Database.DSN, filepath.Dir(src))
+	if err != nil {
+		return err
+	}
+	defer pg.cleanup()
+
+	// -d is what makes this a restore rather than a script written to stdout.
+	// Without it pg_restore behaves as if -f had been given, and then refuses
+	// --clean and --single-transaction as conflicting options — which is a
+	// confusing way to say "you forgot -d".
+	args := []string{"--dbname", pg.dbname, "--no-owner", "--no-privileges", "--single-transaction"}
 	if clean {
 		// --clean drops each object before recreating it, inside the same
 		// transaction, so a failure leaves the database as it was.
@@ -99,8 +115,7 @@ func restorePostgres(ctx context.Context, cfg *config.Config, src string, clean 
 	args = append(args, src)
 
 	cmd := exec.CommandContext(ctx, tool, args...) //nolint:gosec // the tool path comes from exec.LookPath
-	cmd.Env = append(os.Environ(), "PGCONNECT_TIMEOUT=10")
-	cmd.Env = append(cmd.Env, "PGDATABASE="+cfg.Database.DSN)
+	cmd.Env = pg.env
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

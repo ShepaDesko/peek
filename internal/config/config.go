@@ -93,6 +93,42 @@ type TLS struct {
 	HSTSMaxAge int  `toml:"hsts_max_age"`
 }
 
+// RedactDSN hides the password in a database DSN while leaving everything an
+// operator needs to recognise it.
+//
+// A PostgreSQL DSN carries the database password, and the DSN is printed by
+// peek config check, peek config show and peek restore — the three outputs
+// somebody pastes into a ticket when they are asking for help.
+func RedactDSN(dsn string) string {
+	trimmed := strings.TrimSpace(dsn)
+	if trimmed == "" {
+		return ""
+	}
+	if u, err := url.Parse(trimmed); err == nil && u.Scheme != "" && u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			// Rebuilt by hand: url.UserPassword percent-encodes the mask, so
+			// the redacted DSN would read postgres://peek:%2A%2A%2A@… and an
+			// operator would reasonably wonder whether that is the password.
+			user := u.User.Username()
+			u.User = nil
+			return u.Scheme + "://" + user + ":***@" + strings.TrimPrefix(u.String(), u.Scheme+"://")
+		}
+		return trimmed
+	}
+	// The key/value form: host=db user=peek password=… dbname=peek
+	if !strings.Contains(trimmed, "=") {
+		return trimmed
+	}
+	fields := strings.Fields(trimmed)
+	for i, field := range fields {
+		key, _, found := strings.Cut(field, "=")
+		if found && strings.EqualFold(strings.TrimSpace(key), "password") {
+			fields[i] = key + "=***"
+		}
+	}
+	return strings.Join(fields, " ")
+}
+
 // ACMEHostProblem returns why a public certificate authority could never
 // issue for this host, or an empty string when it could.
 //
@@ -1000,6 +1036,7 @@ func (c Config) Redacted() Config {
 	if c.SSO.ClientSecret != "" {
 		c.SSO.ClientSecret = "***"
 	}
+	c.Database.DSN = RedactDSN(c.Database.DSN)
 	if len(c.Webhooks) > 0 {
 		hooks := make([]Webhook, len(c.Webhooks))
 		copy(hooks, c.Webhooks)

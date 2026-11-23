@@ -174,15 +174,22 @@ func runRestore(ctx context.Context, args []string) error {
 	includeConfig := fs.Bool("include-config", false, "also restore peek.toml and master.key")
 	dryRun := fs.Bool("dry-run", false, "only read the manifest and report what would be restored")
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
-	if err := fs.Parse(args); err != nil {
+	positional, err := parseFlags(fs, args)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
+	if len(positional) != 1 {
 		return fail("usage: peek restore [options] ARCHIVE")
 	}
 	cfg, err := config.Load(*configPath, false)
 	if err != nil {
 		return err
+	}
+	archive := positional[0]
+	// An archive encrypted with the configured passphrase should not need it
+	// typed again: the operator already put it in peek.toml.
+	if *passphrase == "" {
+		*passphrase = cfg.Backup.Passphrase
 	}
 
 	if !*dryRun && !*yes {
@@ -197,7 +204,7 @@ func runRestore(ctx context.Context, args []string) error {
 
 	manifest, err := backup.Restore(ctx, backup.RestoreOptions{
 		Config:        &cfg,
-		Archive:       fs.Arg(0),
+		Archive:       archive,
 		Passphrase:    *passphrase,
 		IncludeConfig: *includeConfig,
 		DryRun:        *dryRun,
