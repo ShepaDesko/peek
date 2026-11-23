@@ -139,7 +139,7 @@ func Run(ctx context.Context, opts Options) *Report {
 	checkDatabase(ctx, r, cfg)
 	checkListeners(r, cfg)
 	checkProxyTrust(r, cfg)
-	checkTLS(r, cfg)
+	checkTLS(ctx, r, cfg)
 	checkClock(r)
 	checkMail(r, cfg, opts.SendTestEmail)
 	checkSSO(ctx, r, cfg)
@@ -396,7 +396,7 @@ func checkProxyTrust(r *Report, cfg *config.Config) {
 	}
 }
 
-func checkTLS(r *Report, cfg *config.Config) {
+func checkTLS(ctx context.Context, r *Report, cfg *config.Config) {
 	switch cfg.TLS.Mode {
 	case "", "none":
 		if strings.HasPrefix(cfg.PublicURL, "https://") {
@@ -448,8 +448,82 @@ func checkTLS(r *Report, cfg *config.Config) {
 			}
 		}
 	case "acme":
-		r.add("TLS", WARN, "tls.mode = acme is not implemented yet (milestone M4)",
-			"use mode file, or terminate TLS on the proxy")
+		checkACME(ctx, r, cfg)
+	}
+}
+
+// checkACME inspects what can be inspected without asking a certificate
+// authority for anything: the host list, the cache directory, and whether a
+// certificate is already there.
+//
+// It deliberately makes no ACME call. Those are rate-limited per account and
+// per domain, and a diagnostic command an operator runs in a loop must not be
+// able to exhaust a weekly quota.
+func checkACME(ctx context.Context, r *Report, cfg *config.Config) {
+	hosts := cfg.TLS.ACMEHosts
+	if len(hosts) == 0 {
+		r.add("TLS", FAIL, "tls.mode = acme with no tls.acme_hosts")
+		return
+	}
+	r.add("TLS", OK, fmt.Sprintf("ACME for %s, challenge tls-alpn-01", strings.Join(hosts, ", ")),
+		"the TLS listener must be reachable on port 443 from the internet: "+
+			"tls-alpn-01 is answered on the same port, so nothing else needs publishing")
+
+	// The names have to resolve to this host, or issuance fails at the
+	// challenge with a message from the authority rather than from Peek.
+	lookup, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for _, host := range hosts {
+		addrs, err := net.DefaultResolver.LookupHost(lookup, host)
+		switch {
+		case err != nil:
+			r.add("ACME hostname "+host, FAIL, "does not resolve: "+err.Error(),
+				"the certificate authority resolves this name to find this host")
+		case len(addrs) == 0:
+			r.add("ACME hostname "+host, FAIL, "resolves to nothing")
+		default:
+			r.add("ACME hostname "+host, OK, strings.Join(addrs, ", "))
+		}
+	}
+
+	dir := cfg.TLS.ACMEDir
+	if dir == "" {
+		dir = filepath.Join(cfg.DataDir, "acme")
+	}
+	entries, err := os.ReadDir(dir)
+	switch {
+	case os.IsNotExist(err):
+		r.add("ACME cache", WARN, dir+" does not exist yet",
+			"it is created at the first start; the first connection to each host will be slow")
+	case err != nil:
+		r.add("ACME cache", FAIL, dir+": "+err.Error())
+	default:
+		certificates := 0
+		for _, entry := range entries {
+			if !entry.IsDir() && !strings.HasPrefix(entry.Name(), "acme_account") {
+				certificates++
+			}
+		}
+		if certificates == 0 {
+			r.add("ACME cache", WARN, dir+" holds no certificate yet",
+				"the first connection to each host obtains one, which takes a few seconds")
+		} else {
+			r.add("ACME cache", OK, fmt.Sprintf("%s, %d cached certificate(s)", dir, certificates))
+		}
+		if info, statErr := os.Stat(dir); statErr == nil && info.Mode().Perm() != 0o700 {
+			r.add("ACME cache mode", WARN,
+				fmt.Sprintf("%s is %04o", dir, info.Mode().Perm()),
+				"it holds the account key and every private key issued; 0700 is right")
+		}
+	}
+
+	if cfg.TLS.ACMEEmail == "" {
+		r.add("ACME contact", WARN, "no tls.acme_email",
+			"it is the only way the authority can warn you before a certificate stops renewing")
+	}
+	if url := cfg.TLS.ACMEDirectoryURL; url != "" {
+		r.add("ACME directory", WARN, url,
+			"this is not the Let’s Encrypt production directory; certificates from a staging directory are not trusted by browsers")
 	}
 }
 

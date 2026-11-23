@@ -20,7 +20,7 @@ A reference file with every default lives at
 |---|---|---|
 | `public_url` | `http://localhost:8080` | The URL users type. Links, cookies, CSP and redirects derive from it. Must match what the proxy publishes. |
 | `default_language` | `fr` | `fr` or `en`. The visitor's own choice is remembered locally. |
-| `multi_org` | `false` | Several organisations on one instance (milestone M9). |
+| `multi_org` | `false` | Several organisations on one instance — see [Multi-organisation mode](#multi-organisation-mode). |
 | `update_check` | `true` | Daily check for a new release. Set `false` on an air-gapped host. |
 | `update_url` | empty | Internal mirror instead of GitHub releases. |
 | `update_channel` | `stable` | `stable` or `beta`. |
@@ -48,16 +48,61 @@ See [REVERSE-PROXY.md](REVERSE-PROXY.md) for how these combine.
 
 | Key | Default | What it does |
 |---|---|---|
-| `mode` | `none` | `none` (terminated upstream), `file` (Peek terminates), `acme` (milestone M4, currently refuses). |
+| Key | Default | What it does |
+|---|---|---|
+| `mode` | `none` | `none` (terminated upstream), `file` (a certificate you supply), `acme` (Let's Encrypt). |
 | `cert_file`, `key_file` | empty | Required for `file`. |
+| `acme_hosts` | `[]` | Required for `acme`. Real hostnames that resolve to this host — not an address, not `localhost`. |
+| `acme_email` | empty | Required for `acme`: the only way the authority can warn you before a certificate stops renewing. |
+| `acme_dir` | `/var/lib/peek/acme` | Holds the account key and every private key issued. `0700`. |
+| `acme_directory_url` | empty | Point at a staging directory to rehearse. Certificates from one are not trusted by browsers. |
 | `hsts` | `false` | Send `Strict-Transport-Security`. Leave off when the proxy already sends it. |
 | `hsts_max_age` | `31536000` | |
+
+`mode = "none"` is right behind Kemp, F5, HAProxy or nginx: the proxy holds
+the certificate and Peek serves plain HTTP on the loopback.
+
+### ACME, when Peek is the only thing listening
+
+```toml
+[tls]
+mode       = "acme"
+acme_hosts = ["secrets.acme.com"]
+acme_email = "ops@acme.com"
+```
+
+The challenge is **TLS-ALPN-01**, answered on the TLS listener that is already
+there. Port 80 is not needed and nothing extra is published — which is the
+whole reason for choosing it over HTTP-01.
+
+What that requires:
+
+- the listener reachable from the internet on **443**. Set
+  `server.internal_listen` or `server.public_listen` to `:443` and give the
+  unit `AmbientCapabilities=CAP_NET_BIND_SERVICE` (both lines are in the
+  packaged unit, commented);
+- each name in `acme_hosts` resolving to this host. `peek doctor` resolves
+  them and says so, without making a single ACME call — those are
+  rate-limited per account and per domain, and a diagnostic you run in a loop
+  must not be able to exhaust a weekly quota.
+
+The first connection to each host obtains the certificate and takes a few
+seconds. Renewal is automatic and needs no restart.
+
+Rehearse against staging first:
+
+```toml
+acme_directory_url = "https://acme-staging-v02.api.letsencrypt.org/directory"
+```
+
+`peek doctor` warns while that is set, because a staging certificate is not
+trusted by any browser.
 
 ## `[database]`
 
 | Key | Default | What it does |
 |---|---|---|
-| `driver` | `sqlite` | `sqlite`, or `postgres` (milestone M9, currently refuses to start). |
+| `driver` | `sqlite` | `sqlite`, or `postgres` for several nodes — see [HIGH-AVAILABILITY.md](HIGH-AVAILABILITY.md). |
 | `dsn` | `/var/lib/peek/peek.db` | File path, or a PostgreSQL DSN. |
 
 SQLite runs in WAL mode. For several nodes you need PostgreSQL: do not point

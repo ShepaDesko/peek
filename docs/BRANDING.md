@@ -1,12 +1,15 @@
 # White-labelling
 
 Peek is meant to be installed at a customer and look like **their** service,
-not like a product they bought. Today that is driven by `peek.toml`, served to
-the browser as JSON and as a stylesheet. The administration page with a live
-preview, logo upload, custom texts per language and branded e-mail templates is
-milestone M6; the pieces below are the foundation it will edit.
+not like a product they bought.
 
-## What you can change today
+There are two ways in. `peek.toml` holds the fallback identity, used on a
+fresh install and before anything has been saved. Everything else lives in the
+database, per organisation, and is edited in **Administration →
+Personnalisation** with a live preview of the home page, the recipient page
+and an e-mail. The database wins where both are set.
+
+## What `peek.toml` holds
 
 ```toml
 [branding]
@@ -88,24 +91,48 @@ contrast warning before you restart.
 Single-tenant, which is the default: `public_url` is the brand's domain. All
 links, cookies and redirects derive from it.
 
-Multi-organisation (milestone M9) resolves the brand from the `Host` header,
-taken only from a trusted proxy or a direct connection, with domains verified
-by a DNS TXT record.
+[Multi-organisation mode](CONFIG.md#multi-organisation-mode) resolves the
+brand from the `Host` header, taken only from a trusted proxy or a direct
+connection, and only for a domain a DNS TXT record has proved. Each
+organisation has its own brand, and an e-mail sent on behalf of one carries
+that one.
 
-## Arriving in milestone M6
+## What the editor adds
 
-- Administration page with a live preview of the home page, the recipient page
-  and an e-mail.
-- Light and dark logos (SVG sanitised server side, PNG, WebP), favicon
-  generation, Open Graph image.
-- Corner radius, button style and a font chosen from a list **embedded in the
-  binary** — never a web font fetched from the internet.
-- Every text editable per enabled language: titles, help, default recipient
-  message, the expired-secret page, the footer.
+- A live preview of the home page, the recipient page and an e-mail, updating
+  as you type.
+- Light and dark logos (SVG sanitised server side, PNG, WebP), a favicon and
+  an Open Graph image.
+- Corner radius, button style, and a font chosen from a list **embedded in the
+  binary** — never a web font fetched from the internet, because that is a
+  third party watching every recipient open a secret.
+- Every text editable per enabled language: titles, help, the default
+  recipient message, the expired-secret page, the footer.
 - Custom CSS, administrator only, sanitised, size-limited, with no `@import`
   and no external `url()`.
-- Branded e-mail templates (HTML and text) with variables, a preview and a
+- Branded e-mail templates, HTML and text, with variables, a preview and a
   "send a test" button.
 
-Everything above is already in the data model and in `peek.toml`; M6 adds the
-editor, storage in the database, and the assets.
+## Moving a brand between instances
+
+```bash
+# prepare it once
+sudo peek branding export > acme.peekbrand
+
+# and at the customer
+sudo peek branding import acme.peekbrand
+```
+
+The file carries the colours, the texts and the assets. It does not carry
+users, secrets or keys.
+
+## The contrast check
+
+The palette is generated from one primary colour, and the text drawn on it is
+whichever of white or near-black actually reaches 4.5:1 — WCAG 2.2 AA for
+normal text. When neither does, the editor says so instead of quietly shipping
+a button nobody can read.
+
+That check is the reason a brand cannot make the interface inaccessible by
+accident, and it is also why `--peek-on-primary` exists as a variable rather
+than being hard-coded to white.

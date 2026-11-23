@@ -439,6 +439,11 @@ func (s *Server) Handler(listener string) http.Handler {
 	return r
 }
 
+// TLSConfigForTest exposes what the listeners would be given, so a test can
+// assert on an ACME or file configuration without binding a port or asking a
+// certificate authority for anything.
+func (s *Server) TLSConfigForTest() (*tls.Config, error) { return s.tlsConfig() }
+
 // Serve starts every configured listener and blocks until the context is
 // cancelled, then shuts down gracefully.
 func (s *Server) Serve(ctx context.Context) error {
@@ -565,9 +570,7 @@ func (s *Server) tlsConfig() (*tls.Config, error) {
 			NextProtos:   []string{"h2", "http/1.1"},
 		}, nil
 	case "acme":
-		// ACME is milestone M4. Refusing loudly beats silently serving plain
-		// HTTP on a listener the operator believes is encrypted.
-		return nil, errors.New("tls.mode = acme is not wired yet (milestone M4); use mode \"file\" or terminate TLS on the proxy")
+		return s.acmeTLS()
 	default:
 		return nil, fmt.Errorf("tls.mode %q is not supported", s.cfg.TLS.Mode)
 	}

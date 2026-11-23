@@ -103,6 +103,6 @@ peek version
 
 ## High availability
 
-With several nodes (milestone M9, PostgreSQL), upgrade one node at a time:
+With several nodes sharing PostgreSQL, upgrade one node at a time:
 drain it at the load balancer, `peek update`, wait for `/readyz`, put it back.
 Migrations are applied by the first node to start and are idempotent.

@@ -82,6 +82,11 @@ type TLS struct {
 	ACMEEmail string   `toml:"acme_email"`
 	ACMEHosts []string `toml:"acme_hosts"`
 	ACMEDir   string   `toml:"acme_dir"`
+	// ACMEDirectoryURL points at a directory other than Let's Encrypt
+	// production — their staging endpoint, or an internal authority that
+	// speaks ACME. Rehearsing against staging is how an operator avoids
+	// burning a weekly issuance quota on a typo.
+	ACMEDirectoryURL string `toml:"acme_directory_url"`
 	// HSTS should stay off when TLS is terminated elsewhere and the proxy
 	// already sends the header.
 	HSTS       bool `toml:"hsts"`
@@ -679,6 +684,16 @@ func (c *Config) Validate() error {
 	case "acme":
 		if len(c.TLS.ACMEHosts) == 0 {
 			add("tls.mode = acme requires tls.acme_hosts")
+		}
+		for _, host := range c.TLS.ACMEHosts {
+			if host == "" || strings.ContainsAny(host, ":/ ") {
+				add("tls.acme_hosts: %q is not a hostname", host)
+			}
+		}
+		if c.TLS.ACMEEmail == "" {
+			// Not fatal — the protocol allows it — but it is the only way the
+			// authority can warn about an expiry that is not renewing.
+			add("tls.acme_email is required: it is how the certificate authority warns you before a certificate expires")
 		}
 	default:
 		add("tls.mode must be none, file or acme (got %q)", c.TLS.Mode)

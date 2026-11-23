@@ -220,7 +220,7 @@ server {
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # Large encrypted uploads (milestone M7).
+    # Large encrypted uploads.
     client_max_body_size 128m;
     proxy_request_buffering off;
     proxy_read_timeout 120s;
@@ -344,8 +344,11 @@ certbot certonly --standalone -d secrets.acme.com \
     systemctl restart peek'
 ```
 
-Built-in ACME (`tls.mode = "acme"`) is milestone M4 and currently refuses to
-start rather than silently serving plain HTTP.
+Or let Peek do it: `tls.mode = "acme"` obtains and renews a Let's Encrypt
+certificate itself, over TLS-ALPN-01, so no port 80 and no certbot hook. It
+needs Peek to be the thing listening on 443 — see
+[`CONFIG.md`](CONFIG.md#acme-when-peek-is-the-only-thing-listening). Behind a
+proxy, the proxy owns the certificate and `tls.mode = "none"` is correct.
 
 ---
 

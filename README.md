@@ -22,35 +22,62 @@ héberge — par construction, pas par politique interne.
 └─────────────────────────────┘
 ```
 
-## Ce qui fonctionne aujourd'hui
+## Ce que fait Peek
 
-| Domaine | État |
+| Domaine | |
 |---|---|
-| Secrets texte et URL, chiffrés de bout en bout | ✅ |
+| Secrets texte, URL et fichiers, chiffrés de bout en bout dans le navigateur | ✅ |
 | Expiration par **durée** et par **nombre de lectures**, appliquée atomiquement | ✅ |
 | Étape « cliquer pour révéler » : les robots d'aperçu ne consomment aucune vue | ✅ |
-| Passphrase optionnelle, tentatives limitées, secret détruit au-delà | ✅ |
-| Page reçu pour l'émetteur : statut en direct, QR code, « détruire maintenant » | ✅ |
-| Suppression par le destinataire, suppression réelle à l'expiration, purge chaque minute | ✅ |
-| Journal d'audit append-only, sans jamais le contenu d'un secret | ✅ |
-| Limitation de débit, CSP stricte, `no-store`, `noindex` | ✅ |
-| Marque blanche : nom, couleurs, palette générée avec contrôle de contraste | ✅ |
-| Français et anglais, thèmes clair et sombre | ✅ |
+| Passphrase optionnelle (Argon2id), tentatives limitées, secret détruit au-delà | ✅ |
+| Pièces jointes jusqu'à 100 Mo, chiffrées par morceaux, stockage local ou S3 | ✅ |
+| Multi-destinataires : un envoi, plusieurs liens, réglages par destinataire | ✅ |
+| **Demandes de secret** : un lien pour qu'on vous envoie quelque chose | ✅ |
+| Page reçu : statut en direct, QR code, « détruire maintenant » | ✅ |
+| Tableau de bord, suppression par le destinataire, purge chaque minute | ✅ |
+| Journal d'audit append-only, export CSV/JSON, export syslog RFC 5424 | ✅ |
+| Comptes, quatre rôles, invitations, TOTP, codes de secours, passkeys | ✅ |
+| **SSO OpenID Connect** : Entra ID, Google, Keycloak, authentik, ADFS | ✅ |
+| Marque blanche complète : éditeur avec aperçu en direct, e-mails brandés | ✅ |
+| **API REST** décrite en OpenAPI 3.1, jetons à portée limitée | ✅ |
+| **Webhooks** signés HMAC, mis en file et réessayés | ✅ |
+| SQLite ou PostgreSQL, **plusieurs nœuds** derrière un répartiteur | ✅ |
+| **Multi-organisation** : domaines vérifiés par enregistrement DNS | ✅ |
 | Deux écouteurs : n'exposer que les pages destinataires | ✅ |
 | IP client réelle derrière Kemp, F5, HAProxy, nginx (+ PROXY protocol) | ✅ |
+| TLS : terminé en amont, certificat fourni, ou **Let's Encrypt intégré** | ✅ |
+| Français et anglais, thèmes clair et sombre, **WCAG 2.2 AA vérifié** | ✅ |
 | `setup`, `doctor`, `backup`, `restore`, `update` signé avec retour arrière | ✅ |
 | `.deb`, `.rpm`, `.tar.gz`, unités systemd durcies, `install.sh` | ✅ |
 | `peek-cli push` / `get`, compatible bit à bit avec le navigateur | ✅ |
-| Comptes, rôles, SSO, TOTP, passkeys | jalon M5 |
-| Éditeur de marque avec aperçu en direct, e-mails brandés | jalon M6 |
-| Fichiers, multi-destinataires, demandes de secret, S3 | jalon M7 |
-| API REST documentée, jetons, webhooks | jalon M8 |
-| PostgreSQL, haute disponibilité, multi-organisation | jalon M9 |
 
-Ce qui n'est pas terminé **refuse franchement** au lieu de faire semblant :
-mettre `database.driver = "postgres"` ou `tls.mode = "acme"` empêche le
-démarrage avec un message explicite, plutôt que de basculer en silence sur
+Rien n'est en demi-teinte : il n'y a plus de réglage qui fasse semblant. Ce
+principe reste en place pour la suite — une fonction non terminée refuse au
+démarrage avec un message explicite plutôt que de basculer en silence sur
 autre chose.
+
+### Ce que ça coûte
+
+Sur une machine virtuelle à **un seul vCPU** et 2 Go de RAM : 372 créations et
+372 lectures par seconde, p50 13 ms, aucune erreur, 31 Mo de mémoire. Le
+binaire pèse 28,8 Mo, la page destinataire 131 ko de JavaScript gzippé — tout
+compris, y compris le module Argon2id en WebAssembly, puisque rien n'est
+chargé depuis l'extérieur. Détails et méthode :
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+### Ce que Peek ne fait pas
+
+- **Il ne peut pas lire ce qu'il héberge.** Ce n'est pas une politique, c'est
+  la construction : la clé ne quitte jamais le navigateur.
+- **Il ne vous protège pas d'un serveur compromis qui servirait un JavaScript
+  modifié.** Aucune application web ne le peut. C'est écrit noir sur blanc
+  dans [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md), avec ce qu'il faut faire
+  à la place.
+- **Il n'appelle rien à l'extérieur par défaut** — ni CDN, ni police web, ni
+  analytique. Les seuls appels sortants possibles sont ceux que vous
+  configurez : SMTP, votre fournisseur d'identité, vos webhooks, la
+  vérification de mise à jour.
+- **Il n'y a pas de Docker.** Un binaire, une unité systemd.
 
 ## Installation
 
@@ -78,8 +105,10 @@ Détails : [docs/INSTALL.md](docs/INSTALL.md).
 Le chiffrement a lieu dans le navigateur, et les navigateurs n'exposent
 WebCrypto qu'en `https://` ou sur `localhost`. Une instance publiée en HTTP
 simple sur une adresse de LAN s'affiche, explique clairement le problème, et
-refuse de chiffrer. Terminez le TLS sur votre répartiteur, ou mettez
-`tls.mode = "file"`.
+refuse de chiffrer. Trois façons de régler ça : terminer le TLS sur votre
+répartiteur (`tls.mode = "none"`, le cas normal), fournir un certificat
+(`tls.mode = "file"`), ou laisser Peek obtenir et renouveler lui-même un
+certificat Let's Encrypt (`tls.mode = "acme"`, via TLS-ALPN-01, sans port 80).
 
 ## Mise à jour
 
