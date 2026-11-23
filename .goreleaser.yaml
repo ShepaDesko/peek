@@ -68,7 +68,16 @@ archives:
         dst: docs
       - src: packaging/systemd/*
         dst: packaging/systemd
-      - src: packaging/peek.toml.example
+      # A glob, not the plain path: with a single-file `src`, goreleaser
+      # treats `dst` as the full destination *name*, so this entry produced a
+      # regular file literally called "packaging" next to the directory
+      # "packaging/systemd/". tar allows both; extracting the archive does
+      # not, and `syft` failed the release on exactly that — "failed to create
+      # parent directory: mkdir …/packaging: not a directory".
+      #
+      # The two entries above work because a glob makes `dst` a directory,
+      # which is why this one is a glob too.
+      - src: packaging/peek.toml.example*
         dst: packaging
 
   - id: cli
