@@ -38,3 +38,6 @@ Thumbs.db
 
 # Les PDF engendres a la racine (procedures, livrables) ne vont pas dans le depot.
 /*.pdf
+
+# Le cahier des charges d'origine reste local.
+/SPEC.md
