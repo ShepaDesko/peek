@@ -324,6 +324,64 @@ var operations = map[string]operation{
 		Auth:      "none",
 		Responses: map[string]string{"302": "To the interface on success, to /login?sso_error=… otherwise."},
 	},
+	"GET /api/v1/orgs": {
+		Summary: "Organisations on this instance", Tag: "platform", NoBody: true, Session: true,
+		Description: "Each organisation with its user, secret and domain counts, and the DNS " +
+			"records still waiting to be published. `409` on a single-tenant instance.",
+		Auth: "session, platform administrator", ResponseRef: "Orgs",
+	},
+	"POST /api/v1/orgs": {
+		Summary: "Create an organisation", Tag: "platform", Session: true,
+		Description: "`slug` is the stable identifier, reduced to lowercase letters, digits " +
+			"and hyphens. It gets its own brand, users, policies and audit trail.",
+		Auth: "session, platform administrator", RequestRef: "NewOrg",
+	},
+	"PATCH /api/v1/orgs/{id}": {
+		Summary: "Rename or suspend an organisation", Tag: "platform", Session: true,
+		Description: "`status` is `active` or `suspended`. A suspended organisation keeps " +
+			"its data and stops resolving: a customer who has not paid is not a customer " +
+			"whose secrets are deleted.",
+		Auth: "session, platform administrator",
+	},
+	"DELETE /api/v1/orgs/{id}": {
+		Summary: "Delete an empty organisation", Tag: "platform", NoBody: true, Session: true,
+		Description: "Refused while it still has users or secrets, and the default " +
+			"organisation can never be deleted: that row is the instance itself.",
+		Auth: "session, platform administrator",
+	},
+	"GET /api/v1/orgs/{id}/domains": {
+		Summary: "An organisation's domains", Tag: "platform", NoBody: true, Session: true,
+		Description: "With, for each unverified one, the exact TXT record to publish.",
+		Auth:        "session, platform administrator", ResponseRef: "Domains",
+	},
+	"POST /api/v1/orgs/{id}/domains": {
+		Summary: "Declare a domain", Tag: "platform", Session: true,
+		Description: "Answers with the DNS name and value to publish. The domain resolves " +
+			"to nothing until that record has been seen — without the proof, anyone able " +
+			"to point a name at this instance could wear another customer's brand.",
+		Auth: "session, platform administrator", RequestRef: "NewDomain", ResponseRef: "DomainChallenge",
+	},
+	"POST /api/v1/orgs/{id}/domains/{domain}/verify": {
+		Summary: "Check the TXT record", Tag: "platform", NoBody: true, Session: true,
+		Description: "The one outbound DNS query Peek makes, and only when asked. Answers " +
+			"`200` with `verified: false` and the record to publish while it is not there " +
+			"yet: the call worked, the record did not exist. A domain proved once stays " +
+			"proved through a later DNS outage.",
+		Auth: "session, platform administrator",
+	},
+	"POST /api/v1/orgs/{id}/domains/{domain}/primary": {
+		Summary: "Choose the link domain", Tag: "platform", NoBody: true, Session: true,
+		Description: "The primary domain is the origin recipient links are built on, so the " +
+			"address in the link, the certificate serving it and the brand on the page agree. " +
+			"An unverified domain cannot be primary.",
+		Auth: "session, platform administrator",
+	},
+	"DELETE /api/v1/orgs/{id}/domains/{domain}": {
+		Summary: "Remove a domain", Tag: "platform", NoBody: true, Session: true,
+		Auth: "session, platform administrator",
+		Description: "The domain stops resolving at once on this node and within thirty " +
+			"seconds on the others.",
+	},
 	"GET /api/v1/webhooks": {
 		Summary: "Webhook endpoints and queue", Tag: "webhooks", Scope: store.ScopeInstanceRead, NoBody: true,
 		Description: "What is configured, how the signature is computed, and how many " +
@@ -449,6 +507,7 @@ func (s *Server) OpenAPI() (map[string]any, error) {
 			map[string]any{"name": "admin", "description": "Accounts and the instance."},
 			map[string]any{"name": "branding", "description": "White-labelling."},
 			map[string]any{"name": "webhooks", "description": "Outbound notifications."},
+			map[string]any{"name": "platform", "description": "Organisations and domains, in multi-organisation mode."},
 		},
 		"components": map[string]any{
 			"securitySchemes": map[string]any{
@@ -564,6 +623,8 @@ func pathParameters(route string) []any {
 			schema["description"] = "A public identifier: 128 random bits, base64url."
 		case "name":
 			schema["description"] = "The endpoint name from peek.toml."
+		case "domain":
+			schema["description"] = "A domain declared for the organisation."
 		case "kind":
 			schema["description"] = "Which asset: logo, logo_dark, favicon or email_logo."
 		}
@@ -928,6 +989,81 @@ func openAPISchemas() map[string]any {
 				"active_secrets":  map[string]any{"type": "integer"},
 				"multi_org":       map[string]any{"type": "boolean"},
 				"public_listener": map[string]any{"type": "boolean"},
+			},
+		},
+		"NewOrg": map[string]any{
+			"type": "object", "required": []any{"slug"},
+			"properties": map[string]any{
+				"slug": map[string]any{"type": "string", "pattern": "^[a-z0-9-]+$"},
+				"name": map[string]any{"type": "string"},
+			},
+		},
+		"Org": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":         map[string]any{"type": "string"},
+				"slug":       map[string]any{"type": "string"},
+				"name":       map[string]any{"type": "string"},
+				"status":     map[string]any{"type": "string", "enum": []any{"active", "suspended"}},
+				"created_at": map[string]any{"type": "string", "format": "date-time"},
+				"counts": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"users":   map[string]any{"type": "integer"},
+						"secrets": map[string]any{"type": "integer"},
+						"domains": map[string]any{"type": "integer"},
+					},
+				},
+				"domains": map[string]any{"type": "array", "items": ref("Domain")},
+			},
+		},
+		"Orgs": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"multi_org": map[string]any{"type": "boolean"},
+				"orgs":      map[string]any{"type": "array", "items": ref("Org")},
+			},
+		},
+		"NewDomain": map[string]any{
+			"type": "object", "required": []any{"domain"},
+			"properties": map[string]any{
+				"domain": map[string]any{"type": "string", "example": "secrets.acme.com"},
+			},
+		},
+		"Domain": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"domain":       map[string]any{"type": "string"},
+				"org_id":       map[string]any{"type": "string"},
+				"verify_token": map[string]any{"type": "string"},
+				"verified_at": map[string]any{"type": "string", "format": "date-time",
+					"description": "Absent until the TXT record has been seen."},
+				"primary":         map[string]any{"type": "boolean"},
+				"created_at":      map[string]any{"type": "string", "format": "date-time"},
+				"last_checked_at": map[string]any{"type": "string", "format": "date-time"},
+				"last_error":      map[string]any{"type": "string"},
+			},
+		},
+		"DomainChallenge": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"domain": ref("Domain"),
+				"record": map[string]any{
+					"type":        "object",
+					"description": "Paste these into the zone, exactly as given.",
+					"properties": map[string]any{
+						"type":  map[string]any{"type": "string", "example": "TXT"},
+						"name":  map[string]any{"type": "string", "example": "_peek-challenge.secrets.acme.com"},
+						"value": map[string]any{"type": "string", "example": "peek-verification=…"},
+					},
+				},
+			},
+		},
+		"Domains": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"domains": map[string]any{"type": "array", "items": ref("Domain")},
+				"record":  map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
 			},
 		},
 		"SSOInfo": map[string]any{

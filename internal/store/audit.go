@@ -67,6 +67,15 @@ const (
 	EventSSOFailed   = "auth.sso_failed"
 	EventSSOUnlinked = "admin.sso_unlinked"
 
+	// Multi-organisation mode.
+	EventWrongOrg      = "request.wrong_organisation"
+	EventOrgCreated    = "platform.org_created"
+	EventOrgUpdated    = "platform.org_updated"
+	EventOrgDeleted    = "platform.org_deleted"
+	EventDomainAdded   = "platform.domain_added"
+	EventDomainChecked = "platform.domain_checked"
+	EventDomainRemoved = "platform.domain_removed"
+
 	// User management.
 	EventUserCreated        = "admin.user_created"
 	EventUserUpdated        = "admin.user_updated"

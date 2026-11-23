@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ShepaDesko/peek/internal/config"
@@ -65,7 +66,13 @@ func (s *Service) Config() *config.Config { return s.cfg }
 // CreateInput is what the browser submits. Every byte slice here is already
 // ciphertext or a hash: the server could not decrypt any of it.
 type CreateInput struct {
-	ID                   string
+	ID string
+	// BaseURL is the origin the recipient link is built on. Empty means the
+	// instance's public_url, which is every single-tenant installation; in
+	// multi-organisation mode the handler passes that organisation's own
+	// primary domain, so the address in the link, the certificate serving it
+	// and the brand on the page all agree.
+	BaseURL              string
 	Kind                 string
 	Ciphertext           []byte
 	ReadTokenHash        []byte
@@ -294,9 +301,17 @@ func (s *Service) Prepare(in CreateInput, bundleID, groupID string, now time.Tim
 			ViewsMax:  views,
 			ExpiresAt: expires,
 			CreatedAt: now,
-			URL:       s.cfg.SecretURL(in.ID),
+			URL:       secretURL(s.cfg, in.BaseURL, in.ID),
 			BundleID:  bundleID,
 		}, nil
+}
+
+// secretURL builds the recipient link on the right origin.
+func secretURL(cfg *config.Config, base, id string) string {
+	if base == "" {
+		return cfg.SecretURL(id)
+	}
+	return strings.TrimRight(base, "/") + "/s/" + id
 }
 
 // Meta returns what a recipient may see before proving possession of the key.

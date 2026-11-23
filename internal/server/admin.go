@@ -56,7 +56,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, store.AuditEvent{UserID: p.User.ID, Event: store.EventInvitationSent,
 			Detail: map[string]string{"email": store.NormalizeEmail(req.Email), "role": inv.Record.Role}})
 
-		link := s.publicLink("/invitation#" + inv.Token)
+		link := s.publicLink(r.Context(), "/invitation#"+inv.Token)
 		sendErr := s.mailInvitation(r.Context(), inv.Record.Email, inv.Token, displayName(p.User))
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"invited":    true,

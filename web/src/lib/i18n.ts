@@ -474,6 +474,44 @@ const fr = {
   "login.sso.error.locked": "Ce compte est temporairement bloqué. Réessayez dans quelques minutes.",
   "login.sso.error.unavailable":
     "La connexion par annuaire n'est pas disponible pour le moment. L'administrateur de l'instance trouvera le détail dans le journal.",
+
+  "admin.tab.orgs": "Organisations",
+  "orgs.title": "Organisations",
+  "orgs.subtitle":
+    "Cette instance héberge plusieurs organisations. Chacune a sa marque, ses utilisateurs, ses politiques et son journal d'audit, et c'est le domaine qui dit laquelle.",
+  "orgs.slug": "Identifiant",
+  "orgs.slug.hint": "Minuscules, chiffres et tirets. Il ne change plus ensuite.",
+  "orgs.name": "Nom affiché",
+  "orgs.create": "Créer",
+  "orgs.creating": "Création…",
+  "orgs.counts": "{users} utilisateur(s), {secrets} secret(s)",
+  "orgs.suspended": "Suspendue",
+  "orgs.suspend": "Suspendre",
+  "orgs.resume": "Réactiver",
+  "orgs.delete": "Supprimer",
+  "orgs.delete.blocked":
+    "Une organisation qui a encore des utilisateurs ou des secrets n'est pas supprimable.",
+  "orgs.default.hint":
+    "C'est l'organisation de l'instance elle-même : elle ne peut être ni suspendue ni supprimée.",
+  "orgs.domain.none": "Aucun domaine déclaré.",
+  "orgs.domain.add": "Ajouter un domaine",
+  "orgs.domain.declare": "Déclarer",
+  "orgs.domain.ok": "Vérifié",
+  "orgs.domain.pending": "Non vérifié",
+  "orgs.domain.primary": "Principal",
+  "orgs.domain.makePrimary": "Rendre principal",
+  "orgs.domain.verify": "Vérifier",
+  "orgs.domain.checking": "Vérification…",
+  "orgs.domain.remove": "Retirer",
+  "orgs.domain.verified": "Domaine vérifié. Il résout dès maintenant.",
+  "orgs.domain.notYet": "L'enregistrement n'a pas encore été trouvé.",
+  "orgs.domain.lastCheck": "Dernière vérification",
+  "orgs.domain.publish": "Publiez cet enregistrement DNS, puis vérifiez :",
+  "orgs.domain.recordHint":
+    "Un domaine ne résout rien tant que son enregistrement TXT n'a pas été vu. Cliquez sur Vérifier pour réafficher la valeur à publier.",
+  "orgs.record.type": "Type",
+  "orgs.record.name": "Nom",
+  "orgs.record.value": "Valeur",
 } as const;
 
 type Key = keyof typeof fr;
@@ -933,6 +971,43 @@ const en: Record<Key, string> = {
   "login.sso.error.locked": "This account is temporarily locked. Try again in a few minutes.",
   "login.sso.error.unavailable":
     "Directory sign-in is unavailable right now. Whoever runs this instance will find the detail in the log.",
+
+  "admin.tab.orgs": "Organisations",
+  "orgs.title": "Organisations",
+  "orgs.subtitle":
+    "This instance hosts several organisations. Each has its own brand, users, policies and audit trail, and the domain is what says which.",
+  "orgs.slug": "Identifier",
+  "orgs.slug.hint": "Lowercase letters, digits and hyphens. It does not change afterwards.",
+  "orgs.name": "Display name",
+  "orgs.create": "Create",
+  "orgs.creating": "Creating...",
+  "orgs.counts": "{users} user(s), {secrets} secret(s)",
+  "orgs.suspended": "Suspended",
+  "orgs.suspend": "Suspend",
+  "orgs.resume": "Resume",
+  "orgs.delete": "Delete",
+  "orgs.delete.blocked": "An organisation that still has users or secrets cannot be deleted.",
+  "orgs.default.hint":
+    "This is the instance's own organisation: it can be neither suspended nor deleted.",
+  "orgs.domain.none": "No domain declared.",
+  "orgs.domain.add": "Add a domain",
+  "orgs.domain.declare": "Declare",
+  "orgs.domain.ok": "Verified",
+  "orgs.domain.pending": "Unverified",
+  "orgs.domain.primary": "Primary",
+  "orgs.domain.makePrimary": "Make primary",
+  "orgs.domain.verify": "Verify",
+  "orgs.domain.checking": "Checking...",
+  "orgs.domain.remove": "Remove",
+  "orgs.domain.verified": "Domain verified. It resolves from now on.",
+  "orgs.domain.notYet": "The record has not been found yet.",
+  "orgs.domain.lastCheck": "Last check",
+  "orgs.domain.publish": "Publish this DNS record, then verify:",
+  "orgs.domain.recordHint":
+    "A domain resolves to nothing until its TXT record has been seen. Press Verify to show the value to publish again.",
+  "orgs.record.type": "Type",
+  "orgs.record.name": "Name",
+  "orgs.record.value": "Value",
 };
 
 const dictionaries: Record<Lang, Record<Key, string>> = { fr, en };

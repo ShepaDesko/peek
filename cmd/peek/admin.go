@@ -33,7 +33,7 @@ func runAdmin(ctx context.Context, args []string) error {
 	configPath := fs.String("config", defaultConfigPath(), "path to peek.toml")
 	email := fs.String("email", "", "account e-mail address")
 	name := fs.String("name", "", "display name")
-	role := fs.String("role", "", "admin | manager | member | auditor")
+	role := fs.String("role", "", "admin | manager | member | auditor | platform_admin")
 	password := fs.String("password", "", "password (prompted when omitted)")
 	if err := fs.Parse(rest); err != nil {
 		return err
@@ -225,9 +225,10 @@ func adminSetRole(ctx context.Context, st *store.Store, email, role string) erro
 		return fail("--email and --role are required")
 	}
 	switch role {
-	case store.RoleAdmin, store.RoleManager, store.RoleMember, store.RoleAuditor:
+	case store.RoleAdmin, store.RoleManager, store.RoleMember, store.RoleAuditor,
+		store.RolePlatformAdmin:
 	default:
-		return fail("unknown role %q (admin, manager, member or auditor)", role)
+		return fail("unknown role %q (admin, manager, member, auditor or platform_admin)", role)
 	}
 	user, err := st.UserByEmail(ctx, store.DefaultOrgID, email)
 	if err != nil {

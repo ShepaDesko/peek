@@ -10,6 +10,7 @@ import {
 import { formatWhen } from "../lib/format";
 import type { Lang, Translate } from "../lib/i18n";
 import { Banner, Card, CopyButton, Field, Spinner } from "../ui";
+import Organisations from "../components/Organisations";
 import Branding from "./Branding";
 import { describeError } from "./Create";
 
@@ -21,7 +22,7 @@ interface Props {
   onBrandChanged: () => void;
 }
 
-type Tab = "users" | "audit" | "branding" | "instance";
+type Tab = "users" | "audit" | "branding" | "instance" | "orgs";
 
 const ROLES: Role[] = ["admin", "manager", "member", "auditor"];
 
@@ -34,6 +35,10 @@ export default function Admin({ t, lang, me, onBrandChanged }: Props) {
     { id: "audit", label: t("admin.tab.audit"), visible: !!me.can_audit },
     { id: "branding", label: t("admin.tab.branding"), visible: !!me.can_administer },
     { id: "instance", label: t("admin.tab.instance"), visible: !!me.can_administer },
+    // Only on a multi-organisation instance, and only for the role above
+    // admin: a single-tenant installation hides the notion rather than
+    // showing an empty tab.
+    { id: "orgs", label: t("admin.tab.orgs"), visible: !!me.can_platform },
   ];
 
   return (
@@ -76,6 +81,9 @@ export default function Admin({ t, lang, me, onBrandChanged }: Props) {
         <Branding t={t} lang={lang} onChanged={onBrandChanged} />
       ) : null}
       {tab === "instance" && me.can_administer ? <InstanceTab t={t} onError={setError} /> : null}
+      {tab === "orgs" && me.can_platform ? (
+        <Organisations t={t} lang={lang} onError={setError} />
+      ) : null}
     </div>
   );
 }

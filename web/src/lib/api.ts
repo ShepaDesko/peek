@@ -420,7 +420,39 @@ export interface Me {
   can_manage?: boolean;
   can_administer?: boolean;
   can_audit?: boolean;
+  /** True only on a multi-organisation instance, for the platform role. */
+  can_platform?: boolean;
+  multi_org?: boolean;
+  /** The slug of the organisation this address serves. */
+  org?: string;
   session_expires?: string;
+}
+
+export interface OrgDomain {
+  domain: string;
+  org_id: string;
+  verify_token: string;
+  verified_at?: string;
+  primary: boolean;
+  created_at: string;
+  last_checked_at?: string;
+  last_error?: string;
+}
+
+export interface OrgInfo {
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+  created_at: string;
+  counts: { users: number; secrets: number; domains: number };
+  domains?: OrgDomain[];
+}
+
+export interface DnsRecord {
+  type: string;
+  name: string;
+  value: string;
 }
 
 export interface LoginResponse {
@@ -496,6 +528,36 @@ export interface SSOInfo {
   label?: string;
   start_url?: string;
 }
+
+export const platform = {
+  orgs: () => request<{ multi_org: boolean; orgs: OrgInfo[] }>("GET", "/api/v1/orgs"),
+  createOrg: (slug: string, name: string) =>
+    request<{ org: OrgInfo }>("POST", "/api/v1/orgs", { slug, name }),
+  updateOrg: (id: string, body: { name?: string; status?: string }) =>
+    request<void>("PATCH", `/api/v1/orgs/${encodeURIComponent(id)}`, body),
+  deleteOrg: (id: string) => request<void>("DELETE", `/api/v1/orgs/${encodeURIComponent(id)}`),
+  addDomain: (id: string, domain: string) =>
+    request<{ domain: OrgDomain; record: DnsRecord }>(
+      "POST",
+      `/api/v1/orgs/${encodeURIComponent(id)}/domains`,
+      { domain },
+    ),
+  verifyDomain: (id: string, domain: string) =>
+    request<{ verified: boolean; error?: string; record?: DnsRecord; domain?: OrgDomain }>(
+      "POST",
+      `/api/v1/orgs/${encodeURIComponent(id)}/domains/${encodeURIComponent(domain)}/verify`,
+    ),
+  setPrimaryDomain: (id: string, domain: string) =>
+    request<void>(
+      "POST",
+      `/api/v1/orgs/${encodeURIComponent(id)}/domains/${encodeURIComponent(domain)}/primary`,
+    ),
+  removeDomain: (id: string, domain: string) =>
+    request<void>(
+      "DELETE",
+      `/api/v1/orgs/${encodeURIComponent(id)}/domains/${encodeURIComponent(domain)}`,
+    ),
+};
 
 export const auth = {
   me: () => request<Me>("GET", "/api/v1/auth/me"),

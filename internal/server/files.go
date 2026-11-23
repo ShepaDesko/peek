@@ -45,7 +45,7 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	creatorID, orgID := "", store.DefaultOrgID
+	creatorID, orgID := "", s.orgOf(r)
 	if p != nil {
 		creatorID, orgID = p.User.ID, p.User.OrgID
 	}

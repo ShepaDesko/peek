@@ -63,7 +63,7 @@ func (s *Server) audit(r *http.Request, e store.AuditEvent) {
 		return
 	}
 	if e.OrgID == "" {
-		e.OrgID = "default"
+		e.OrgID = s.orgOf(r)
 	}
 	ip := ClientIP(r.Context())
 	if s.cfg.Security.AnonymizeIPs {
@@ -246,7 +246,7 @@ func badField(field string, err error) *fieldError {
 
 // recipientInput turns one recipient block into a service input, decoding
 // every base64 field and sealing the notification address.
-func (s *Server) recipientInput(b recipientBody, creatorID, orgID string) (secrets.CreateInput, *fieldError) {
+func (s *Server) recipientInput(b recipientBody, creatorID, orgID, baseURL string) (secrets.CreateInput, *fieldError) {
 	ciphertext, err := decodeB64Field(b.Ciphertext, "ciphertext")
 	if err != nil {
 		return secrets.CreateInput{}, badField("ciphertext", err)
@@ -291,6 +291,7 @@ func (s *Server) recipientInput(b recipientBody, creatorID, orgID string) (secre
 	return secrets.CreateInput{
 		CreatorID:        creatorID,
 		OrgID:            orgID,
+		BaseURL:          baseURL,
 		ID:               b.ID,
 		Kind:             b.Kind,
 		Ciphertext:       ciphertext,
@@ -345,10 +346,11 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusForbidden, "forbidden", "An auditor account cannot create secrets.")
 		return
 	}
-	creatorID, orgID := "", store.DefaultOrgID
+	creatorID, orgID := "", s.orgOf(r)
 	if p != nil {
 		creatorID, orgID = p.User.ID, p.User.OrgID
 	}
+	base := s.orgs.PublicURL(r.Context(), orgID)
 
 	var req createRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -374,7 +376,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	inputs := make([]secrets.CreateInput, 0, len(blocks))
 	for _, b := range blocks {
-		in, ferr := s.recipientInput(b, creatorID, orgID)
+		in, ferr := s.recipientInput(b, creatorID, orgID, base)
 		if ferr != nil {
 			writeFieldError(w, http.StatusBadRequest, "bad_request", ferr.message, ferr.field)
 			return
@@ -534,7 +536,7 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	// attachments would be unreachable the instant they became readable. The
 	// grant is what keeps them downloadable for a bounded while — and it is
 	// issued only to someone who just proved they hold the read token.
-	if grant, until, err := s.secrets.GrantDownloads(r.Context(), store.DefaultOrgID, rev.BundleID, id); err != nil {
+	if grant, until, err := s.secrets.GrantDownloads(r.Context(), s.orgOf(r), rev.BundleID, id); err != nil {
 		s.log.Error("grant file downloads", "error", err.Error())
 	} else if grant != "" {
 		body["download_token"] = grant

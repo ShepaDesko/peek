@@ -69,11 +69,16 @@ func (u *User) Can(required string) bool { return RoleAtLeast(u.Role, required) 
 
 // RoleAtLeast compares two roles by power. auditor is deliberately outside the
 // ladder: it is a read-only role, not a weaker administrator.
+//
+// platform_admin sits above admin and only exists on an instance hosting
+// several organisations. It is on the ladder rather than beside it so that
+// every requireRole(RoleAdmin) in the route table admits it without being
+// listed, which is the point of a ladder.
 func RoleAtLeast(have, required string) bool {
 	if have == required {
 		return true
 	}
-	rank := map[string]int{RoleMember: 1, RoleManager: 2, RoleAdmin: 3}
+	rank := map[string]int{RoleMember: 1, RoleManager: 2, RoleAdmin: 3, RolePlatformAdmin: 4}
 	h, okHave := rank[have]
 	r, okNeed := rank[required]
 	if !okHave || !okNeed {

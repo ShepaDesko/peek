@@ -258,3 +258,76 @@ already be linked to a different subject, and a provider that explicitly marks
 the address unverified is refused. Without that second guard, any provider that
 lets a user type an arbitrary address would be a way into somebody else's
 account.
+
+### A user belongs to one organisation, not several
+
+The specification sketched a `memberships` table. Peek keeps `org_id` on the
+account instead.
+
+"One instance hosts several customers" does not mean one person works for two
+of them. A membership table would put an organisation in every session, every
+API token and every query that today takes it from the account — a lot of
+surface, and a lot of places to forget it — for a case nobody has asked for.
+Somebody who genuinely needs both gets two accounts, which is also the honest
+audit trail: two people's worth of activity under one identity is exactly what
+an auditor does not want to see.
+
+### A domain resolves only after a TXT record proves it
+
+The Host header decides which organisation a request belongs to, and on a
+direct connection that header is whatever the client typed. Anybody who can
+point a DNS name at this instance could otherwise claim a customer's brand,
+and the recipient would see the right logo above the wrong organisation's page
+— which is a convincing phishing page the operator hosted themselves.
+
+So a declared domain resolves to nothing until
+`_peek-challenge.<domain> IN TXT "peek-verification=<token>"` has been seen.
+The label is dedicated rather than the apex, because an apex TXT record is
+shared with SPF, DMARC and a handful of other verification tokens and
+operators delete each other's.
+
+Two smaller decisions inside that one. A domain proved once stays proved: a
+failed re-check records what the resolver saw and leaves `verified_at` alone,
+because taking a customer's brand away for the duration of their registrar's
+bad afternoon is the wrong failure. And an unknown or unverified host gets the
+*instance's* brand rather than a refusal — a recipient holding a link must be
+able to read their secret even when the operator has not finished setting the
+brand up.
+
+### The Host header is cached, and the cache is bounded
+
+Resolving a host is a query, and the header comes from the client, so a flood
+of distinct Host values is a flood of queries. The answers are cached for
+thirty seconds — long enough that a busy domain is one query, short enough
+that adding a domain takes effect while the operator is still looking at the
+screen — and the whole map is dropped when it passes a thousand entries
+rather than evicting cleverly. A cache keyed on attacker-controlled input
+needs a bound more than it needs an eviction policy.
+
+### A token can cross organisations and a cookie cannot, so the check is where both pass
+
+A session cookie is scoped to a host by the browser: one opened on
+acme.example.com is never sent to beta.example.com. An API token is a header,
+and the Host beside it is the caller's choice.
+
+So the comparison — the account's organisation against the one the address
+resolves to — lives in the one middleware both forms of authentication pass
+through, and the refusal is audited. The alternative, comparing them in each
+handler that reads an organisation from the account, is a rule that holds
+until somebody adds the twentieth handler.
+
+A platform administrator is exempt, because acting across organisations is the
+whole of that role.
+
+### `platform_admin` went on the role ladder, which turned three checks into escalations
+
+The role above `admin` was added to the same ordered ladder the others use, so
+that every `requireRole(RoleAdmin)` in the route table admits it without being
+listed. That is the point of a ladder.
+
+It also broke three guards that each named `admin` by hand —
+`!actor.Can(RoleAdmin) && role == RoleAdmin` and two variants. An
+administrator passes all three, so an administrator could have granted the
+role above their own. They are now one function that reads the ladder:
+nobody grants a role they do not themselves hold. A rule about an ordering
+belongs in one place that knows the ordering.

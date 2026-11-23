@@ -626,6 +626,82 @@
         },
         "type": "object"
       },
+      "Domain": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "last_checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string"
+          },
+          "primary": {
+            "type": "boolean"
+          },
+          "verified_at": {
+            "description": "Absent until the TXT record has been seen.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "verify_token": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DomainChallenge": {
+        "properties": {
+          "domain": {
+            "$ref": "#/components/schemas/Domain"
+          },
+          "record": {
+            "description": "Paste these into the zone, exactly as given.",
+            "properties": {
+              "name": {
+                "example": "_peek-challenge.secrets.acme.com",
+                "type": "string"
+              },
+              "type": {
+                "example": "TXT",
+                "type": "string"
+              },
+              "value": {
+                "example": "peek-verification=…",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "Domains": {
+        "properties": {
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/Domain"
+            },
+            "type": "array"
+          },
+          "record": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "Error": {
         "properties": {
           "error": {
@@ -695,6 +771,33 @@
         ],
         "type": "object"
       },
+      "NewDomain": {
+        "properties": {
+          "domain": {
+            "example": "secrets.acme.com",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain"
+        ],
+        "type": "object"
+      },
+      "NewOrg": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "pattern": "^[a-z0-9-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "type": "object"
+      },
       "OpenRequest": {
         "properties": {
           "read_token": {
@@ -705,6 +808,65 @@
         "required": [
           "read_token"
         ],
+        "type": "object"
+      },
+      "Org": {
+        "properties": {
+          "counts": {
+            "properties": {
+              "domains": {
+                "type": "integer"
+              },
+              "secrets": {
+                "type": "integer"
+              },
+              "users": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/Domain"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Orgs": {
+        "properties": {
+          "multi_org": {
+            "type": "boolean"
+          },
+          "orgs": {
+            "items": {
+              "$ref": "#/components/schemas/Org"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "Policy": {
@@ -2823,6 +2985,389 @@
         ]
       }
     },
+    "/api/v1/orgs": {
+      "get": {
+        "description": "Each organisation with its user, secret and domain counts, and the DNS records still waiting to be published. `409` on a single-tenant instance.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Orgs"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Organisations on this instance",
+        "tags": [
+          "platform"
+        ]
+      },
+      "post": {
+        "description": "`slug` is the stable identifier, reduced to lowercase letters, digits and hyphens. It gets its own brand, users, policies and audit trail.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewOrg"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Create an organisation",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}": {
+      "delete": {
+        "description": "Refused while it still has users or secrets, and the default organisation can never be deleted: that row is the instance itself.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Delete an empty organisation",
+        "tags": [
+          "platform"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "description": "`status` is `active` or `suspended`. A suspended organisation keeps its data and stops resolving: a customer who has not paid is not a customer whose secrets are deleted.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Rename or suspend an organisation",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/domains": {
+      "get": {
+        "description": "With, for each unverified one, the exact TXT record to publish.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domains"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "An organisation's domains",
+        "tags": [
+          "platform"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Answers with the DNS name and value to publish. The domain resolves to nothing until that record has been seen — without the proof, anyone able to point a name at this instance could wear another customer's brand.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewDomain"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainChallenge"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Declare a domain",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/domains/{domain}": {
+      "delete": {
+        "description": "The domain stops resolving at once on this node and within thirty seconds on the others.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Remove a domain",
+        "tags": [
+          "platform"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "domain",
+          "required": true,
+          "schema": {
+            "description": "A domain declared for the organisation.",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/orgs/{id}/domains/{domain}/primary": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "domain",
+          "required": true,
+          "schema": {
+            "description": "A domain declared for the organisation.",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "The primary domain is the origin recipient links are built on, so the address in the link, the certificate serving it and the brand on the page agree. An unverified domain cannot be primary.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Choose the link domain",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/domains/{domain}/verify": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "domain",
+          "required": true,
+          "schema": {
+            "description": "A domain declared for the organisation.",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "The one outbound DNS query Peek makes, and only when asked. Answers `200` with `verified: false` and the record to publish while it is not there yet: the call worked, the record did not exist. A domain proved once stays proved through a later DNS outage.\n\n**Authentication**: session, platform administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Check the TXT record",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
     "/api/v1/policy": {
       "get": {
         "description": "Everything a client must respect: expiry and read ceilings, size limits, the KDF parameters to use, and the chunk size for files.\n\n**Authentication**: session or token.\n\nInternal listener only.",
@@ -4203,6 +4748,10 @@
     {
       "description": "Outbound notifications.",
       "name": "webhooks"
+    },
+    {
+      "description": "Organisations and domains, in multi-organisation mode.",
+      "name": "platform"
     }
   ]
 }

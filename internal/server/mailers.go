@@ -19,17 +19,34 @@ import (
 // every one of them also exists as plain text, because a mail client that
 // refuses HTML must still be usable.
 
-func (s *Server) publicLink(path string) string {
-	return strings.TrimRight(s.cfg.PublicURL, "/") + path
+// publicLink builds an absolute link for the organisation of this request.
+//
+// In multi-organisation mode that is the organisation's own primary domain, so
+// the address in the link, the certificate that serves it and the brand on the
+// page all agree. A single-tenant instance gets public_url, unchanged.
+//
+// It takes a context rather than reading the configuration directly for that
+// reason: a link is the one artefact that leaves the instance, and building it
+// from the wrong origin sends a customer's recipient to somebody else's
+// address.
+func (s *Server) publicLink(ctx context.Context, path string) string {
+	return strings.TrimRight(s.orgs.PublicURL(ctx, OrgOf(ctx).ID), "/") + path
 }
 
-// mailTheme resolves the brand outside a request, for the background sends.
+// mailTheme resolves the brand of the organisation the request belongs to.
+//
+// An e-mail is the one place the brand leaves the instance, so it has to be
+// the customer's and not the instance's: a link sent from acme must arrive
+// looking like acme. The organisation comes from the request context, which
+// means the same function works on a single-tenant instance without knowing
+// it — there the context always holds the default organisation.
 func (s *Server) mailTheme(ctx context.Context) branding.Resolved {
+	orgID := OrgOf(ctx).ID
 	var stored *store.Branding
-	if saved, err := s.store.Branding(ctx, store.DefaultOrgID); err == nil {
+	if saved, err := s.store.Branding(ctx, orgID); err == nil {
 		stored = &saved
 	}
-	assets, _ := s.store.ListAssets(ctx, store.DefaultOrgID)
+	assets, _ := s.store.ListAssets(ctx, orgID)
 	return branding.Resolve(s.cfg, stored, assets, languages)
 }
 
@@ -46,7 +63,7 @@ func brandText(theme branding.Resolved, key, fallback string) string {
 // mailInvitation sends an invitation link.
 func (s *Server) mailInvitation(ctx context.Context, to, token, inviter string) error {
 	theme := s.mailTheme(ctx)
-	link := s.publicLink("/invitation#" + token)
+	link := s.publicLink(ctx, "/invitation#"+token)
 	from := "Un administrateur"
 	if inviter != "" {
 		from = inviter
@@ -78,7 +95,7 @@ Si vous n'attendiez pas cette invitation, ignorez ce message.
 // mailPasswordReset sends a reset link.
 func (s *Server) mailPasswordReset(ctx context.Context, user store.User, token string) error {
 	theme := s.mailTheme(ctx)
-	link := s.publicLink("/reset#" + token)
+	link := s.publicLink(ctx, "/reset#"+token)
 
 	text := fmt.Sprintf(`Une réinitialisation de mot de passe a été demandée pour votre compte %s.
 

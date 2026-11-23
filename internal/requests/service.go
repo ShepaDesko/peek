@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ShepaDesko/peek/internal/config"
@@ -49,7 +50,10 @@ func (s *Service) now() time.Time { return s.secrets.Now() }
 // CreateInput is what the requester's browser submits. Everything is already
 // sealed or hashed.
 type CreateInput struct {
-	ID               string
+	ID string
+	// BaseURL is the origin the deposit link is built on. See
+	// secrets.CreateInput.BaseURL.
+	BaseURL          string
 	OrgID            string
 	CreatorID        string
 	PublicKey        []byte
@@ -158,8 +162,16 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Created, error) {
 		MaxDeposits: max,
 		ExpiresAt:   expires,
 		CreatedAt:   now,
-		URL:         s.cfg.RequestURL(in.ID),
+		URL:         requestURL(s.cfg, in.BaseURL, in.ID),
 	}, nil
+}
+
+// requestURL builds the deposit link on the right origin.
+func requestURL(cfg *config.Config, base, id string) string {
+	if base == "" {
+		return cfg.RequestURL(id)
+	}
+	return strings.TrimRight(base, "/") + "/q/" + id
 }
 
 // Meta returns what a depositor may see before proving possession of the key.

@@ -111,6 +111,9 @@ func (s *Server) withPrincipal(next http.Handler) http.Handler {
 		if token := sessionToken(r); token != "" {
 			p, err := s.accounts.Authenticate(r.Context(), token)
 			if err == nil {
+				if !s.sameOrg(w, r, p) {
+					return
+				}
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 				return
 			}
@@ -134,8 +137,40 @@ func (s *Server) withPrincipal(next http.Handler) http.Handler {
 				"This API token is unknown, revoked or expired.")
 			return
 		}
+		if !s.sameOrg(w, r, p) {
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 	})
+}
+
+// sameOrg refuses a caller acting on a domain that belongs to another
+// organisation, and reports whether the request may continue.
+//
+// A browser cannot reach this: cookies are scoped to a host, so a session
+// opened on acme.example.com is never sent to bob-corp.example.com. A bearer
+// token can — it is a header, and the Host beside it is the caller's choice.
+// One check here is worth more than remembering to compare the two in every
+// handler that takes an org from the account.
+//
+// A platform administrator is exempt: acting across organisations is the whole
+// of that role.
+func (s *Server) sameOrg(w http.ResponseWriter, r *http.Request, p *accounts.Principal) bool {
+	if p == nil || !s.orgs.MultiOrg() {
+		return true
+	}
+	resolved := OrgOf(r.Context()).ID
+	if p.User.OrgID == resolved || p.User.Role == store.RolePlatformAdmin {
+		return true
+	}
+	s.audit(r, store.AuditEvent{
+		Event:  store.EventWrongOrg,
+		UserID: p.User.ID,
+		Detail: map[string]string{"account_org": p.User.OrgID, "requested_org": resolved},
+	})
+	writeError(w, r, http.StatusForbidden, "wrong_organisation",
+		"That account does not belong to the organisation this address serves.")
+	return false
 }
 
 // requireScope refuses a token caller that does not carry one of these scopes.
@@ -374,16 +409,22 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 	recovery, _ := s.accounts.RemainingRecoveryCodes(r.Context(), p.User.ID)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"authenticated":   true,
-		"user":            publicUser(p.User),
-		"csrf_token":      r.Header.Get(csrfHeader),
-		"has_totp":        p.User.HasTOTP(),
-		"recovery_left":   recovery,
-		"require_totp":    s.cfg.Security.RequireTOTP,
-		"passkeys":        s.accounts.PasskeySupported(),
-		"can_manage":      p.User.Can(store.RoleManager),
-		"can_administer":  p.User.Can(store.RoleAdmin),
-		"can_audit":       p.User.Can(store.RoleManager) || p.User.Role == store.RoleAuditor,
+		"authenticated":  true,
+		"user":           publicUser(p.User),
+		"csrf_token":     r.Header.Get(csrfHeader),
+		"has_totp":       p.User.HasTOTP(),
+		"recovery_left":  recovery,
+		"require_totp":   s.cfg.Security.RequireTOTP,
+		"passkeys":       s.accounts.PasskeySupported(),
+		"can_manage":     p.User.Can(store.RoleManager),
+		"can_administer": p.User.Can(store.RoleAdmin),
+		"can_audit":      p.User.Can(store.RoleManager) || p.User.Role == store.RoleAuditor,
+		// The platform surface exists only on an instance hosting several
+		// organisations, and only for the role above admin. The interface
+		// hides the whole notion otherwise, which is what the brief asks for.
+		"can_platform":    s.orgs.MultiOrg() && p.User.Role == store.RolePlatformAdmin,
+		"multi_org":       s.orgs.MultiOrg(),
+		"org":             OrgOf(r.Context()).Slug,
 		"session_expires": p.Session.ExpiresAt,
 	})
 }
@@ -595,7 +636,17 @@ func (s *Server) handleRevokeOtherSessions(w http.ResponseWriter, r *http.Reques
 
 // orgOf resolves the organisation a request belongs to. Single-tenant
 // instances always answer "default"; multi-org resolution arrives with M9.
-func (s *Server) orgOf(_ *http.Request) string { return store.DefaultOrgID }
+// orgOf returns the organisation a request belongs to.
+//
+// Resolved once by the context middleware, read here. A handler that needs it
+// must never compute it again from the Host header: two call sites that
+// resolve the same request differently is exactly how a tenant boundary leaks.
+func (s *Server) orgOf(r *http.Request) string {
+	if r == nil {
+		return store.DefaultOrgID
+	}
+	return OrgOf(r.Context()).ID
+}
 
 func (s *Server) brandName() string {
 	if s.cfg.Branding.ServiceName != "" {

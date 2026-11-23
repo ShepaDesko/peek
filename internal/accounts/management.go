@@ -71,8 +71,8 @@ func (s *Service) CreateUser(ctx context.Context, actor *Principal, in CreateUse
 	if err := validRole(in.Role); err != nil {
 		return store.User{}, err
 	}
-	if !actor.User.Can(store.RoleAdmin) && in.Role == store.RoleAdmin {
-		return store.User{}, fmt.Errorf("%w: only an administrator can create another administrator", ErrForbidden)
+	if err := grantable(actor, in.Role); err != nil {
+		return store.User{}, err
 	}
 
 	user := store.User{
@@ -109,8 +109,8 @@ func (s *Service) Invite(ctx context.Context, actor *Principal, email, role stri
 	if err := validRole(role); err != nil {
 		return Invitation{}, err
 	}
-	if role == store.RoleAdmin && !actor.User.Can(store.RoleAdmin) {
-		return Invitation{}, fmt.Errorf("%w: only an administrator can invite another administrator", ErrForbidden)
+	if err := grantable(actor, role); err != nil {
+		return Invitation{}, err
 	}
 	email = strings.TrimSpace(email)
 	if !strings.Contains(email, "@") {
@@ -269,8 +269,13 @@ func (s *Service) UpdateUser(ctx context.Context, actor *Principal, id, displayN
 	if err := validRole(role); err != nil {
 		return err
 	}
-	if (role == store.RoleAdmin || target.Role == store.RoleAdmin) && !actor.User.Can(store.RoleAdmin) {
-		return fmt.Errorf("%w: only an administrator can change an administrator", ErrForbidden)
+	if err := grantable(actor, role); err != nil {
+		return err
+	}
+	// And you cannot touch an account whose role is above your own, whatever
+	// you are trying to set it to.
+	if err := grantable(actor, target.Role); err != nil {
+		return fmt.Errorf("%w (that account holds the %s role)", err, target.Role)
 	}
 	if target.ID == actor.User.ID && (role != actor.User.Role || status != store.UserActive) {
 		// Removing your own powers locks everyone out of an instance with one
@@ -418,9 +423,36 @@ func (s *Service) requireManager(actor *Principal) error {
 	return nil
 }
 
+// grantable refuses a role stronger than the actor's own.
+//
+// This replaced three checks that each named `admin` by hand. Adding
+// platform_admin to the ladder turned every one of them into an escalation:
+// an administrator would have passed `!Can(RoleAdmin)` and been allowed to
+// grant the role above their own. A rule about the ladder belongs in one
+// function that reads the ladder, not in a condition repeated per call site.
+func grantable(actor *Principal, role string) error {
+	if actor == nil {
+		return ErrForbidden
+	}
+	if role == store.RoleAuditor {
+		// auditor is outside the ladder: read-only, and a manager may grant
+		// it. Can() would refuse it for everyone, including an administrator.
+		if !actor.User.Can(store.RoleManager) {
+			return ErrForbidden
+		}
+		return nil
+	}
+	if !actor.User.Can(role) {
+		return fmt.Errorf("%w: you cannot grant the %s role, which is above your own (%s)",
+			ErrForbidden, role, actor.User.Role)
+	}
+	return nil
+}
+
 func validRole(role string) error {
 	switch role {
-	case store.RoleAdmin, store.RoleManager, store.RoleMember, store.RoleAuditor:
+	case store.RoleAdmin, store.RoleManager, store.RoleMember, store.RoleAuditor,
+		store.RolePlatformAdmin:
 		return nil
 	default:
 		return fmt.Errorf("%w: unknown role %q", ErrForbidden, role)

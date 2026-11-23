@@ -12,6 +12,7 @@
 //	peek branding export|import
 //	peek token create|list|revoke
 //	peek webhook list|test|queue|retry
+//	peek org list|create|domain-add|domain-verify
 //	peek version
 package main
 
@@ -69,6 +70,7 @@ func run() int {
 		{"admin", "manage administrator accounts", runAdmin},
 		{"token", "issue, list and revoke API tokens", runToken},
 		{"webhook", "inspect, test and retry outbound notifications", runWebhook},
+		{"org", "organisations and their domains (multi-org mode)", runOrg},
 		{"version", "print the version", runVersion},
 	}
 

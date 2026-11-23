@@ -21,7 +21,21 @@ const (
 	ctxClientIP  ctxKey = "peek.client_ip"
 	ctxRequestID ctxKey = "peek.request_id"
 	ctxListener  ctxKey = "peek.listener"
+	ctxOrg       ctxKey = "peek.org"
 )
+
+// OrgOf returns the organisation the middleware resolved for this request.
+//
+// There is always one. On a single-tenant instance it is the default
+// organisation, resolved without a query; in multi-organisation mode it comes
+// from the Host header, read only from a source Peek was told to trust and
+// only when a DNS record has proved the domain.
+func OrgOf(ctx context.Context) store.Org {
+	if org, ok := ctx.Value(ctxOrg).(store.Org); ok {
+		return org
+	}
+	return store.Org{ID: store.DefaultOrgID, Slug: "default", Status: store.OrgActive}
+}
 
 // ClientIP returns the resolved client IP stored by the middleware.
 func ClientIP(ctx context.Context) string {
@@ -58,6 +72,11 @@ func (s *Server) withContext(listener string) func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, ctxClientIP, s.trusted.ClientIP(r))
 			ctx = context.WithValue(ctx, ctxRequestID, newRequestID())
 			ctx = context.WithValue(ctx, ctxListener, listener)
+			// Which organisation this request belongs to, before any handler
+			// runs: every org-scoped query then takes it from the context
+			// rather than deciding for itself, which is what stops one
+			// forgotten call site from reading another customer's rows.
+			ctx = context.WithValue(ctx, ctxOrg, s.orgs.Resolve(ctx, s.trusted.ForwardedHost(r)))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

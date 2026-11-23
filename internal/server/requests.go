@@ -46,10 +46,11 @@ func (s *Server) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusForbidden, "forbidden", "An auditor account cannot create secret requests.")
 		return
 	}
-	creatorID, orgID := "", store.DefaultOrgID
+	creatorID, orgID := "", s.orgOf(r)
 	if p != nil {
 		creatorID, orgID = p.User.ID, p.User.OrgID
 	}
+	base := s.orgs.PublicURL(r.Context(), orgID)
 
 	var body createRequestBody
 	if err := decodeJSON(r, &body); err != nil {
@@ -105,6 +106,7 @@ func (s *Server) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 
 	created, err := s.requests.Create(r.Context(), requests.CreateInput{
 		ID:               body.ID,
+		BaseURL:          base,
 		OrgID:            orgID,
 		CreatorID:        creatorID,
 		PublicKey:        decoded["public_key"],
@@ -233,7 +235,7 @@ func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
 
 	// The organisation is the request's, not the depositor's: an answer
 	// belongs to whoever asked.
-	in, ferr := s.recipientInput(body.Secret, "", "")
+	in, ferr := s.recipientInput(body.Secret, "", "", "")
 	if ferr != nil {
 		writeFieldError(w, http.StatusBadRequest, "bad_request", ferr.message, ferr.field)
 		return

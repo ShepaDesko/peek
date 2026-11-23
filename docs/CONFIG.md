@@ -191,6 +191,87 @@ See [BRANDING.md](BRANDING.md).
 | `passphrase` | empty | Set one: the archive is then encrypted with age. |
 | `interval` | `1d` | |
 
+## Multi-organisation mode
+
+```toml
+multi_org = true
+```
+
+Off by default, and off is the right answer for almost every installation:
+one instance, one customer, `public_url` in this file and nothing else to
+think about.
+
+Turn it on and one installation hosts several organisations. Each gets its own
+brand, users, policies, secrets and audit trail, and the **Host header** says
+which one a request belongs to.
+
+That header is attacker-controlled on a direct connection, so two things make
+it safe to act on:
+
+- it is read from `X-Forwarded-Host` only when the peer is in
+  `server.trusted_proxies`, and from the connection otherwise — the same rule
+  the real-client-IP code follows;
+- a domain resolves to nothing until a **DNS TXT record** has proved it.
+  Without the proof, anyone able to point a name at this instance could wear
+  another customer's brand, and a recipient would see the right logo above the
+  wrong organisation's page.
+
+### Setting one up
+
+```bash
+sudo peek org create acme --name "ACME Ltd"
+sudo peek org domain-add secrets.acme.com --slug acme
+# publish the TXT record it prints, then:
+sudo peek org domain-verify secrets.acme.com
+```
+
+The record is
+`_peek-challenge.secrets.acme.com. IN TXT "peek-verification=<token>"`. A
+dedicated label rather than the apex, because an apex TXT record is shared
+with SPF, DMARC and half a dozen other verification tokens, and operators
+delete each other's.
+
+The verification lookup is **the only outbound DNS query Peek makes**, and it
+happens because somebody asked for it. Nothing is resolved on a recipient's
+request path, so an air-gapped instance never reaches it.
+
+A domain proved once stays proved: a later failed re-check records what the
+resolver saw and leaves `verified_at` alone. Taking a customer's brand away
+because their registrar was slow would be the wrong failure.
+
+### What changes
+
+| | Single-tenant | Multi-organisation |
+|---|---|---|
+| Brand | `public_url`, one brand | resolved per verified domain |
+| Links | built on `public_url` | built on that organisation's primary domain |
+| E-mails | the instance brand | the organisation's brand |
+| Accounts | one pool | one pool per organisation, `(org_id, email)` unique |
+| Roles | `admin` at the top | `platform_admin` above it |
+| Interface | the notion is hidden | an Organisations tab, for `platform_admin` only |
+
+The first domain an organisation verifies also becomes its **primary** one —
+the origin its links are built on — so the address in a link, the certificate
+serving it and the brand on the page all agree. Change it with
+`peek org domain-primary`.
+
+A **suspended** organisation keeps every row and stops resolving: a customer
+who has not paid is not a customer whose secrets are deleted.
+
+### The platform role
+
+`platform_admin` sits above `admin` and is the only role that may create an
+organisation or touch a domain. On a hosted instance the person who onboards a
+customer is not the person who administers that customer, and an administrator
+of one organisation must not be able to see the others exist.
+
+```bash
+sudo peek admin set-role --email ops@example.com --role platform_admin
+```
+
+No role can grant a role above its own, which is checked once in the accounts
+service rather than per call site.
+
 ## `[sso]`
 
 OpenID Connect single sign-on. One provider per instance: an instance belongs

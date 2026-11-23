@@ -27,6 +27,7 @@ import (
 	pcrypto "github.com/ShepaDesko/peek/internal/crypto"
 	"github.com/ShepaDesko/peek/internal/mail"
 	"github.com/ShepaDesko/peek/internal/oidc"
+	"github.com/ShepaDesko/peek/internal/orgs"
 	"github.com/ShepaDesko/peek/internal/requests"
 	"github.com/ShepaDesko/peek/internal/secrets"
 	"github.com/ShepaDesko/peek/internal/storage"
@@ -47,6 +48,7 @@ type Server struct {
 	store    *store.Store
 	secrets  *secrets.Service
 	requests *requests.Service
+	orgs     *orgs.Service
 	blobs    storage.Backend
 	trusted  *TrustedProxies
 
@@ -141,6 +143,7 @@ func New(opts Options) (*Server, error) {
 		version:     opts.Version,
 		started:     time.Now(),
 	}
+	s.orgs = orgs.New(opts.Config, opts.Store, log)
 	s.secrets.SetStorage(opts.Blobs)
 	s.blobs = opts.Blobs
 	s.requests = requests.New(opts.Store, opts.Config, s.secrets)
@@ -354,6 +357,25 @@ func (s *Server) Handler(listener string) http.Handler {
 					// operation at all: it lives in peek.toml.
 					instance.Get("/webhooks", s.handleWebhooks)
 					instance.Get("/webhooks/deliveries", s.handleWebhookDeliveries)
+				})
+
+				// The platform surface: organisations and their domains.
+				// A role above admin exists for exactly this — on a hosted
+				// instance the person who creates a customer is not the
+				// person who administers that customer, and an administrator
+				// of one organisation must not see the others exist.
+				admin.Group(func(platform chi.Router) {
+					platform.Use(s.requireSession)
+					platform.Use(s.requireRole(store.RolePlatformAdmin))
+					platform.Get("/orgs", s.handleListOrgs)
+					platform.Post("/orgs", s.handleCreateOrg)
+					platform.Patch("/orgs/{id}", s.handleUpdateOrg)
+					platform.Delete("/orgs/{id}", s.handleDeleteOrg)
+					platform.Get("/orgs/{id}/domains", s.handleListDomains)
+					platform.Post("/orgs/{id}/domains", s.handleAddDomain)
+					platform.Post("/orgs/{id}/domains/{domain}/verify", s.handleVerifyDomain)
+					platform.Post("/orgs/{id}/domains/{domain}/primary", s.handleSetPrimaryDomain)
+					platform.Delete("/orgs/{id}/domains/{domain}", s.handleDeleteDomain)
 				})
 
 				// Poking the queue makes the server call out. That is an
