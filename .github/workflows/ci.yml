@@ -14,7 +14,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.26"
+  # Pinned to the patch level, not the minor: 1.26.7 shipped with twelve
+  # known net/http, crypto/tls and crypto/x509 advisories, and govulncheck in
+  # CI is what caught it. A security product does not ship on a toolchain with
+  # open advisories in the code that terminates its own TLS.
+  GO_VERSION: "1.26.11"
   NODE_VERSION: "22"
 
 jobs:
@@ -167,6 +171,12 @@ jobs:
 
       - name: build the binary with the interface embedded
         run: make build
+
+      # The size budgets from section 13 of the brief. This job is the only
+      # one that has both the binary and the built interface to hand, so it is
+      # where the measurement belongs. A budget nobody measures is a wish.
+      - name: size budgets
+        run: make budget
 
       - name: install Playwright
         working-directory: test/e2e

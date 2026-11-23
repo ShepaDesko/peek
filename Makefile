@@ -121,6 +121,14 @@ vuln: ## Check Go dependencies for known vulnerabilities
 	@command -v govulncheck >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
 	govulncheck $(PKGS)
 
+.PHONY: budget
+budget: ## Check the size budgets from section 13 of the brief
+	$(GO) run ./tools/budget
+
+.PHONY: bench
+bench: ## Run the crypto benchmarks
+	$(GO) test ./internal/crypto -run '^$$' -bench . -benchmem
+
 .PHONY: e2e
 e2e: build ## Run the Playwright end-to-end suite
 	cd test/e2e && $(NPM) install && $(NPM) run test

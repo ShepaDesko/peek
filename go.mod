@@ -1,6 +1,6 @@
 module github.com/ShepaDesko/peek
 
-go 1.26.7
+go 1.26.11
 
 require (
 	filippo.io/age v1.3.2
