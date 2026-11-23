@@ -111,7 +111,11 @@ func Create(ctx context.Context, opts Options) (*Result, error) {
 		}
 		manifest.Files = append(manifest.Files, "peek.db")
 	case "postgres":
-		return nil, errors.New("backup: PostgreSQL backups arrive with the driver in milestone M9; use pg_dump meanwhile")
+		snapshot := filepath.Join(staging, "peek.dump")
+		if err := snapshotPostgres(ctx, cfg, snapshot); err != nil {
+			return nil, err
+		}
+		manifest.Files = append(manifest.Files, "peek.dump")
 	}
 
 	// 2. configuration and master key
@@ -282,6 +286,20 @@ func Restore(ctx context.Context, opts RestoreOptions) (*Manifest, error) {
 	}
 	if opts.DryRun {
 		return &manifest, nil
+	}
+
+	if cfg.Database.Driver == "postgres" {
+		src := filepath.Join(staging, "peek.dump")
+		if _, err := os.Stat(src); err != nil {
+			return nil, errors.New("restore: the archive holds no PostgreSQL dump. " +
+				"An archive taken from a SQLite instance cannot be restored into PostgreSQL")
+		}
+		// --clean, because restoring into a database that already has Peek's
+		// tables otherwise fails on every CREATE. It is inside one
+		// transaction, so a failure leaves the database as it was.
+		if err := restorePostgres(ctx, cfg, src, true); err != nil {
+			return nil, err
+		}
 	}
 
 	if cfg.Database.Driver == "sqlite" {

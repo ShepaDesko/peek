@@ -4,7 +4,7 @@
 
 | Item | Why it matters |
 |---|---|
-| `peek.db` | a consistent snapshot of the database (SQLite `VACUUM INTO`, taken hot) |
+| `peek.db` or `peek.dump` | a consistent snapshot of the database, taken hot |
 | `peek.toml` | the configuration |
 | `master.key` | the server master key |
 | `files/` | the encrypted file blobs |
@@ -30,6 +30,36 @@ named `.tar.gz.age`. Without one, `peek backup` warns you on every run.
 **Store `master.key` separately as well.** Without it, encrypted metadata in a
 restored database is unrecoverable. Backing it up next to the database in the
 same archive is convenient; keeping a second copy elsewhere is what saves you.
+
+## PostgreSQL
+
+With `database.driver = "postgres"`, the snapshot is a custom-format
+`pg_dump` — compressed, restorable with `pg_restore`, and not something a
+stray `psql` can half-apply the way a `.sql` file can. Everything else about
+the archive is the same.
+
+It needs the client tools on the host:
+
+```bash
+sudo apt install postgresql-client     # Debian, Ubuntu
+sudo dnf install postgresql            # RHEL, Rocky, Alma
+```
+
+`peek doctor` says so when they are missing, which is better than finding out
+from the nightly timer. The DSN is passed in the environment and never in
+`argv`, because `/proc/<pid>/cmdline` is world-readable and the DSN carries
+the database password.
+
+A restore runs `pg_restore --clean --single-transaction`: every object is
+dropped and recreated inside one transaction, so a failure leaves the database
+exactly as it was. Stop the service first.
+
+An archive from a SQLite instance cannot be restored into PostgreSQL, or the
+other way round. `peek restore` says that rather than restoring half of it.
+
+**With several nodes, restore once.** They share the database, so restoring on
+one restores for all — and the others must be stopped while it happens, or
+they will be writing to a database being dropped underneath them.
 
 ## Scheduled backups
 

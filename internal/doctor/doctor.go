@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ShepaDesko/peek/internal/backup"
 	"github.com/ShepaDesko/peek/internal/config"
 	"github.com/ShepaDesko/peek/internal/oidc"
 	"github.com/ShepaDesko/peek/internal/storage"
@@ -142,6 +143,7 @@ func Run(ctx context.Context, opts Options) *Report {
 	checkTLS(ctx, r, cfg)
 	checkClock(r)
 	checkMail(r, cfg, opts.SendTestEmail)
+	checkBackups(r, cfg)
 	checkSSO(ctx, r, cfg)
 	checkWebhooks(ctx, r, cfg)
 
@@ -769,6 +771,79 @@ func certNames(leaf *x509.Certificate) string {
 // user tried to send their first file. A listing is the lightest request that
 // proves credentials, signature and reachability at once, and it writes
 // nothing.
+// checkBackups looks at the thing nobody looks at until they need it.
+//
+// Three failures are common and all three are silent: the timer is off, the
+// archives stopped being written weeks ago, and the archive is not encrypted
+// even though it carries the master key.
+func checkBackups(r *Report, cfg *config.Config) {
+	if !cfg.Backup.Enabled {
+		r.add("backups", WARN, "disabled (backup.enabled = false)",
+			"a secret-sharing service with no backup loses its accounts and its brand, not its secrets — "+
+				"those are ephemeral by design. It is still a bad afternoon")
+		return
+	}
+
+	// The archive holds peek.toml and master.key. Without a passphrase it is
+	// a tar.gz: anyone who can read the backup directory gets the SMTP
+	// password, the identity provider's client secret, every webhook key and
+	// the key that decrypts the TOTP seeds.
+	if cfg.Backup.Passphrase == "" {
+		r.add("backup encryption", FAIL, "backup.passphrase is empty",
+			"the archive carries peek.toml and master.key. Set a passphrase and the archive "+
+				"is encrypted with age; without one, reading the backup directory is enough "+
+				"to take over the instance")
+	} else {
+		r.add("backup encryption", OK, "archives are encrypted with age")
+	}
+
+	if cfg.Database.Driver == "postgres" {
+		if _, err := backup.FindPgDump(); err != nil {
+			r.add("backup tooling", FAIL, err.Error(),
+				"peek backup shells out to pg_dump for a PostgreSQL instance")
+		} else {
+			r.add("backup tooling", OK, "pg_dump is available")
+		}
+	}
+
+	archives, err := backup.List(cfg.Backup.Dir)
+	switch {
+	case err != nil:
+		r.add("backups", WARN, cfg.Backup.Dir+": "+err.Error(),
+			"the directory is created by the first run of the timer")
+		return
+	case len(archives) == 0:
+		r.add("backups", WARN, "no archive in "+cfg.Backup.Dir,
+			"run sudo peek backup once by hand, and check: systemctl list-timers peek-backup")
+		return
+	}
+
+	newest := archives[0]
+	for _, info := range archives {
+		if info.ModTime().After(newest.ModTime()) {
+			newest = info
+		}
+	}
+	age := time.Since(newest.ModTime())
+	detail := fmt.Sprintf("%d archive(s) in %s, newest %s (%s old), %s",
+		len(archives), cfg.Backup.Dir, newest.Name(),
+		age.Round(time.Hour), humanBytes(uint64(max(newest.Size(), 0))))
+
+	// The interval is configurable; anything past three times it means the
+	// timer is not running, whatever the unit file says.
+	stale := 3 * cfg.Backup.Interval.Std()
+	if stale <= 0 {
+		stale = 72 * time.Hour
+	}
+	if age > stale {
+		r.add("backups", FAIL, detail,
+			fmt.Sprintf("the newest archive is older than three intervals (%s): "+
+				"check systemctl status peek-backup.timer", cfg.Backup.Interval))
+		return
+	}
+	r.add("backups", OK, detail)
+}
+
 // checkSSO reaches the identity provider's discovery document and key set.
 //
 // This is the check that turns a silent "sign-in failed" into a sentence: a
