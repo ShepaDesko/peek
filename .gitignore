@@ -32,3 +32,6 @@ Thumbs.db
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Impeccable design skill scratch
+.impeccable/
