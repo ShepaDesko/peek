@@ -267,16 +267,48 @@ func runUpdate(ctx context.Context, args []string) error {
 		archivePath = *file
 		newVersion = guessVersion(filepath.Base(*file))
 		signaturePath = *sigFile
-		if signaturePath == "" {
+		// By default the signature covers the archive itself, which is what an
+		// operator signing their own mirror produces.
+		checksumsPath = archivePath
+
+		switch {
+		case signaturePath == "":
 			for _, candidate := range []string{*file + ".minisig", *file + ".sig"} {
 				if _, err := os.Stat(candidate); err == nil {
 					signaturePath = candidate
 					break
 				}
 			}
+		case strings.HasPrefix(filepath.Base(signaturePath), "checksums"):
+			// An explicit signature over a checksum file.
+			checksumsPath = strings.TrimSuffix(strings.TrimSuffix(signaturePath, ".minisig"), ".sig")
 		}
-		// For an offline update the signature covers the archive itself.
-		checksumsPath = archivePath
+
+		if signaturePath == "" {
+			// A release does not sign each archive: it signs checksums.txt
+			// once, and that one signature covers every artefact. So the
+			// air-gapped path is to copy the archive, checksums.txt and
+			// checksums.txt.minisig to the host — and then the chain verifies
+			// here exactly as it does online. Looking for that pair next to the
+			// archive is what makes the published files usable offline;
+			// without it this command refused the very artefacts it ships.
+			list := filepath.Join(filepath.Dir(archivePath), "checksums.txt")
+			if _, err := os.Stat(list); err == nil {
+				for _, candidate := range []string{list + ".minisig", list + ".sig"} {
+					if _, err := os.Stat(candidate); err == nil {
+						signaturePath, checksumsPath = candidate, list
+						break
+					}
+				}
+			}
+		}
+
+		if checksumsPath != archivePath {
+			if err := update.VerifyChecksum(archivePath, checksumsPath); err != nil {
+				return err
+			}
+			fmt.Println("checksum verified")
+		}
 	} else {
 		client := update.NewClient(cfg.UpdateURL, *channel, os.Getenv("PEEK_UPDATE_TOKEN"))
 		var release *update.Release
@@ -403,6 +435,10 @@ func runUpdate(ctx context.Context, args []string) error {
 func runRollback(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
 	configPath := fs.String("config", defaultConfigPath(), "path to peek.toml")
+	// Rollback never asks, so --yes changes nothing. It is accepted because an
+	// operator reaching for it has just had an update go wrong, and a usage
+	// error is the last thing that moment needs.
+	_ = fs.Bool("yes", false, "accepted for symmetry with peek update; rollback never asks")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

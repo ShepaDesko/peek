@@ -49,14 +49,37 @@ peek update --check; case $? in 0) echo à-jour ;; 10) echo mise-à-jour-disponi
 
 ## Machines isolées du réseau
 
-Copiez l'archive et sa signature sur la machine, puis :
+Copiez **trois** fichiers de la release sur la machine, dans le même
+répertoire, puis lancez la commande :
 
 ```bash
-sudo peek update --file peek_1.4.2_linux_amd64.tar.gz
+# depuis un poste qui a accès à la release
+scp peek_1.4.2_linux_amd64.tar.gz checksums.txt checksums.txt.minisig serveur:/var/tmp/
+
+# sur la machine isolée
+sudo peek update --file /var/tmp/peek_1.4.2_linux_amd64.tar.gz
 ```
 
-La signature est vérifiée exactement comme dans le cas en ligne — la seule
-différence est l'origine des octets. Rien ne contacte Internet. Mettez
+```
+checksum verified
+signature verified
+backup taken: /var/backups/peek/peek-….tar.gz.age
+installed 1.4.2 → /usr/bin/peek (previous kept at /usr/lib/peek/peek.previous)
+peek 1.4.2 is live and ready.
+```
+
+Une release **ne signe pas chaque archive** : elle signe `checksums.txt` une
+fois, et cette signature-là couvre tous les artefacts. `peek update --file`
+cherche donc cette paire à côté de l'archive, vérifie la signature sur le
+fichier d'empreintes et l'archive contre l'empreinte — la même chaîne que dans
+le cas en ligne, à la seule différence de l'origine des octets. Rien ne
+contacte Internet.
+
+Si vous servez vos propres archives depuis un miroir et que vous les signez une
+par une, `peek update --file ARCHIVE` trouve aussi `ARCHIVE.minisig` ou
+`ARCHIVE.sig` à côté, et `--signature` passe le chemin à la main.
+
+Sans aucune signature, la commande **refuse** et vous dit quoi faire. Mettez
 `update_check = false` dans `peek.toml` pour arrêter aussi la vérification
 quotidienne.
 

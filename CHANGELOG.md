@@ -8,6 +8,26 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Nothing yet.
 
+## [1.0.2] - 2026-11-23
+
+The air-gapped update refused the files a release publishes. Found by running
+it on a real offline host rather than by reading the code.
+
+### Fixed
+
+- `peek update --file ARCHIVE` looked for a signature over the archive, and a
+  release does not produce one: it signs `checksums.txt` once, and that single
+  signature covers every artefact. So the documented offline path answered "no
+  signature found for this release. Refusing to install." for every published
+  archive — on a product whose claim is that it runs air-gapped. The command
+  now looks for `checksums.txt` and its signature next to the archive and
+  verifies the same two-step chain it does online, while still accepting an
+  `ARCHIVE.minisig` for an operator who signs their own mirror.
+- `peek rollback` rejected `--yes` with a usage error. It never asks for
+  confirmation, so the flag changes nothing — but an operator reaching for it
+  has just had an update go wrong, and that moment does not need a usage
+  error. It is accepted and documented as a no-op.
+
 ## [1.0.1] - 2026-11-23
 
 A patch release on the same day as 1.0.0: the update path could install the
