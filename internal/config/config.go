@@ -39,6 +39,7 @@ type Config struct {
 	Database Database `toml:"database"`
 	Storage  Storage  `toml:"storage"`
 	Security Security `toml:"security"`
+	SSO      SSO      `toml:"sso"`
 	Policy   Policy   `toml:"policy"`
 	Mail     Mail     `toml:"mail"`
 	Audit    Audit    `toml:"audit"`
@@ -146,6 +147,150 @@ type RateLimit struct {
 	Burst  int      `toml:"burst"`
 	Rate   int      `toml:"rate"`
 	Window Duration `toml:"window"`
+}
+
+// SSO configures OpenID Connect single sign-on.
+//
+// One provider, not a list. An instance belongs to one organisation with one
+// directory; two providers would mean two sources of truth for who someone is,
+// and a user who exists in both. Multi-org (M9) gives each organisation its
+// own, which is a different thing.
+type SSO struct {
+	Enabled bool `toml:"enabled"`
+	// Provider only picks sensible defaults and shapes the error messages:
+	// entra, google, keycloak, authentik, adfs or generic. The protocol is the
+	// same for all of them.
+	Provider string `toml:"provider"`
+	// DisplayName is what the sign-in button says. Empty falls back to
+	// something reasonable for the provider.
+	DisplayName string `toml:"display_name"`
+
+	// Issuer is the identity provider's issuer URL. Discovery appends
+	// /.well-known/openid-configuration to it, and the `iss` claim of every
+	// token must equal it exactly.
+	Issuer       string `toml:"issuer"`
+	ClientID     string `toml:"client_id"`
+	ClientSecret string `toml:"client_secret"`
+	// Scopes defaults to openid, profile, email. Add the one that carries
+	// groups if your provider needs it asked for.
+	Scopes []string `toml:"scopes"`
+
+	// Discovery is on by default. Turn it off and set the four endpoints by
+	// hand for a provider that does not publish a discovery document.
+	Discovery    bool   `toml:"discovery"`
+	AuthorizeURL string `toml:"authorize_url"`
+	TokenURL     string `toml:"token_url"`
+	JWKSURL      string `toml:"jwks_url"`
+	UserinfoURL  string `toml:"userinfo_url"`
+	// CAFile pins the provider's certificate authority, for an internal
+	// Keycloak or ADFS with a private one.
+	CAFile string `toml:"ca_file"`
+
+	// Required refuses every local credential — password and passkey alike —
+	// and not merely hides the form. An instance whose only way in is a
+	// provider that is down is an instance nobody can repair, so the escape
+	// hatch is explicit rather than implied: name the break-glass accounts in
+	// PasswordExempt.
+	Required bool `toml:"required"`
+	// PasswordExempt lists the addresses that may still sign in locally when
+	// Required is set. Keep it to one or two accounts, give them a passkey or
+	// a second factor, and audit them.
+	PasswordExempt []string `toml:"password_exempt"`
+	// Provision creates an account on first sign-in. With it off, only
+	// accounts that already exist may sign in through the provider, which is
+	// what an operator wants when the directory is bigger than the team.
+	Provision   bool   `toml:"provision"`
+	DefaultRole string `toml:"default_role"`
+	// AllowedDomains restricts which e-mail domains may sign in or be
+	// provisioned. Empty means any domain the provider vouches for.
+	AllowedDomains []string `toml:"allowed_domains"`
+
+	// GroupsClaim names the claim carrying group membership: groups for most
+	// providers, roles for an Entra app-role registration.
+	GroupsClaim string `toml:"groups_claim"`
+	// The four role maps. A user in several groups gets the strongest role.
+	// A user in none gets DefaultRole, or is refused when RequireGroup is set.
+	AdminGroups   []string `toml:"admin_groups"`
+	ManagerGroups []string `toml:"manager_groups"`
+	AuditorGroups []string `toml:"auditor_groups"`
+	MemberGroups  []string `toml:"member_groups"`
+	// RequireGroup refuses anyone whose groups match none of the maps. With
+	// it off, an unmapped user gets DefaultRole.
+	RequireGroup bool `toml:"require_group"`
+	// SyncRoleOnLogin re-applies the mapping at every sign-in, so a change in
+	// the directory takes effect without touching Peek. With it off, the role
+	// is only set when the account is created, and local edits stick.
+	SyncRoleOnLogin bool `toml:"sync_role_on_login"`
+}
+
+// RedirectPath is the callback route. It is fixed: a configurable one is a
+// configurable open redirect waiting to be mistyped.
+const RedirectPath = "/auth/sso/callback"
+
+// RedirectURI returns the value that must be registered at the provider.
+func (c *Config) RedirectURI() string {
+	return strings.TrimRight(c.PublicURL, "/") + RedirectPath
+}
+
+// ScopeList returns the scopes to request.
+func (s SSO) ScopeList() []string {
+	if len(s.Scopes) == 0 {
+		return []string{"openid", "profile", "email"}
+	}
+	return s.Scopes
+}
+
+// Claim returns the configured groups claim, or the usual default.
+func (s SSO) Claim() string {
+	if s.GroupsClaim == "" {
+		return "groups"
+	}
+	return s.GroupsClaim
+}
+
+// Label returns what the sign-in button should say.
+func (s SSO) Label() string {
+	if s.DisplayName != "" {
+		return s.DisplayName
+	}
+	switch s.Provider {
+	case "entra":
+		return "Microsoft Entra ID"
+	case "google":
+		return "Google Workspace"
+	case "keycloak":
+		return "Keycloak"
+	case "authentik":
+		return "authentik"
+	case "adfs":
+		return "ADFS"
+	default:
+		return "single sign-on"
+	}
+}
+
+// LocalSignInAllowed reports whether this address may use a local credential.
+//
+// With sso.required off, everyone may. With it on, only the addresses the
+// operator named: "required" that quietly makes an exception for
+// administrators is not required, and an operator who thinks it is will find
+// out from an auditor.
+func (s SSO) LocalSignInAllowed(email string) bool {
+	if !s.Enabled || !s.Required {
+		return true
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+	for _, exempt := range s.PasswordExempt {
+		if strings.EqualFold(strings.TrimSpace(exempt), email) {
+			return true
+		}
+	}
+	return false
+}
+
+// MapsGroups reports whether any group is mapped to a role.
+func (s SSO) MapsGroups() bool {
+	return len(s.AdminGroups)+len(s.ManagerGroups)+len(s.AuditorGroups)+len(s.MemberGroups) > 0
 }
 
 // Policy bounds what users may ask for at creation time.
@@ -376,6 +521,13 @@ func Default() Config {
 			UploadWindow:       Duration(2 * time.Hour),
 			DownloadWindow:     Duration(30 * time.Minute),
 			MaxDeposits:        1,
+		},
+		SSO: SSO{
+			Provider:        "generic",
+			Discovery:       true,
+			Provision:       true,
+			DefaultRole:     "member",
+			SyncRoleOnLogin: true,
 		},
 		Mail:  Mail{Port: 587, Encryption: "starttls", FromName: "Peek"},
 		Audit: Audit{Syslog: Syslog{Protocol: "udp", Facility: 13, AppName: "peek"}},
@@ -642,6 +794,9 @@ func (c Config) Redacted() Config {
 	}
 	if c.Backup.Passphrase != "" {
 		c.Backup.Passphrase = "***"
+	}
+	if c.SSO.ClientSecret != "" {
+		c.SSO.ClientSecret = "***"
 	}
 	if len(c.Webhooks) > 0 {
 		hooks := make([]Webhook, len(c.Webhooks))

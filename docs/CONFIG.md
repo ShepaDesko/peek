@@ -191,6 +191,103 @@ See [BRANDING.md](BRANDING.md).
 | `passphrase` | empty | Set one: the archive is then encrypted with age. |
 | `interval` | `1d` | |
 
+## `[sso]`
+
+OpenID Connect single sign-on. One provider per instance: an instance belongs
+to one organisation with one directory, and two providers would mean two
+sources of truth for who somebody is.
+
+```toml
+[sso]
+enabled       = true
+provider      = "entra"
+issuer        = "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0"
+client_id     = "11111111-1111-1111-1111-111111111111"
+client_secret = "…"
+scopes        = ["openid", "profile", "email"]
+
+provision     = true
+default_role  = "member"
+groups_claim  = "groups"
+admin_groups  = ["3f6c…"]      # Entra sends object ids, not names
+manager_groups = ["a91b…"]
+sync_role_on_login = true
+```
+
+| Key | Default | What it does |
+|---|---|---|
+| `enabled` | `false` | |
+| `provider` | `generic` | `entra`, `google`, `keycloak`, `authentik`, `adfs` or `generic`. It only picks the button label and shapes the error messages; the protocol is the same. |
+| `display_name` | from `provider` | What the sign-in button says. |
+| `issuer` | required | Must be `https`, and must equal the `iss` claim of every token exactly. |
+| `client_id`, `client_secret` | required | Peek authenticates to the token endpoint as a confidential client. |
+| `scopes` | `["openid","profile","email"]` | Add whatever your provider needs asked for to send groups. |
+| `discovery` | `true` | Reads `<issuer>/.well-known/openid-configuration`. |
+| `authorize_url`, `token_url`, `jwks_url`, `userinfo_url` | empty | Required when `discovery = false`. |
+| `ca_file` | empty | Pin the provider's authority, for an internal Keycloak or ADFS. |
+| `required` | `false` | Refuses **every** local credential, password and passkey alike. Not merely hides the form. |
+| `password_exempt` | `[]` | The addresses that may still sign in locally when `required` is set. |
+| `provision` | `true` | Create an account on first sign-in. Off means only existing accounts may sign in. |
+| `default_role` | `member` | For a user whose groups match nothing. |
+| `allowed_domains` | `[]` | Bare domains, e.g. `["acme.com"]`. Empty means any domain the provider vouches for. |
+| `groups_claim` | `groups` | `roles` for an Entra app-role registration. |
+| `admin_groups`, `manager_groups`, `auditor_groups`, `member_groups` | `[]` | A user in several gets the **strongest** role. |
+| `require_group` | `false` | Refuse anyone whose groups match none of the maps. |
+| `sync_role_on_login` | `true` | Re-apply the mapping at every sign-in, so a change in the directory takes effect without touching Peek. Off means the role is set at creation and local edits stick. |
+
+### Register this redirect URI
+
+```
+<public_url>/auth/sso/callback
+```
+
+Character for character. It is fixed — a configurable callback path is a
+configurable open redirect waiting to be mistyped — and `peek doctor` prints
+the exact value to paste into the application at the provider.
+
+### `required`, and why the escape hatch is explicit
+
+`sso.required` refuses local credentials on the server, not in the interface.
+That means an instance whose provider is unreachable — an outage, an expired
+client secret, a network change — is an instance nobody can sign in to, with
+the configuration file that would fix it readable only by root.
+
+So the escape hatch is named rather than implied. There is no hidden exception
+for administrators: put one or two break-glass accounts in
+`sso.password_exempt`, give them a second factor, and audit them.
+`peek doctor` **fails** when `required` is set and the list is empty.
+
+### Accounts, and what links them
+
+An account is linked to a directory identity by `(issuer, subject)`, never by
+the e-mail address. An address is a label that changes; a subject is the
+directory's own identifier and does not. So a renamed mailbox follows the
+person, and a reassigned one does not become a way into their account.
+
+On a first sign-in, in this order:
+
+1. the e-mail domain is checked against `allowed_domains`;
+2. an account with that `(issuer, subject)` is looked for;
+3. then an account with that address — linking it requires that account to be
+   unlinked, and the provider not to have marked the address unverified;
+4. and only then, if `provision` is on, a new account is created with no
+   password hash at all.
+
+An administrator can detach an identity from an account
+(`DELETE /api/v1/users/{id}/sso`), which is the way out of a subject linked to
+the wrong account.
+
+### Entra ID: the group overflow
+
+Past roughly two hundred groups, Entra replaces the group list in the token
+with a pointer to Microsoft Graph. Peek will not call Graph — that is a second
+outbound dependency and a second credential — so it **refuses the sign-in and
+says so** rather than seeing no groups and handing out `default_role`, which
+would quietly demote an administrator.
+
+Use app roles instead (`groups_claim = "roles"`), or set a group filter in the
+application registration so only the relevant groups are sent.
+
 ## `[[webhook]]`
 
 Repeated. Each table declares one outbound endpoint.

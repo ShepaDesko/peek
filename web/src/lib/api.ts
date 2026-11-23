@@ -225,11 +225,9 @@ export const api = {
       body,
     ),
   requestReceipt: (id: string, receiptToken: string) =>
-    request<SecretRequestReceipt>(
-      "POST",
-      `/api/v1/requests/${encodeURIComponent(id)}/receipt`,
-      { receipt_token: receiptToken },
-    ),
+    request<SecretRequestReceipt>("POST", `/api/v1/requests/${encodeURIComponent(id)}/receipt`, {
+      receipt_token: receiptToken,
+    }),
   closeRequest: (id: string, receiptToken: string) =>
     request<void>("DELETE", `/api/v1/requests/${encodeURIComponent(id)}`, {
       receipt_token: receiptToken,
@@ -490,8 +488,18 @@ export interface AuditEntry {
 export type CredentialCreationOptionsJSON = Record<string, unknown>;
 export type CredentialRequestOptionsJSON = Record<string, unknown>;
 
+/** What the sign-in page needs to know before anybody has signed in. */
+export interface SSOInfo {
+  enabled: boolean;
+  /** True when local credentials are refused, not merely hidden. */
+  required: boolean;
+  label?: string;
+  start_url?: string;
+}
+
 export const auth = {
   me: () => request<Me>("GET", "/api/v1/auth/me"),
+  sso: () => request<SSOInfo>("GET", "/api/v1/auth/sso"),
   login: (email: string, password: string) =>
     request<LoginResponse>("POST", "/api/v1/auth/login", { email, password }),
   mfa: (code: string) => request<{ user: User }>("POST", "/api/v1/auth/mfa", { code }),
@@ -551,8 +559,7 @@ export const auth = {
 
   // API tokens. The clear text comes back from createToken and from nowhere
   // else, ever: the server stores only its digest.
-  tokens: () =>
-    request<{ tokens: ApiTokenInfo[]; scopes: string[] }>("GET", "/api/v1/auth/tokens"),
+  tokens: () => request<{ tokens: ApiTokenInfo[]; scopes: string[] }>("GET", "/api/v1/auth/tokens"),
   createToken: (name: string, scopes: string[], ttl_seconds: number) =>
     request<ApiTokenInfo & { token: string }>("POST", "/api/v1/auth/tokens", {
       name,

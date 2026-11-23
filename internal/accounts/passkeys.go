@@ -206,6 +206,10 @@ func (s *Service) FinishPasskeyLogin(ctx context.Context, challengeID string, re
 		if user.Status == store.UserDisabled {
 			return nil, ErrAccountDisabled
 		}
+		// A passkey is a local credential, so sso.required applies to it too.
+		if err := s.requireSSO(user); err != nil {
+			return nil, err
+		}
 		credentials, err := s.credentialsOf(ctx, user.ID)
 		if err != nil {
 			return nil, err

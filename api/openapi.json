@@ -979,6 +979,26 @@
         ],
         "type": "object"
       },
+      "SSOInfo": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "label": {
+            "description": "What the button says.",
+            "type": "string"
+          },
+          "required": {
+            "description": "Local credentials are refused.",
+            "type": "boolean"
+          },
+          "start_url": {
+            "description": "Where to send the browser: /auth/sso.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SecretMeta": {
         "description": "Deliberately says nothing about the content.",
         "properties": {
@@ -1908,6 +1928,37 @@
           }
         }
       ]
+    },
+    "/api/v1/auth/sso": {
+      "get": {
+        "description": "Whether a provider is configured, what the button should say, and whether local sign-in is refused. Read before anybody has signed in, so it takes no authentication and says nothing a visitor could not infer from the button.\n\n**Authentication**: none.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SSOInfo"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Single sign-on, as the sign-in page sees it",
+        "tags": [
+          "auth"
+        ]
+      }
     },
     "/api/v1/auth/tokens": {
       "get": {
@@ -3696,6 +3747,47 @@
         ]
       }
     },
+    "/api/v1/users/{id}/sso": {
+      "delete": {
+        "description": "The way out of a subject linked to the wrong account — a reassigned mailbox, a tenant migration, a mistake. The next sign-in links it afresh. Refused with `409` when the account has no password, because unlinking would leave no way in.\n\n**Authentication**: session, manager.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Unlink a directory identity",
+        "tags": [
+          "admin"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "description": "A public identifier: 128 random bits, base64url.",
+            "pattern": "^[A-Za-z0-9_-]{22}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
     "/api/v1/webhooks": {
       "get": {
         "description": "What is configured, how the signature is computed, and how many deliveries are owed, delivered or given up on. There is no call that *creates* an endpoint: a URL the API could set would turn this server into a request forwarder aimed at your own network, so endpoints live in `peek.toml`.\n\n**Authentication**: session or token, administrator.\n\n**Token scope**: `instance:read`.\n\nInternal listener only.",
@@ -3844,6 +3936,74 @@
         "summary": "Send a test delivery",
         "tags": [
           "webhooks"
+        ]
+      }
+    },
+    "/auth/sso": {
+      "get": {
+        "description": "Browser navigation, not an API call: answers `302` to the identity provider and sets a sealed, single-use cookie holding the state, the nonce and the PKCE verifier. `return` may name a path on this instance to come back to; anything else becomes `/`.\n\n**Authentication**: none.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "302": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "To the identity provider, or to /login?sso_error=… when it cannot be reached."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Start a single sign-on",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/sso/callback": {
+      "get": {
+        "description": "Where the identity provider sends the browser back. Verifies the state against the cookie, exchanges the code over the back channel, verifies the assertion, then sets the same session cookie a password sign-in would. Every refusal becomes `302 /login?sso_error=\u003ccode\u003e`: the detail goes to the audit trail and the log, never into a query string.\n\n**Authentication**: none.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "302": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "To the interface on success, to /login?sso_error=… otherwise."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "summary": "Finish a single sign-on",
+        "tags": [
+          "auth"
         ]
       }
     },

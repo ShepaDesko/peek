@@ -271,8 +271,16 @@ var operations = map[string]operation{
 	"PATCH /api/v1/users/{id}":         {Summary: "Update an account", Tag: "admin", Session: true, Auth: "session, manager"},
 	"DELETE /api/v1/users/{id}":        {Summary: "Delete an account", Tag: "admin", NoBody: true, Session: true, Auth: "session, manager"},
 	"POST /api/v1/users/{id}/password": {Summary: "Set a password", Tag: "admin", Session: true, Auth: "session, manager"},
-	"GET /api/v1/invitations":          {Summary: "Pending invitations", Tag: "admin", NoBody: true, Session: true, Auth: "session, manager"},
-	"DELETE /api/v1/invitations/{id}":  {Summary: "Revoke an invitation", Tag: "admin", NoBody: true, Session: true, Auth: "session, manager"},
+	"DELETE /api/v1/users/{id}/sso": {
+		Summary: "Unlink a directory identity", Tag: "admin", NoBody: true, Session: true,
+		Description: "The way out of a subject linked to the wrong account — a reassigned " +
+			"mailbox, a tenant migration, a mistake. The next sign-in links it afresh. " +
+			"Refused with `409` when the account has no password, because unlinking would " +
+			"leave no way in.",
+		Auth: "session, manager",
+	},
+	"GET /api/v1/invitations":         {Summary: "Pending invitations", Tag: "admin", NoBody: true, Session: true, Auth: "session, manager"},
+	"DELETE /api/v1/invitations/{id}": {Summary: "Revoke an invitation", Tag: "admin", NoBody: true, Session: true, Auth: "session, manager"},
 	"GET /api/v1/audit": {
 		Summary: "Read the audit trail", Tag: "audit", Scope: store.ScopeAuditRead, NoBody: true,
 		Description: "Filterable by secret and by event. Secret content never appears, and a " +
@@ -288,6 +296,33 @@ var operations = map[string]operation{
 		Summary: "Instance status", Tag: "admin", Scope: store.ScopeInstanceRead, NoBody: true,
 		Description: "Version, driver, uptime and live secret count.",
 		Auth:        "session or token, administrator", ResponseRef: "Instance",
+	},
+	"GET /api/v1/auth/sso": {
+		Summary: "Single sign-on, as the sign-in page sees it", Tag: "auth", NoBody: true,
+		Description: "Whether a provider is configured, what the button should say, and " +
+			"whether local sign-in is refused. Read before anybody has signed in, so it " +
+			"takes no authentication and says nothing a visitor could not infer from the " +
+			"button.",
+		Auth: "none", ResponseRef: "SSOInfo",
+	},
+	"GET /auth/sso": {
+		Summary: "Start a single sign-on", Tag: "auth", NoBody: true,
+		Description: "Browser navigation, not an API call: answers `302` to the identity " +
+			"provider and sets a sealed, single-use cookie holding the state, the nonce and " +
+			"the PKCE verifier. `return` may name a path on this instance to come back to; " +
+			"anything else becomes `/`.",
+		Auth:      "none",
+		Responses: map[string]string{"302": "To the identity provider, or to /login?sso_error=… when it cannot be reached."},
+	},
+	"GET /auth/sso/callback": {
+		Summary: "Finish a single sign-on", Tag: "auth", NoBody: true,
+		Description: "Where the identity provider sends the browser back. Verifies the " +
+			"state against the cookie, exchanges the code over the back channel, verifies " +
+			"the assertion, then sets the same session cookie a password sign-in would. " +
+			"Every refusal becomes `302 /login?sso_error=<code>`: the detail goes to the " +
+			"audit trail and the log, never into a query string.",
+		Auth:      "none",
+		Responses: map[string]string{"302": "To the interface on success, to /login?sso_error=… otherwise."},
 	},
 	"GET /api/v1/webhooks": {
 		Summary: "Webhook endpoints and queue", Tag: "webhooks", Scope: store.ScopeInstanceRead, NoBody: true,
@@ -893,6 +928,16 @@ func openAPISchemas() map[string]any {
 				"active_secrets":  map[string]any{"type": "integer"},
 				"multi_org":       map[string]any{"type": "boolean"},
 				"public_listener": map[string]any{"type": "boolean"},
+			},
+		},
+		"SSOInfo": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"enabled":  map[string]any{"type": "boolean"},
+				"required": map[string]any{"type": "boolean", "description": "Local credentials are refused."},
+				"label":    map[string]any{"type": "string", "description": "What the button says."},
+				"start_url": map[string]any{"type": "string",
+					"description": "Where to send the browser: /auth/sso."},
 			},
 		},
 		"WebhookEndpoint": map[string]any{

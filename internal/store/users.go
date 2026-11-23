@@ -46,7 +46,15 @@ type User struct {
 	LastLoginAt        time.Time
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	// SSOIssuer and SSOSubject link the account to a directory identity. The
+	// pair is the link, not the address: an address is a label that changes,
+	// a subject is the directory's own identifier and does not.
+	SSOIssuer  string
+	SSOSubject string
 }
+
+// FromDirectory reports whether the account is linked to an identity provider.
+func (u *User) FromDirectory() bool { return u.SSOSubject != "" }
 
 // HasTOTP reports whether a confirmed authenticator is enrolled.
 func (u *User) HasTOTP() bool { return len(u.TOTPSecretEnc) > 0 && !u.TOTPConfirmedAt.IsZero() }
@@ -108,10 +116,11 @@ func (s *Store) CreateUser(ctx context.Context, u User) (User, error) {
 	_, err := s.exec(ctx, `INSERT INTO users
 		(id, org_id, email, email_key, password_hash, display_name, role, status,
 		 must_change_password, totp_secret_enc, totp_confirmed_at, failed_logins,
-		 locked_until, last_login_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, NULL, NULL, ?, ?)`,
+		 locked_until, last_login_at, created_at, updated_at, sso_issuer, sso_subject)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, NULL, NULL, ?, ?, ?, ?)`,
 		u.ID, u.OrgID, u.Email, u.EmailKey, nullString(u.PasswordHash), u.DisplayName,
-		u.Role, u.Status, boolToInt(u.MustChangePassword), unix(now), unix(now))
+		u.Role, u.Status, boolToInt(u.MustChangePassword), unix(now), unix(now),
+		nullString(u.SSOIssuer), nullString(u.SSOSubject))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return User{}, ErrUserExists
@@ -123,7 +132,7 @@ func (s *Store) CreateUser(ctx context.Context, u User) (User, error) {
 
 const userColumns = `id, org_id, email, email_key, password_hash, display_name, role, status,
 	must_change_password, totp_secret_enc, totp_confirmed_at, failed_logins,
-	locked_until, last_login_at, created_at, updated_at`
+	locked_until, last_login_at, created_at, updated_at, sso_issuer, sso_subject`
 
 func scanUser(row interface{ Scan(...any) error }) (User, error) {
 	var (
@@ -133,13 +142,15 @@ func scanUser(row interface{ Scan(...any) error }) (User, error) {
 		totpConfirmed, lockedUntil sql.NullInt64
 		lastLogin                  sql.NullInt64
 		created, updated           int64
+		ssoIssuer, ssoSubject      nullStr
 	)
 	err := row.Scan(&u.ID, &u.OrgID, &u.Email, &u.EmailKey, &passwordHash, &u.DisplayName,
 		&u.Role, &u.Status, &mustChange, &u.TOTPSecretEnc, &totpConfirmed, &u.FailedLogins,
-		&lockedUntil, &lastLogin, &created, &updated)
+		&lockedUntil, &lastLogin, &created, &updated, &ssoIssuer, &ssoSubject)
 	if err != nil {
 		return User{}, err
 	}
+	u.SSOIssuer, u.SSOSubject = ssoIssuer.String, ssoSubject.String
 	u.PasswordHash = passwordHash.String
 	u.MustChangePassword = mustChange == 1
 	if totpConfirmed.Valid {
@@ -164,6 +175,95 @@ func (s *Store) UserByEmail(ctx context.Context, orgID, email string) (User, err
 		return User{}, ErrNotFound
 	}
 	return u, err
+}
+
+// UserBySSOSubject looks an account up by its directory identity.
+func (s *Store) UserBySSOSubject(ctx context.Context, issuer, subject string) (User, error) {
+	if issuer == "" || subject == "" {
+		return User{}, ErrNotFound
+	}
+	row := s.queryRow(ctx, `SELECT `+userColumns+` FROM users WHERE sso_issuer = ? AND sso_subject = ?`,
+		issuer, subject)
+	u, err := scanUser(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	return u, err
+}
+
+// LinkSSO attaches a directory identity to an existing account.
+//
+// The guard matters: the update only applies to a row that is not already
+// linked to a *different* subject. Without it, a provider that reused an
+// address — or an operator who repointed the instance at another tenant —
+// could quietly take over somebody else's account.
+func (s *Store) LinkSSO(ctx context.Context, userID, issuer, subject string) (bool, error) {
+	res, err := s.exec(ctx, `UPDATE users SET sso_issuer = ?, sso_subject = ?, updated_at = ?
+		WHERE id = ? AND (sso_subject IS NULL OR (sso_issuer = ? AND sso_subject = ?))`,
+		issuer, subject, unix(s.Now()), userID, issuer, subject)
+	if err != nil {
+		if isUniqueViolation(err) {
+			// Another account already holds this subject.
+			return false, nil
+		}
+		return false, fmt.Errorf("store: link sso identity: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return true, nil //nolint:nilerr // a driver that cannot count: assume it worked
+	}
+	return n > 0, nil
+}
+
+// SetUserEmail changes an address. It fails with ErrUserExists when the new
+// one is taken, which is what keeps an address change at the provider from
+// signing somebody into the wrong account.
+func (s *Store) SetUserEmail(ctx context.Context, userID, email string) error {
+	trimmed := strings.TrimSpace(email)
+	key := NormalizeEmail(trimmed)
+	if key == "" {
+		return errors.New("store: an account needs an e-mail address")
+	}
+	_, err := s.exec(ctx, `UPDATE users SET email = ?, email_key = ?, updated_at = ? WHERE id = ?`,
+		trimmed, key, unix(s.Now()), userID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrUserExists
+		}
+		return fmt.Errorf("store: change address: %w", err)
+	}
+	return nil
+}
+
+// UnlinkSSO detaches a directory identity, leaving the account local.
+func (s *Store) UnlinkSSO(ctx context.Context, userID string) error {
+	_, err := s.exec(ctx, `UPDATE users SET sso_issuer = NULL, sso_subject = NULL, updated_at = ?
+		WHERE id = ?`, unix(s.Now()), userID)
+	if err != nil {
+		return fmt.Errorf("store: unlink sso identity: %w", err)
+	}
+	return nil
+}
+
+// UpdateUserIdentity refreshes the display name and role from the directory.
+// Both are optional: an empty value leaves the column alone.
+func (s *Store) UpdateUserIdentity(ctx context.Context, userID, displayName, role string) error {
+	q := `UPDATE users SET updated_at = ?`
+	args := []any{unix(s.Now())}
+	if displayName != "" {
+		q += `, display_name = ?`
+		args = append(args, displayName)
+	}
+	if role != "" {
+		q += `, role = ?`
+		args = append(args, role)
+	}
+	q += ` WHERE id = ?`
+	args = append(args, userID)
+	if _, err := s.exec(ctx, q, args...); err != nil {
+		return fmt.Errorf("store: refresh user from the directory: %w", err)
+	}
+	return nil
 }
 
 // UserByID looks an account up by identifier.

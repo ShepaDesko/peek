@@ -182,3 +182,79 @@ notification can honestly offer.
 Enqueueing is one small insert on the request path, next to the audit insert
 that is already there. Nothing in a handler waits on an outbound call: a
 receiver that hangs for thirty seconds cannot slow a reveal by a millisecond.
+
+### Single sign-on is two browser routes, not an API dance
+
+`GET /auth/sso` answers a redirect to the provider; `GET /auth/sso/callback`
+comes back and sets the same session cookie a password sign-in would. The
+single-page application is not involved in either.
+
+The alternative — the script starting the flow, reading the code out of the
+URL, posting it to an endpoint — puts an authorization code somewhere
+`document.location` can read it, needs the fragment parsed in JavaScript, and
+usually ends with a token in `localStorage`. None of that buys anything here,
+because Peek serves its own interface from its own origin. Two plain
+navigations and an `HttpOnly` cookie remove the whole category.
+
+The one-time values of an attempt — state, nonce, PKCE verifier and the return
+path — live in a single cookie sealed with the server master key, rather than
+in a table that would need sweeping. That is also why single sign-on refuses
+to start without a master key: a forgeable state cookie is no protection at
+all.
+
+### No OIDC library
+
+`internal/oidc` is about six hundred lines and imports nothing outside the
+standard library. The protocol Peek needs is one flow with one provider: no
+dynamic registration, no implicit or hybrid response types, no introspection,
+no refresh. What the libraries add on top of that is flexibility, and
+flexibility is exactly the property that gets JWT verification wrong — every
+famous failure is a verifier accepting an algorithm the caller did not mean to
+accept.
+
+So the algorithm table is closed and contains no symmetric entry. `alg: none`
+and the HMAC family are not rejected by a check that could be bypassed; they
+are absent, and a token asking for one gets a message explaining that Peek
+verifies asymmetric signatures only. An RSA key under 2048 bits is refused. An
+EC key is rebuilt as an uncompressed point and parsed, so the on-curve check is
+the parser's rather than one more thing to remember.
+
+A token arriving with no `kid` is matched against a single published key, and
+an ambiguous key set is refused rather than tried in turn: iterating over keys
+until one verifies is how a verifier ends up accepting a signature from a key
+that was never meant for tokens.
+
+### `sso.required` is enforced by the server, and names its own escape hatch
+
+Hiding the password form is not requiring single sign-on. `required` therefore
+refuses every local credential — password and passkey alike — in the accounts
+service, which is the one place every local sign-in path goes through.
+
+The consequence is a real one: an instance whose provider is unreachable, or
+whose client secret expired overnight, is an instance nobody can sign in to,
+and the file that would fix it is readable only by root. Products usually
+handle this with an unwritten exception for administrators, which is a
+"required" that is not required and an auditor's finding waiting to happen.
+
+Peek makes it explicit instead. `sso.password_exempt` names the break-glass
+accounts, and `peek doctor` **fails** — not warns — when `required` is set and
+that list is empty.
+
+### The directory link is (issuer, subject), not the e-mail address
+
+Addresses change: people marry, departments rename, somebody fixes a typo.
+Worse, at a provider the same mailbox can be reassigned to a new human. An
+authentication link built on the address follows the mailbox rather than the
+person, which is an account takeover with a paper trail that looks ordinary.
+
+So the link is the issuer and the subject, and the address follows it. The
+issuer is stored beside the subject because a subject is only unique within
+its issuer: repointing an instance at another tenant must not silently match
+the old subjects.
+
+Linking an *existing local* account to a directory identity is the one place
+where the address is used, and it is guarded twice: the account must not
+already be linked to a different subject, and a provider that explicitly marks
+the address unverified is refused. Without that second guard, any provider that
+lets a user type an arbitrary address would be a way into somebody else's
+account.

@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { ApiError, auth } from "../lib/api";
-import type { Translate } from "../lib/i18n";
+import { useEffect, useState } from "react";
+import { ApiError, auth, type SSOInfo } from "../lib/api";
+import type { Translate, TranslationKey } from "../lib/i18n";
 import { navigate } from "../lib/session";
 import { createCredentialError, passkeySignIn } from "../lib/passkeyFlow";
 import { Banner, Card, Field, Spinner } from "../ui";
@@ -17,12 +17,27 @@ type Step = "password" | "mfa" | "forgot";
 
 export default function Login({ t, onSignedIn, pending, passkeysEnabled }: Props) {
   const [step, setStep] = useState<Step>(pending ? "mfa" : "password");
+  const [sso, setSso] = useState<SSOInfo | null>(null);
+  // The callback redirects here with a code rather than a message: a message
+  // in a query string is a place to inject text into the page.
+  const [ssoError] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("sso_error"),
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    // A failure here is not worth a banner: the password form still works,
+    // and an instance with no provider is the common case.
+    auth
+      .sso()
+      .then(setSso)
+      .catch(() => setSso({ enabled: false, required: false }));
+  }, []);
 
   async function submitPassword(event: React.FormEvent) {
     event.preventDefault();
@@ -164,68 +179,144 @@ export default function Login({ t, onSignedIn, pending, passkeysEnabled }: Props
     );
   }
 
+  const ssoOnly = !!sso?.enabled && sso.required;
+
   return (
     <form onSubmit={submitPassword} className="mx-auto max-w-md">
       <Card className="space-y-4">
         <header className="space-y-1">
           <h1 className="text-xl font-semibold">{t("login.title")}</h1>
-          <p className="peek-muted text-sm leading-relaxed">{t("login.subtitle")}</p>
+          <p className="peek-muted text-sm leading-relaxed">
+            {ssoOnly ? t("login.sso.subtitle") : t("login.subtitle")}
+          </p>
         </header>
 
         {notice ? <Banner tone="success">{notice}</Banner> : null}
-
-        <Field label={t("login.email")} htmlFor="email">
-          <input
-            id="email"
-            type="email"
-            className="peek-input"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="username"
-            autoFocus
-            required
-          />
-        </Field>
-
-        <Field label={t("login.password")} htmlFor="password">
-          <input
-            id="password"
-            type="password"
-            className="peek-input"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </Field>
-
-        {error ? <Banner tone="danger">{error}</Banner> : null}
-
-        <button type="submit" className="peek-btn peek-btn-primary w-full" disabled={busy}>
-          {busy ? <Spinner label={t("app.loading")} /> : t("login.submit")}
-        </button>
-
-        {passkeysEnabled ? (
-          <button
-            type="button"
-            className="peek-btn peek-btn-ghost w-full"
-            onClick={withPasskey}
-            disabled={busy}
-          >
-            {t("login.passkey")}
-          </button>
+        {ssoError ? (
+          <Banner tone="danger" title={t("login.sso.error.title")}>
+            {ssoErrorMessage(ssoError, t)}
+          </Banner>
         ) : null}
 
-        <button
-          type="button"
-          className="peek-muted w-full text-xs underline"
-          onClick={() => setStep("forgot")}
-        >
-          {t("login.forgot.link")}
-        </button>
+        {sso?.enabled ? (
+          <>
+            <a className="peek-btn peek-btn-primary w-full justify-center" href={ssoStartURL(sso)}>
+              {t("login.sso.button").replace("{provider}", sso.label ?? "")}
+            </a>
+            {ssoOnly ? null : (
+              <div className="flex items-center gap-3" aria-hidden="true">
+                <span className="h-px flex-1" style={{ background: "var(--peek-border)" }} />
+                <span className="peek-muted text-xs uppercase">{t("login.sso.or")}</span>
+                <span className="h-px flex-1" style={{ background: "var(--peek-border)" }} />
+              </div>
+            )}
+          </>
+        ) : null}
+
+        {ssoOnly ? (
+          <p className="peek-muted text-xs leading-relaxed">{t("login.sso.onlyHint")}</p>
+        ) : null}
+
+        {/* Not merely hidden: a required input inside a hidden block makes
+            the browser refuse the form with a message nobody can see. */}
+        {ssoOnly ? null : (
+          <div className="space-y-4">
+            <Field label={t("login.email")} htmlFor="email">
+              <input
+                id="email"
+                type="email"
+                className="peek-input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+                autoFocus
+                required
+              />
+            </Field>
+
+            <Field label={t("login.password")} htmlFor="password">
+              <input
+                id="password"
+                type="password"
+                className="peek-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </Field>
+
+            {error ? <Banner tone="danger">{error}</Banner> : null}
+
+            <button type="submit" className="peek-btn peek-btn-primary w-full" disabled={busy}>
+              {busy ? <Spinner label={t("app.loading")} /> : t("login.submit")}
+            </button>
+
+            {passkeysEnabled ? (
+              <button
+                type="button"
+                className="peek-btn peek-btn-ghost w-full"
+                onClick={withPasskey}
+                disabled={busy}
+              >
+                {t("login.passkey")}
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              className="peek-muted w-full text-xs underline"
+              onClick={() => setStep("forgot")}
+            >
+              {t("login.forgot.link")}
+            </button>
+          </div>
+        )}
       </Card>
     </form>
   );
+}
+
+/**
+ * Where the sign-in button points.
+ *
+ * The current path is carried as `return` so a bookmarked page survives the
+ * round trip. The server reduces it to a path on this instance whatever
+ * arrives, because a sign-in flow that can be made to land on another site is
+ * a phishing primitive.
+ */
+function ssoStartURL(sso: SSOInfo): string {
+  const base = sso.start_url ?? "/auth/sso";
+  const here = window.location.pathname + window.location.search;
+  if (here === "/login" || here.startsWith("/login?")) return base;
+  return base + "?return=" + encodeURIComponent(here);
+}
+
+/**
+ * One sentence per refusal.
+ *
+ * "Sign-in failed", shown straight after a successful sign-in at the provider,
+ * is the most confusing thing this product could say. Every code the callback
+ * can produce has its own line.
+ */
+export function ssoErrorMessage(code: string, t: Translate): string {
+  const known = [
+    "cancelled",
+    "expired",
+    "state",
+    "token",
+    "provider",
+    "domain",
+    "no_account",
+    "no_group",
+    "no_email",
+    "claimed",
+    "disabled",
+    "locked",
+    "unavailable",
+  ];
+  if (!known.includes(code)) return t("login.sso.error.unavailable");
+  return t(("login.sso.error." + code) as TranslationKey);
 }
 
 /** Turns an API error into something worth reading. */
@@ -238,6 +329,8 @@ export function signInError(err: unknown, t: Translate): string {
         return t("login.error.locked");
       case "disabled":
         return t("login.error.disabled");
+      case "sso_required":
+        return err.message || t("login.sso.onlyHint");
       case "bad_code":
         return t("login.error.code");
       case "no_session":

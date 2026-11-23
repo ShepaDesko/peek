@@ -26,6 +26,7 @@ import (
 	"github.com/ShepaDesko/peek/internal/config"
 	pcrypto "github.com/ShepaDesko/peek/internal/crypto"
 	"github.com/ShepaDesko/peek/internal/mail"
+	"github.com/ShepaDesko/peek/internal/oidc"
 	"github.com/ShepaDesko/peek/internal/requests"
 	"github.com/ShepaDesko/peek/internal/secrets"
 	"github.com/ShepaDesko/peek/internal/storage"
@@ -61,6 +62,7 @@ type Server struct {
 	mailer   mail.Sender
 	siem     audit.Forwarder
 	hooks    *webhooks.Deliverer
+	sso      *oidc.Provider
 	cipher   *pcrypto.ServerCipher
 
 	ui      *webui.Handler
@@ -159,6 +161,13 @@ func New(opts Options) (*Server, error) {
 	if dispatcher := webhooks.NewDispatcher(opts.Config, opts.Store, log); dispatcher.Enabled() {
 		s.siem = audit.Multi{s.siem, dispatcher}
 	}
+	// Single sign-on, like the webhook dispatcher, is built from the
+	// configuration rather than handed in: configured means enabled.
+	provider, err := oidc.New(opts.Config.SSO, log)
+	if err != nil {
+		return nil, err
+	}
+	s.sso = provider
 	s.hooks = opts.Webhooks
 	if s.hooks == nil {
 		// A nil deliverer is a valid one: Enabled reports false and the
@@ -233,6 +242,7 @@ func (s *Server) Handler(listener string) http.Handler {
 				anon.Post("/auth/bootstrap", s.handleBootstrap)
 				anon.Post("/auth/password/forgot", s.handleForgotPassword)
 				anon.Post("/auth/password/reset", s.handleResetPassword)
+				anon.Get("/auth/sso", s.handleSSOInfo)
 				anon.Post("/auth/passkeys/login/start", s.handlePasskeyLoginStart)
 				anon.Post("/auth/passkeys/login/finish", s.handlePasskeyLoginFinish)
 				anon.Post("/invitations/preview", s.handlePreviewInvitation)
@@ -319,6 +329,7 @@ func (s *Server) Handler(listener string) http.Handler {
 					manage.Patch("/users/{id}", s.handleUpdateUser)
 					manage.Delete("/users/{id}", s.handleDeleteUser)
 					manage.Post("/users/{id}/password", s.handleSetUserPassword)
+					manage.Delete("/users/{id}/sso", s.handleUnlinkSSO)
 					manage.Get("/invitations", s.handleListInvitations)
 					manage.Delete("/invitations/{id}", s.handleRevokeInvitation)
 				})
@@ -369,6 +380,19 @@ func (s *Server) Handler(listener string) http.Handler {
 				})
 			})
 		})
+	})
+
+	// Single sign-on, as plain browser navigation rather than through the
+	// API: the single-page application never touches a code or a token.
+	// Internal listener only, and behind the admin CIDR gate like every other
+	// way in — the recipient pages need no identity at all.
+	r.Group(func(sso chi.Router) {
+		sso.Use(s.internalOnly)
+		sso.Use(s.restrictCIDR(s.adminCIDRs, "admin"))
+		sso.Use(s.rateLimit(s.limitLogin, "login"))
+		sso.Use(noStore)
+		sso.Get("/auth/sso", s.handleSSOStart)
+		sso.Get(config.RedirectPath, s.handleSSOCallback)
 	})
 
 	// Branding stylesheet: served as a file so the CSP needs no inline styles.

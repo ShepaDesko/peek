@@ -62,6 +62,10 @@ const (
 	EventPasskeyRegistered      = "auth.passkey_registered"
 	EventPasskeyRemoved         = "auth.passkey_removed"
 	EventPasskeyLogin           = "auth.passkey_login"
+	// Single sign-on. A refusal carries a reason, never a token or a claim.
+	EventSSOLogin    = "auth.sso_login"
+	EventSSOFailed   = "auth.sso_failed"
+	EventSSOUnlinked = "admin.sso_unlinked"
 
 	// User management.
 	EventUserCreated        = "admin.user_created"

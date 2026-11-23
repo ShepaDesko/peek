@@ -139,6 +139,44 @@ func (s *Server) handleSetUserPassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleUnlinkSSO detaches a directory identity from an account.
+//
+// This is the way out of the one state an operator can otherwise get stuck in:
+// a subject linked to the wrong account — a provider that reassigned a
+// mailbox, a tenant migration, a mistake. Unlink, and the next sign-in links
+// the subject afresh.
+func (s *Server) handleUnlinkSSO(w http.ResponseWriter, r *http.Request) {
+	p := principalOf(r.Context())
+	id := chi.URLParam(r, "id")
+
+	user, err := s.store.UserByID(r.Context(), id)
+	if err != nil {
+		writeError(w, r, http.StatusNotFound, "not_found", "No such account.")
+		return
+	}
+	if !user.FromDirectory() {
+		writeError(w, r, http.StatusConflict, "not_linked",
+			"That account is not linked to the identity provider.")
+		return
+	}
+	// An account with no local credential and no directory identity cannot
+	// sign in at all. Say so rather than creating one.
+	if user.PasswordHash == "" {
+		writeError(w, r, http.StatusConflict, "would_orphan",
+			"That account has no password, so unlinking it would leave no way in. "+
+				"Set a password for it first.")
+		return
+	}
+	if err := s.store.UnlinkSSO(r.Context(), id); err != nil {
+		s.log.Error("unlink sso identity", "error", err.Error())
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "Internal error.")
+		return
+	}
+	s.audit(r, store.AuditEvent{UserID: p.User.ID, Event: store.EventSSOUnlinked,
+		Detail: map[string]string{"target": id}})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- invitations -------------------------------------------------------------
 
 func (s *Server) handleListInvitations(w http.ResponseWriter, r *http.Request) {

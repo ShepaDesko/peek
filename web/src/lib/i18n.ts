@@ -408,7 +408,8 @@ const fr = {
   "qstatus.read": "Lire",
   "qstatus.reading": "Déchiffrement…",
   "qstatus.close": "Clore la demande",
-  "qstatus.closed": "Demande close. Les dépôts déjà reçus restent lisibles jusqu'à leur expiration.",
+  "qstatus.closed":
+    "Demande close. Les dépôts déjà reçus restent lisibles jusqu'à leur expiration.",
   "qstatus.error": "Lecture impossible",
   "qstatus.deposit.n": "Dépôt {n}",
 
@@ -445,6 +446,34 @@ const fr = {
   "tokens.scope.secrets:manage": "Consulter ses reçus et brûler ses secrets",
   "tokens.scope.audit:read": "Lire le journal d'audit",
   "tokens.scope.instance:read": "Lire l'état de l'instance",
+
+  "login.sso.button": "Se connecter avec {provider}",
+  "login.sso.or": "ou",
+  "login.sso.subtitle": "Cette instance utilise l'annuaire de votre organisation.",
+  "login.sso.onlyHint":
+    "Le mot de passe et les passkeys sont refusés ici : la connexion passe par l'annuaire. Si l'annuaire est indisponible, contactez l'administrateur de l'instance.",
+  "login.sso.error.title": "Connexion refusée",
+  "login.sso.error.cancelled": "Vous avez annulé la connexion.",
+  "login.sso.error.expired":
+    "La tentative de connexion a expiré. Recommencez — cela arrive si la page est restée ouverte longtemps, ou si vous avez ouvert ce lien depuis un favori.",
+  "login.sso.error.state":
+    "La réponse ne correspond pas à la demande envoyée depuis ce navigateur. Recommencez depuis cette page.",
+  "login.sso.error.token":
+    "L'attestation de l'annuaire n'a pas pu être vérifiée. L'administrateur de l'instance trouvera le détail dans le journal.",
+  "login.sso.error.provider":
+    "L'annuaire n'a pas pu être contacté, ou a refusé l'application. L'administrateur de l'instance trouvera le détail dans le journal.",
+  "login.sso.error.domain": "Votre domaine de messagerie n'est pas autorisé sur cette instance.",
+  "login.sso.error.no_account":
+    "Aucun compte ne correspond ici. Cette instance ne crée pas les comptes automatiquement : demandez une invitation.",
+  "login.sso.error.no_group": "Vous n'appartenez à aucun des groupes autorisés sur cette instance.",
+  "login.sso.error.no_email":
+    "L'annuaire n'a pas transmis d'adresse e-mail, et un compte sans adresse n'est pas gérable.",
+  "login.sso.error.claimed":
+    "Un autre compte est déjà rattaché à cette identité, ou cette adresse est déjà utilisée. L'administrateur peut détacher le compte concerné.",
+  "login.sso.error.disabled": "Ce compte est désactivé sur cette instance.",
+  "login.sso.error.locked": "Ce compte est temporairement bloqué. Réessayez dans quelques minutes.",
+  "login.sso.error.unavailable":
+    "La connexion par annuaire n'est pas disponible pour le moment. L'administrateur de l'instance trouvera le détail dans le journal.",
 } as const;
 
 type Key = keyof typeof fr;
@@ -876,6 +905,34 @@ const en: Record<Key, string> = {
   "tokens.scope.secrets:manage": "Read its own receipts and burn its own secrets",
   "tokens.scope.audit:read": "Read the audit trail",
   "tokens.scope.instance:read": "Read the instance status",
+
+  "login.sso.button": "Sign in with {provider}",
+  "login.sso.or": "or",
+  "login.sso.subtitle": "This instance signs in through your organisation's directory.",
+  "login.sso.onlyHint":
+    "Passwords and passkeys are refused here: sign-in goes through the directory. If the directory is unavailable, ask whoever runs this instance.",
+  "login.sso.error.title": "Sign-in refused",
+  "login.sso.error.cancelled": "You cancelled the sign-in.",
+  "login.sso.error.expired":
+    "That sign-in attempt expired. Start again — this happens when the page sat open for a long time, or when you opened this link from a bookmark.",
+  "login.sso.error.state":
+    "The answer does not match the request this browser sent. Start again from this page.",
+  "login.sso.error.token":
+    "The directory's assertion could not be verified. Whoever runs this instance will find the detail in the log.",
+  "login.sso.error.provider":
+    "The directory could not be reached, or refused this application. Whoever runs this instance will find the detail in the log.",
+  "login.sso.error.domain": "Your e-mail domain is not allowed on this instance.",
+  "login.sso.error.no_account":
+    "No account here matches. This instance does not create accounts automatically: ask for an invitation.",
+  "login.sso.error.no_group": "You are in none of the groups allowed on this instance.",
+  "login.sso.error.no_email":
+    "The directory sent no e-mail address, and an account without one cannot be managed.",
+  "login.sso.error.claimed":
+    "Another account is already linked to that identity, or that address is already in use. An administrator can unlink the account concerned.",
+  "login.sso.error.disabled": "This account is disabled on this instance.",
+  "login.sso.error.locked": "This account is temporarily locked. Try again in a few minutes.",
+  "login.sso.error.unavailable":
+    "Directory sign-in is unavailable right now. Whoever runs this instance will find the detail in the log.",
 };
 
 const dictionaries: Record<Lang, Record<Key, string>> = { fr, en };

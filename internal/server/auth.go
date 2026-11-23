@@ -258,6 +258,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				"Too many failed attempts. Try again in a few minutes.")
 		case errors.Is(err, accounts.ErrAccountDisabled):
 			writeError(w, r, http.StatusForbidden, "disabled", "This account is disabled.")
+		case errors.Is(err, accounts.ErrSSORequired):
+			// Named plainly: an operator who turned this on wants to see it
+			// said, and a user needs to know the password is not the problem.
+			writeError(w, r, http.StatusForbidden, "sso_required",
+				"This instance signs in through "+s.cfg.SSO.Label()+".")
 		case errors.Is(err, accounts.ErrInvalidCredentials):
 			// One answer for a wrong address and a wrong password.
 			writeError(w, r, http.StatusUnauthorized, "invalid_credentials", "Wrong e-mail address or password.")
@@ -289,6 +294,8 @@ func (s *Server) auditLogin(r *http.Request, email string, err error) {
 		reason = "locked"
 	case errors.Is(err, accounts.ErrAccountDisabled):
 		reason = "disabled"
+	case errors.Is(err, accounts.ErrSSORequired):
+		reason = "sso_required"
 	}
 	// The address is recorded because an administrator needs to see which
 	// account is being attacked; the password never is.
@@ -619,6 +626,9 @@ func (s *Server) writeAccountError(w http.ResponseWriter, r *http.Request, err e
 		writeError(w, r, http.StatusUnauthorized, "unauthenticated", "Sign in to continue.")
 	case errors.Is(err, accounts.ErrForbidden), errors.Is(err, accounts.ErrPasskeysDisabled):
 		writeError(w, r, http.StatusForbidden, "forbidden", err.Error())
+	case errors.Is(err, accounts.ErrSSORequired):
+		writeError(w, r, http.StatusForbidden, "sso_required",
+			"This instance signs in through "+s.cfg.SSO.Label()+".")
 	case errors.Is(err, accounts.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, "not_found", "Not found, or no longer valid.")
 	case errors.Is(err, accounts.ErrInvalidCredentials):

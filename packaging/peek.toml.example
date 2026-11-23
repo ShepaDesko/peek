@@ -150,3 +150,27 @@ interval = "1d"
 # secret  = "a long random string, 16 characters minimum"
 # events  = ["secret.revealed", "secret.expired", "secret.burned", "request.deposited"]
 # # ca_file = "/etc/ssl/certs/internal-ca.pem"
+
+# OpenID Connect single sign-on. One provider per instance. The redirect URI
+# to register at the provider is <public_url>/auth/sso/callback — peek doctor
+# prints the exact value. See docs/CONFIG.md.
+#
+# [sso]
+# enabled       = true
+# provider      = "entra"          # entra | google | keycloak | authentik | adfs | generic
+# issuer        = "https://login.microsoftonline.com/<tenant-id>/v2.0"
+# client_id     = ""
+# client_secret = ""
+# provision     = true             # create an account on first sign-in
+# default_role  = "member"
+# groups_claim  = "groups"         # "roles" for an Entra app-role registration
+# admin_groups  = []               # Entra sends object ids, not names
+# manager_groups = []
+# auditor_groups = []
+# sync_role_on_login = true
+# allowed_domains = []
+# # required = true refuses every local credential, password and passkey
+# # alike. Name the break-glass accounts, or nobody can sign in when the
+# # provider is down. peek doctor fails if this list is empty.
+# required = false
+# password_exempt = []

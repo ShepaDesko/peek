@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/smtp"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/ShepaDesko/peek/internal/config"
+	"github.com/ShepaDesko/peek/internal/oidc"
 	"github.com/ShepaDesko/peek/internal/storage"
 	"github.com/ShepaDesko/peek/internal/store"
 )
@@ -137,6 +139,7 @@ func Run(ctx context.Context, opts Options) *Report {
 	checkTLS(r, cfg)
 	checkClock(r)
 	checkMail(r, cfg, opts.SendTestEmail)
+	checkSSO(ctx, r, cfg)
 	checkWebhooks(ctx, r, cfg)
 
 	if opts.External {
@@ -601,6 +604,71 @@ func certNames(leaf *x509.Certificate) string {
 // user tried to send their first file. A listing is the lightest request that
 // proves credentials, signature and reachability at once, and it writes
 // nothing.
+// checkSSO reaches the identity provider's discovery document and key set.
+//
+// This is the check that turns a silent "sign-in failed" into a sentence: a
+// wrong issuer, an unreachable provider, a private certificate authority that
+// is not trusted, all look identical from a browser.
+func checkSSO(ctx context.Context, r *Report, cfg *config.Config) {
+	if !cfg.SSO.Enabled {
+		r.add("single sign-on", SKIP, "not configured")
+		return
+	}
+	provider, err := oidc.New(cfg.SSO, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		r.add("single sign-on", FAIL, err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	meta, err := provider.Metadata(ctx)
+	if err != nil {
+		r.add("single sign-on", FAIL, err.Error(),
+			"check sso.issuer, and sso.ca_file if the provider has a private certificate authority")
+		return
+	}
+	r.add("single sign-on", OK, fmt.Sprintf("%s — %s reachable", cfg.SSO.Label(), meta.Issuer))
+
+	// The redirect URI has to be registered at the provider, character for
+	// character, and getting it wrong is the single most common failure.
+	r.add("sso redirect URI", OK, cfg.RedirectURI(),
+		"this exact value must be registered as a redirect URI in the application at the provider")
+
+	if usable, err := provider.CheckKeys(ctx); err != nil {
+		r.add("sso signing keys", FAIL, err.Error())
+	} else {
+		r.add("sso signing keys", OK,
+			fmt.Sprintf("%d usable signing key(s) at %s", usable, meta.JWKSURI))
+	}
+
+	switch {
+	case cfg.SSO.RequireGroup && !cfg.SSO.MapsGroups():
+		r.add("sso role mapping", FAIL, "require_group is set but no group is mapped")
+	case cfg.SSO.MapsGroups():
+		r.add("sso role mapping", OK, fmt.Sprintf("claim %q, %d admin / %d manager / %d auditor / %d member group(s)",
+			cfg.SSO.Claim(), len(cfg.SSO.AdminGroups), len(cfg.SSO.ManagerGroups),
+			len(cfg.SSO.AuditorGroups), len(cfg.SSO.MemberGroups)))
+	default:
+		r.add("sso role mapping", WARN,
+			fmt.Sprintf("no group is mapped: everyone gets the %s role", orDash(cfg.SSO.DefaultRole)),
+			"map your directory groups with sso.admin_groups and the rest")
+	}
+
+	if cfg.SSO.Required {
+		if len(cfg.SSO.PasswordExempt) == 0 {
+			r.add("sso break-glass account", FAIL,
+				"sso.required is set and sso.password_exempt is empty",
+				"one provider outage, or one expired client secret, and nobody can sign in. "+
+					"Name at least one local account in sso.password_exempt and give it a second factor")
+		} else {
+			r.add("sso break-glass account", OK,
+				fmt.Sprintf("%d account(s) may still sign in locally", len(cfg.SSO.PasswordExempt)))
+		}
+	}
+}
+
 // checkWebhooks reports the configuration and, more usefully, the state of the
 // queue. A backlog whose oldest row keeps ageing is a receiver that is down,
 // and that is invisible from everywhere else: the deliveries are retried

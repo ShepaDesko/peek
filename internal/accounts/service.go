@@ -131,6 +131,9 @@ func (s *Service) Login(ctx context.Context, orgID, email, password, ip, userAge
 		// An SSO-only or not-yet-activated account has no password to check.
 		return LoginResult{}, ErrInvalidCredentials
 	}
+	if err := s.requireSSO(user); err != nil {
+		return LoginResult{}, err
+	}
 
 	if err := auth.VerifyPassword(user.PasswordHash, password); err != nil {
 		locked, ferr := s.store.RecordFailedLogin(ctx, user.ID,
