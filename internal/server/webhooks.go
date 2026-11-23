@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -42,7 +43,7 @@ func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, webhookEndpoint{
 			Name:     hook.Name,
-			URL:      hook.URL,
+			URL:      redactQuery(hook.URL),
 			Events:   hook.EventList(),
 			Attempts: hook.Attempts(),
 			Timeout:  timeout.String(),
@@ -179,6 +180,27 @@ func (s *Server) handleWebhookRetry(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"requeued": n})
+}
+
+// redactQuery strips the query string from a webhook URL before it leaves the
+// instance.
+//
+// Several receivers authenticate by a token in the query string — Mattermost,
+// Teams and Slack incoming hooks all do. peek.toml is readable only by root
+// and the service account, but this endpoint is reachable with an
+// instance:read API token, which a monitoring script may hold. The host and
+// the path are what an operator needs to recognise the endpoint; the token
+// after the question mark is not.
+func redactQuery(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if u.RawQuery == "" && u.Fragment == "" {
+		return raw
+	}
+	u.RawQuery, u.Fragment = "", ""
+	return u.String() + "?…"
 }
 
 // orAll names the whole queue in an audit entry, rather than leaving the field

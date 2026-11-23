@@ -101,6 +101,18 @@ func (s *Service) SignInWithSSO(ctx context.Context, claims *oidc.Claims, ip, us
 	if user.Locked(now) {
 		return SSOResult{}, ErrAccountLocked
 	}
+	// An invitation that has not been accepted yet is completed by this
+	// sign-in. The provider has vouched for the address, which is at least as
+	// strong as the token in the invitation e-mail — but the account has to
+	// leave the invited state, or it stays in the pending list for ever and
+	// every listing shows it as waiting.
+	if user.Status == store.UserInvited {
+		if err := s.store.SetUserStatus(ctx, user.ID, store.UserActive); err != nil {
+			return SSOResult{}, err
+		}
+		user.Status = store.UserActive
+		out.Linked = true
+	}
 
 	// Keep the account in step with the directory. The display name always;
 	// the role only when the operator asked for it, so a local promotion is

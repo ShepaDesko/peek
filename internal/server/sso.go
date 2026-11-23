@@ -175,6 +175,25 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// In multi-organisation mode the address decides which organisation this
+	// sign-in belongs to, and the account has to belong to it. Without this,
+	// an acme account signing in on beta's domain would get a session that
+	// every subsequent API call then refuses — a working sign-in followed by
+	// a wall, which is the worst way to tell somebody they used the wrong
+	// address.
+	if s.orgs.MultiOrg() {
+		resolved := OrgOf(r.Context()).ID
+		if res.User.OrgID != resolved && res.User.Role != store.RolePlatformAdmin {
+			s.audit(r, store.AuditEvent{
+				Event:  store.EventWrongOrg,
+				UserID: res.User.ID,
+				Detail: map[string]string{"account_org": res.User.OrgID, "requested_org": resolved},
+			})
+			s.redirectToLogin(w, r, "wrong_organisation")
+			return
+		}
+	}
+
 	detail := map[string]string{"issuer": claims.Issuer, "role": res.User.Role}
 	switch {
 	case res.Provisioned:

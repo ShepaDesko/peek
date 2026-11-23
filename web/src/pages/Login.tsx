@@ -311,6 +311,7 @@ export function ssoErrorMessage(code: string, t: Translate): string {
     "no_group",
     "no_email",
     "claimed",
+    "wrong_organisation",
     "disabled",
     "locked",
     "unavailable",

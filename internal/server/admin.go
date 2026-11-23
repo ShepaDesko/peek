@@ -154,6 +154,14 @@ func (s *Server) handleUnlinkSSO(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, "not_found", "No such account.")
 		return
 	}
+	// A manager of one organisation must not reach an account in another.
+	// Every other account operation checks this in the accounts service; this
+	// handler talks to the store directly, so it checks here. Answering 404
+	// rather than 403 keeps it from confirming that the identifier exists.
+	if user.OrgID != p.User.OrgID && p.User.Role != store.RolePlatformAdmin {
+		writeError(w, r, http.StatusNotFound, "not_found", "No such account.")
+		return
+	}
 	if !user.FromDirectory() {
 		writeError(w, r, http.StatusConflict, "not_linked",
 			"That account is not linked to the identity provider.")

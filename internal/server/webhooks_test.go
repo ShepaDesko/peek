@@ -224,3 +224,31 @@ func TestNoWebhookConfigured(t *testing.T) {
 		t.Errorf("testing with nothing configured returned %d, want 409", rec.Code)
 	}
 }
+
+// TestWebhookURLQueryIsRedacted: several receivers authenticate by a token in
+// the query string. peek.toml is root-only, but this endpoint is readable with
+// an instance:read token that a monitoring script may hold.
+func TestWebhookURLQueryIsRedacted(t *testing.T) {
+	h := newHarness(t, func(cfg *config.Config) {
+		cfg.Webhooks = []config.Webhook{{
+			Name:   "chat",
+			URL:    "https://mattermost.internal/hooks/abcd?token=a-receiver-credential",
+			Secret: hookSecret,
+		}}
+	})
+	admin := h.signIn(t)
+
+	rec := admin.do(t, h.internal, http.MethodGet, "/api/v1/webhooks", nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /webhooks returned %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "a-receiver-credential") {
+		t.Errorf("the response repeats the receiver's token:\n%s", body)
+	}
+	// The host and the path still have to be there: that is what an operator
+	// recognises the endpoint by.
+	if !strings.Contains(body, "mattermost.internal/hooks/abcd") {
+		t.Errorf("the response no longer identifies the endpoint:\n%s", body)
+	}
+}

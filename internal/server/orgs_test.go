@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ShepaDesko/peek/internal/auth"
 	"github.com/ShepaDesko/peek/internal/config"
 	"github.com/ShepaDesko/peek/internal/orgs"
 	"github.com/ShepaDesko/peek/internal/store"
@@ -432,5 +433,83 @@ func TestNormaliseDomainRefusesNonsense(t *testing.T) {
 		if got := store.NormaliseDomain(raw); got != want {
 			t.Errorf("NormaliseDomain(%q) = %q, want %q", raw, got, want)
 		}
+	}
+}
+
+// TestUnlinkCannotCrossOrganisations: every other account operation checks
+// the organisation in the accounts service; the unlink handler talks to the
+// store directly, so it has to check for itself. It did not.
+func TestUnlinkCannotCrossOrganisations(t *testing.T) {
+	h := newMultiOrgHarness(t)
+	beta := seedOrg(t, h, "beta", "secrets.beta.test", "Beta")
+
+	// A manager in the default organisation.
+	admin := h.signIn(t)
+
+	// An account in beta, linked to a directory identity, with a password so
+	// that unlinking would otherwise be allowed.
+	hash, err := auth.HashPassword("un-mot-de-passe-correct-2026")
+	if err != nil {
+		t.Fatal(err)
+	}
+	victim, err := h.store.CreateUser(t.Context(), store.User{
+		OrgID: beta.ID, Email: "bob@beta.test", DisplayName: "Bob",
+		Role: store.RoleMember, PasswordHash: hash,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := h.store.LinkSSO(t.Context(), victim.ID, "https://idp.test", "beta-subject"); err != nil || !ok {
+		t.Fatalf("link: %v %v", ok, err)
+	}
+
+	rec := admin.do(t, h.internal, http.MethodDelete,
+		"/api/v1/users/"+victim.ID+"/sso", nil, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unlinking across organisations returned %d, want 404: %s", rec.Code, rec.Body.String())
+	}
+	again, err := h.store.UserByID(t.Context(), victim.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.FromDirectory() {
+		t.Error("the account in the other organisation was unlinked anyway")
+	}
+
+	// And it works within the actor's own organisation.
+	mine, err := h.store.CreateUser(t.Context(), store.User{
+		Email: "carol@acme.test", DisplayName: "Carol", Role: store.RoleMember, PasswordHash: hash,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := h.store.LinkSSO(t.Context(), mine.ID, "https://idp.test", "own-subject"); err != nil || !ok {
+		t.Fatalf("link: %v %v", ok, err)
+	}
+	if rec := admin.do(t, h.internal, http.MethodDelete,
+		"/api/v1/users/"+mine.ID+"/sso", nil, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("unlinking in my own organisation returned %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestUnlinkRefusesToOrphanAnAccount: an account with no local credential and
+// no directory identity cannot sign in at all.
+func TestUnlinkRefusesToOrphanAnAccount(t *testing.T) {
+	h := newHarness(t, nil)
+	admin := h.signIn(t)
+
+	orphan, err := h.store.CreateUser(t.Context(), store.User{
+		Email: "dave@acme.test", DisplayName: "Dave", Role: store.RoleMember,
+		SSOIssuer: "https://idp.test", SSOSubject: "dave-subject",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := admin.do(t, h.internal, http.MethodDelete, "/api/v1/users/"+orphan.ID+"/sso", nil, nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unlinking a password-less account returned %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if message, _ := decodeBody(t, rec)["error"].(map[string]any)["message"].(string); !strings.Contains(message, "password") {
+		t.Errorf("the refusal does not say what to do: %q", message)
 	}
 }

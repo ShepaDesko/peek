@@ -513,6 +513,8 @@ const fr = {
   "orgs.record.name": "Nom",
   "orgs.record.value": "Valeur",
   "app.skip": "Aller au contenu",
+  "login.sso.error.wrong_organisation":
+    "Ce compte n'appartient pas à l'organisation que cette adresse dessert. Utilisez l'adresse de votre organisation.",
 } as const;
 
 type Key = keyof typeof fr;
@@ -1010,6 +1012,8 @@ const en: Record<Key, string> = {
   "orgs.record.name": "Name",
   "orgs.record.value": "Value",
   "app.skip": "Skip to content",
+  "login.sso.error.wrong_organisation":
+    "That account does not belong to the organisation this address serves. Use your own organisation's address.",
 };
 
 const dictionaries: Record<Lang, Record<Key, string>> = { fr, en };

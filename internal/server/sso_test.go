@@ -293,8 +293,16 @@ func (s *ssoHarness) signInThroughSSO(t *testing.T) (string, map[string]string) 
 // get issues a GET carrying the cookies collected so far, and collects any new
 // ones from the response.
 func (s *ssoHarness) get(t *testing.T, target string) *httptest.ResponseRecorder {
+	return s.getWithHost(t, target, "")
+}
+
+// getWithHost is get with a chosen Host, for the multi-organisation cases.
+func (s *ssoHarness) getWithHost(t *testing.T, target, host string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, target, nil)
+	if host != "" {
+		req.Host = host
+	}
 	req.RemoteAddr = "192.0.2.10:54321"
 	for name, value := range s.cookies {
 		req.AddCookie(&http.Cookie{Name: name, Value: value})
@@ -717,5 +725,90 @@ func TestSSODisabledSaysSo(t *testing.T) {
 	rec := do(t, h.internal, http.MethodGet, "/auth/sso", nil, nil)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("/auth/sso with nothing configured returned %d, want 404", rec.Code)
+	}
+}
+
+// TestSSOCompletesAnInvitation: an account invited by an administrator and
+// never activated is completed by its first sign-in through the directory. The
+// provider vouched for the address, which is at least as strong as the token
+// in the invitation e-mail — and leaving it "invited" would keep it in the
+// pending list for ever.
+func TestSSOCompletesAnInvitation(t *testing.T) {
+	h := newSSOHarness(t, func(sso *config.SSO) { sso.Provision = false })
+
+	if _, err := h.store.CreateUser(t.Context(), store.User{
+		Email: "alice@acme.test", DisplayName: "Alice", Role: store.RoleManager,
+		Status: store.UserInvited,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	target, cookies := h.signInThroughSSO(t)
+	if target != "/create" || cookies["peek_session"] == "" {
+		t.Fatalf("the invited account could not sign in: %q", target)
+	}
+	user, err := h.store.UserByEmail(t.Context(), store.DefaultOrgID, "alice@acme.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.Status != store.UserActive {
+		t.Errorf("status = %q after signing in, want active", user.Status)
+	}
+	if user.Role != store.RoleManager {
+		t.Errorf("role = %q, want the invited role to survive", user.Role)
+	}
+}
+
+// TestSSORefusesAnotherOrganisationsAddress: a working sign-in followed by a
+// wall on every API call is the worst way to say "wrong address".
+func TestSSORefusesAnotherOrganisationsAddress(t *testing.T) {
+	idp := newFakeIdP(t)
+	h := newHarness(t, func(cfg *config.Config) {
+		cfg.MultiOrg = true
+		cfg.SSO = config.SSO{
+			Enabled: true, Provider: "generic", Issuer: idp.issuer(),
+			ClientID: idp.clientID, ClientSecret: "a-client-secret",
+			Discovery: true, Provision: true, DefaultRole: store.RoleMember,
+		}
+	})
+	sso := &ssoHarness{harness: h, idp: idp, cookies: map[string]string{}}
+
+	// A second organisation with a verified domain of its own.
+	beta, err := h.store.CreateOrg(t.Context(), store.Org{Slug: "beta", Name: "Beta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.AddDomain(t.Context(), beta.ID, "secrets.beta.test", "tok-beta"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.MarkDomainVerified(t.Context(), "secrets.beta.test", h.store.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	// The account is provisioned into the default organisation on the
+	// instance's own address.
+	if target, _ := sso.signInThroughSSO(t); target != "/create" {
+		t.Fatalf("the first sign-in failed: %q", target)
+	}
+
+	// The same identity on beta's address is refused, by name.
+	fresh := &ssoHarness{harness: h, idp: idp, cookies: map[string]string{}}
+	rec := fresh.getWithHost(t, "/auth/sso", "secrets.beta.test")
+	if rec.Code != http.StatusFound {
+		t.Fatalf("/auth/sso on beta returned %d", rec.Code)
+	}
+	idpRec := httptest.NewRecorder()
+	idp.server.Config.Handler.ServeHTTP(idpRec,
+		httptest.NewRequest(http.MethodGet, rec.Header().Get("Location"), nil))
+	back, err := url.Parse(idpRec.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = fresh.getWithHost(t, back.Path+"?"+back.RawQuery, "secrets.beta.test")
+	if location := rec.Header().Get("Location"); !strings.Contains(location, "sso_error=wrong_organisation") {
+		t.Fatalf("the callback redirected to %q", location)
+	}
+	if fresh.cookies["peek_session"] != "" {
+		t.Error("a session was opened for an account of another organisation")
 	}
 }
