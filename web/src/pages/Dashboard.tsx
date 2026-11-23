@@ -92,11 +92,8 @@ export default function Dashboard({ t, lang }: Props) {
               type="button"
               aria-pressed={status === option.value}
               onClick={() => setStatus(option.value)}
-              className="peek-chip"
-              style={
-                status === option.value
-                  ? { background: "var(--peek-primary)", color: "var(--peek-on-primary)" }
-                  : undefined
+              className={
+                "peek-chip peek-toggle" + (status === option.value ? " peek-toggle-on" : "")
               }
             >
               {option.label}

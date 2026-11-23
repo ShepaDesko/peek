@@ -167,6 +167,12 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/* WCAG 2.4.1: the header carries a navigation bar, so there has to be
+          a way past it. Visible on focus only, which is the convention a
+          keyboard user expects. */}
+      <a href="#content" className="peek-skip">
+        {t("app.skip")}
+      </a>
       <header className="border-b" style={{ borderColor: "var(--peek-border)" }}>
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-3 px-4 py-4">
           <a href="/" className="flex items-center gap-2 font-semibold">
@@ -247,7 +253,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
+      <main id="content" className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         {cryptoReady ? null : (
           <Card className="mb-5">
             <Banner tone="danger" title={t("insecure.title")}>
@@ -385,11 +391,8 @@ function NavLink({ href, label, active }: { href: string; label: string; active:
     <a
       href={href}
       aria-current={active ? "page" : undefined}
-      className="rounded-lg px-2.5 py-1.5 font-medium"
-      style={
-        active
-          ? { background: "var(--peek-primary-soft)", color: "var(--peek-primary)" }
-          : undefined
+      className={
+        "peek-toggle rounded-lg px-2.5 py-1.5 font-medium" + (active ? " peek-toggle-soft" : "")
       }
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey) return;

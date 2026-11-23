@@ -23,7 +23,25 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    // The account journey runs first, on its own, because its first test is
+    // the only one that can ever see a fresh instance: creating the first
+    // administrator is a one-time act, and the suite shares one database.
+    // Everything else depends on it rather than on filenames sorting the
+    // right way, which is how that dependency used to be expressed — and how
+    // it broke the moment a new spec file sorted before "accounts".
+    {
+      name: "accounts",
+      testMatch: /accounts\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "chromium",
+      dependencies: ["accounts"],
+      testIgnore: /accounts\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
   webServer: {
     command: `node ./start-peek.mjs ${PORT}`,
     url: `${BASE_URL}/readyz`,

@@ -55,15 +55,9 @@ export default function Admin({ t, lang, me, onBrandChanged }: Props) {
                 type="button"
                 aria-selected={tab === item.id}
                 onClick={() => setTab(item.id)}
-                className="peek-btn peek-btn-ghost px-3 py-1.5 text-sm"
-                style={
-                  tab === item.id
-                    ? {
-                        background: "var(--peek-primary)",
-                        color: "var(--peek-on-primary)",
-                        borderColor: "transparent",
-                      }
-                    : undefined
+                className={
+                  "peek-btn peek-toggle px-3 py-1.5 text-sm " +
+                  (tab === item.id ? "peek-toggle-on" : "peek-btn-ghost")
                 }
               >
                 {item.label}

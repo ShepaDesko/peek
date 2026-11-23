@@ -422,11 +422,9 @@ export default function Create({ t, policy, policyError }: Props) {
                 type="button"
                 aria-pressed={kind === option}
                 onClick={() => setKind(option)}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium"
-                style={
-                  kind === option
-                    ? { background: "var(--peek-primary)", color: "var(--peek-on-primary)" }
-                    : undefined
+                className={
+                  "peek-btn peek-toggle px-3 py-1.5 text-sm " +
+                  (kind === option ? "peek-toggle-on" : "peek-btn-ghost")
                 }
               >
                 {t(

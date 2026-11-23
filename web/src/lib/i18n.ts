@@ -512,6 +512,7 @@ const fr = {
   "orgs.record.type": "Type",
   "orgs.record.name": "Nom",
   "orgs.record.value": "Valeur",
+  "app.skip": "Aller au contenu",
 } as const;
 
 type Key = keyof typeof fr;
@@ -1008,6 +1009,7 @@ const en: Record<Key, string> = {
   "orgs.record.type": "Type",
   "orgs.record.name": "Name",
   "orgs.record.value": "Value",
+  "app.skip": "Skip to content",
 };
 
 const dictionaries: Record<Lang, Record<Key, string>> = { fr, en };
