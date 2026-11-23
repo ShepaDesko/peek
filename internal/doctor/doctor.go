@@ -465,6 +465,20 @@ func checkACME(ctx context.Context, r *Report, cfg *config.Config) {
 		r.add("TLS", FAIL, "tls.mode = acme with no tls.acme_hosts")
 		return
 	}
+	// A host no public authority could sign is a service that will not start,
+	// so it is a FAIL here rather than a note further down.
+	impossible := false
+	for _, host := range hosts {
+		if problem := config.ACMEHostProblem(host); problem != "" {
+			r.add("TLS", FAIL, fmt.Sprintf("tls.acme_hosts: %q %s", host, problem),
+				"use tls.mode = \"file\" with a certificate you supply, or terminate TLS on the proxy")
+			impossible = true
+		}
+	}
+	if impossible {
+		return
+	}
+
 	r.add("TLS", OK, fmt.Sprintf("ACME for %s, challenge tls-alpn-01", strings.Join(hosts, ", ")),
 		"the TLS listener must be reachable on port 443 from the internet: "+
 			"tls-alpn-01 is answered on the same port, so nothing else needs publishing")

@@ -185,6 +185,38 @@ func TestLocalSignInAllowed(t *testing.T) {
 	}
 }
 
+// TestACMEHostProblem is the rule itself, in the one place that holds it.
+// peek config check, peek doctor and the server all read this function, which
+// is the point: doctor's own copy used to be missing the address case, so it
+// reported OK for a host the server then refused to start with.
+func TestACMEHostProblem(t *testing.T) {
+	for host, shouldRefuse := range map[string]bool{
+		"secrets.acme.com":     false,
+		"peek.sub.acme.co.uk":  false,
+		"xn--bcher-kva.com":    false, // a punycode name is a public name
+		"":                     true,
+		"192.0.2.10":           true,
+		"2001:db8::1":          true,
+		"localhost":            true,
+		"peek.localhost":       true,
+		"peek.local":           true,
+		"peek.internal":        true,
+		"secrets.acme.test":    true,
+		"secrets":              true,
+		"https://acme.com":     true,
+		"secrets.acme.com:443": true,
+		"secrets acme.com":     true,
+	} {
+		problem := config.ACMEHostProblem(host)
+		if shouldRefuse && problem == "" {
+			t.Errorf("%q was accepted; no public authority would sign it", host)
+		}
+		if !shouldRefuse && problem != "" {
+			t.Errorf("%q was refused: %s", host, problem)
+		}
+	}
+}
+
 func TestWebhookBackoffIsBounded(t *testing.T) {
 	// Attempt 0 and a huge attempt must both return something sane rather
 	// than panic on a slice index.

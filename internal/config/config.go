@@ -93,6 +93,32 @@ type TLS struct {
 	HSTSMaxAge int  `toml:"hsts_max_age"`
 }
 
+// ACMEHostProblem returns why a public certificate authority could never
+// issue for this host, or an empty string when it could.
+//
+// One function, three callers: peek config check, peek doctor and the server
+// at start. They used to carry three copies of the rule, and doctor's copy
+// was missing the address case — so it reported OK for a host the server
+// refused to start with, which is the opposite of what a diagnostic is for.
+func ACMEHostProblem(host string) string {
+	switch {
+	case strings.TrimSpace(host) == "":
+		return "is empty"
+	case strings.ContainsAny(host, ":/ "):
+		return "is not a hostname"
+	case host == "localhost" || strings.HasSuffix(host, ".localhost"),
+		strings.HasSuffix(host, ".local"), strings.HasSuffix(host, ".internal"),
+		strings.HasSuffix(host, ".test"), strings.HasSuffix(host, ".invalid"):
+		return "is a local name, which no public certificate authority will sign"
+	case net.ParseIP(host) != nil:
+		return "is an IP address, which no public certificate authority will sign"
+	case !strings.Contains(host, "."):
+		return "has no domain, so it cannot be a public name"
+	default:
+		return ""
+	}
+}
+
 // Database selects the backing store. SQLite is the default; PostgreSQL is for
 // multi-node deployments.
 type Database struct {
@@ -686,8 +712,8 @@ func (c *Config) Validate() error {
 			add("tls.mode = acme requires tls.acme_hosts")
 		}
 		for _, host := range c.TLS.ACMEHosts {
-			if host == "" || strings.ContainsAny(host, ":/ ") {
-				add("tls.acme_hosts: %q is not a hostname", host)
+			if problem := ACMEHostProblem(host); problem != "" {
+				add("tls.acme_hosts: %q %s. Use tls.mode = \"file\" for a private name or an address", host, problem)
 			}
 		}
 		if c.TLS.ACMEEmail == "" {

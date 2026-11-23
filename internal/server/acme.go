@@ -10,6 +10,8 @@ import (
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+
+	"github.com/ShepaDesko/peek/internal/config"
 )
 
 // Let's Encrypt, when Peek terminates TLS itself.
@@ -32,15 +34,12 @@ func (s *Server) acmeTLS() (*tls.Config, error) {
 		return nil, errors.New("tls.mode = acme requires tls.acme_hosts")
 	}
 	for _, host := range hosts {
-		// A certificate authority will not issue for an address or for a
-		// name nobody can resolve, and finding that out from a rate-limited
-		// authority is a bad way to learn it.
-		if host == "" || strings.ContainsAny(host, ":/ ") {
-			return nil, fmt.Errorf("tls.acme_hosts: %q is not a hostname", host)
-		}
-		if host == "localhost" || looksLikeAddress(host) {
-			return nil, fmt.Errorf("tls.acme_hosts: %q is an address or a local name; "+
-				"a public certificate authority cannot issue for it. Use tls.mode = \"file\"", host)
+		// A certificate authority will not issue for an address or a private
+		// name, and learning that from a rate-limited authority is a bad way
+		// to find out. The rule lives in the config package so that
+		// peek config check, peek doctor and this all agree.
+		if problem := config.ACMEHostProblem(host); problem != "" {
+			return nil, fmt.Errorf("tls.acme_hosts: %q %s. Use tls.mode = \"file\" instead", host, problem)
 		}
 	}
 
@@ -113,19 +112,4 @@ func orDefaultDirectory(url string) string {
 		return "Let's Encrypt production"
 	}
 	return url
-}
-
-// looksLikeAddress reports whether a host is an IP address rather than a name.
-// It is deliberately crude: anything with a colon, or made only of digits and
-// dots, is not a name a public certificate authority will sign.
-func looksLikeAddress(host string) bool {
-	if strings.Contains(host, ":") {
-		return true
-	}
-	for _, r := range host {
-		if (r < '0' || r > '9') && r != '.' {
-			return false
-		}
-	}
-	return true
 }

@@ -27,45 +27,11 @@ func tlsConfigFor(t *testing.T, tweak func(*config.Config)) (*tls.Config, error)
 	return h.srv.TLSConfigForTest()
 }
 
-// TestACMERefusesWhatCannotBeIssued covers the host lists that are valid TOML
-// and valid hostnames, so configuration validation lets them through, and
-// that a public certificate authority still cannot sign. The malformed ones —
-// a URL, a host with a port, an empty list — are refused by Validate, which
-// is the earlier and better place; TestACMEConfigurationIsValidated covers
-// those.
-func TestACMERefusesWhatCannotBeIssued(t *testing.T) {
-	cases := []struct {
-		name  string
-		hosts []string
-		want  string
-	}{
-		{"an IPv4 address", []string{"192.0.2.10"}, "address"},
-		{"localhost", []string{"localhost"}, "local name"},
-		{"a loopback address", []string{"127.0.0.1"}, "address"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := tlsConfigFor(t, func(cfg *config.Config) {
-				cfg.TLS = config.TLS{
-					Mode: "acme", ACMEHosts: tc.hosts,
-					ACMEEmail: "ops@acme.test", ACMEDir: t.TempDir(),
-				}
-			})
-			if err == nil {
-				t.Fatalf("%v was accepted; a public authority cannot issue for it", tc.hosts)
-			}
-			if !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("the message does not say why:\n%s", err.Error())
-			}
-		})
-	}
-}
-
 func TestACMEServesTheChallengeProtocol(t *testing.T) {
 	cache := t.TempDir()
 	cfg, err := tlsConfigFor(t, func(c *config.Config) {
 		c.TLS = config.TLS{
-			Mode: "acme", ACMEHosts: []string{"secrets.acme.test"},
+			Mode: "acme", ACMEHosts: []string{"secrets.acme.com"},
 			ACMEEmail: "ops@acme.test", ACMEDir: cache,
 		}
 	})
@@ -119,7 +85,7 @@ func TestACMECacheMustBeWritable(t *testing.T) {
 
 	_, err := tlsConfigFor(t, func(cfg *config.Config) {
 		cfg.TLS = config.TLS{
-			Mode: "acme", ACMEHosts: []string{"secrets.acme.test"},
+			Mode: "acme", ACMEHosts: []string{"secrets.acme.com"},
 			ACMEEmail: "ops@acme.test", ACMEDir: filepath.Join(blocker, "acme"),
 		}
 	})
@@ -153,7 +119,7 @@ func TestACMEConfigurationIsValidated(t *testing.T) {
 		cfg := config.Default()
 		cfg.PublicURL = "https://secrets.acme.test"
 		cfg.TLS = config.TLS{
-			Mode: "acme", ACMEHosts: []string{"secrets.acme.test"}, ACMEEmail: "ops@acme.test",
+			Mode: "acme", ACMEHosts: []string{"secrets.acme.com"}, ACMEEmail: "ops@acme.test",
 		}
 		return cfg
 	}
@@ -167,6 +133,12 @@ func TestACMEConfigurationIsValidated(t *testing.T) {
 		want  string
 	}{
 		{"no hosts", func(c *config.Config) { c.TLS.ACMEHosts = nil }, "acme_hosts"},
+		{"an address", func(c *config.Config) { c.TLS.ACMEHosts = []string{"192.0.2.10"} }, "IP address"},
+		{"localhost", func(c *config.Config) { c.TLS.ACMEHosts = []string{"localhost"} }, "local name"},
+		{"a test domain", func(c *config.Config) {
+			c.TLS.ACMEHosts = []string{"secrets.acme.test"}
+		}, "local name"},
+		{"a bare label", func(c *config.Config) { c.TLS.ACMEHosts = []string{"secrets"} }, "no domain"},
 		{"a URL as a host", func(c *config.Config) {
 			c.TLS.ACMEHosts = []string{"https://secrets.acme.test"}
 		}, "hostname"},
