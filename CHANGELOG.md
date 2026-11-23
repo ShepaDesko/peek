@@ -6,6 +6,14 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.0.1] - 2026-11-23
+
+A patch release on the same day as 1.0.0: the update path could install the
+wrong binary, and that is the path that has to be the most trustworthy of all.
+Nothing else changes.
+
 ### Fixed
 
 - `peek update` could install `peek-cli` over the server binary. A release
