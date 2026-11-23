@@ -180,6 +180,7 @@ make dev
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Organisation du code et parcours d'une requête |
 | [BRANDING.md](docs/BRANDING.md) | Mettre une instance aux couleurs d'un client |
 | [API.md](docs/API.md) | Les points d'entrée HTTP tels qu'implémentés |
+| [RELEASING.md](docs/RELEASING.md) | Couper une version, la clé de signature |
 | [DECISIONS.md](docs/DECISIONS.md) | Les décisions prises, et pourquoi |
 | [SECURITY.md](SECURITY.md) | Signaler une vulnérabilité |
 
