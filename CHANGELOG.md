@@ -6,7 +6,30 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `peek update` could install `peek-cli` over the server binary. A release
+  carries `peek-cli_<v>_<os>_<arch>.tar.gz` beside `peek_<v>_<os>_<arch>.tar.gz`
+  and the asset was matched on the suffix alone, so which one won depended on
+  the order the release source happened to list them in. The name must now also
+  start with `peek_`.
+- An entry larger than the extraction cap was copied up to the cap and
+  installed truncated, because `io.CopyN` stops at its limit without an error.
+  An oversized entry now refuses the update.
+- A JWKS entry of a key type Peek does not accept, found in the key cache,
+  failed later as "RS256 needs an RSA key" instead of naming the key type. The
+  cache path now refuses it the same way the fetch path already did.
+
+### Added
+
+- Tests for `internal/oidc` (76% of statements) and `internal/update` (78%),
+  the two packages that verify something on behalf of the operator and had
+  none. They assert the properties the documentation claims: no symmetric
+  algorithm and no `alg: none`, RSA below 2048 bits refused, an exact issuer
+  comparison, an ambiguous key set refused rather than tried in turn, the
+  Entra group overflow refused, a discovery document naming another issuer
+  refused, the PKCE verifier absent from the authorization URL, a signature
+  from an untrusted key refused, and a tampered checksum file refused.
 
 ## [1.0.0] - 2026-11-23
 

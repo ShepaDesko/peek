@@ -51,6 +51,12 @@ const PreviousBinaryPath = "/usr/lib/peek/peek.previous"
 // build does not know how to verify.
 var errUnsupportedSignature = errors.New("update: unsupported signature algorithm")
 
+// maxBinaryBytes caps what is extracted from a release archive. The budget for
+// the binary is sixty megabytes (see tools/budget), so this is generous by a
+// factor of four and still refuses an archive that is not a Peek release. It
+// is a variable only so a test can lower it.
+var maxBinaryBytes int64 = 256 << 20
+
 // Release is one available version.
 type Release struct {
 	Version    string    `json:"tag_name"`
@@ -159,11 +165,16 @@ func (c *Client) list(ctx context.Context) ([]Release, error) {
 
 // AssetFor returns the archive, checksum and signature assets for this host.
 func AssetFor(r *Release) (archive, checksums, signature *Asset, err error) {
-	suffix := fmt.Sprintf("%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	suffix := fmt.Sprintf("_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 	for i := range r.Assets {
 		a := &r.Assets[i]
 		switch {
-		case strings.HasSuffix(a.Name, suffix):
+		// The prefix matters as much as the suffix: a release carries
+		// peek-cli_<v>_<os>_<arch>.tar.gz beside the server archive, and the
+		// suffix alone matches both. Which one won depended on the order the
+		// release source happened to list them in, and installing the
+		// command-line client over the server is not a recoverable mistake.
+		case strings.HasPrefix(a.Name, "peek_") && strings.HasSuffix(a.Name, suffix):
 			archive = a
 		case strings.Contains(a.Name, "checksums") && strings.HasSuffix(a.Name, ".txt"):
 			checksums = a
@@ -384,12 +395,20 @@ func ExtractBinary(archivePath, destDir string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if _, err := io.CopyN(out, tr, 256<<20); err != nil && !errors.Is(err, io.EOF) {
+		written, err := io.CopyN(out, tr, maxBinaryBytes)
+		if err != nil && !errors.Is(err, io.EOF) {
 			_ = out.Close()
 			return "", err
 		}
 		if err := out.Close(); err != nil {
 			return "", err
+		}
+		// CopyN stops at the limit without an error, so an entry at or beyond
+		// the cap would be installed truncated — a binary that cannot run,
+		// swapped over one that could. Refuse the update instead.
+		if written >= maxBinaryBytes {
+			return "", fmt.Errorf("update: the binary in %s is at least %d bytes, which is not a Peek release",
+				filepath.Base(archivePath), maxBinaryBytes)
 		}
 		return dest, nil
 	}

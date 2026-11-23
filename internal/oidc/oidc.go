@@ -552,7 +552,18 @@ func (p *Provider) keyFor(ctx context.Context, kid, alg string) (any, error) {
 
 	keys, fresh := p.cachedKeys()
 	if key := pickKey(keys, kid, alg); key != nil {
-		return key.public()
+		pub, err := key.public()
+		if err != nil {
+			return nil, err
+		}
+		if pub == nil {
+			// A key type that is not accepted, found in the cache. The fetch
+			// path below refuses this by name; without the same check here a
+			// cached `oct` entry failed later as "RS256 needs an RSA key",
+			// which names the wrong problem to whoever reads the log.
+			return nil, fmt.Errorf("%w is signed with a key type Peek does not accept (%s)", ErrToken, key.Kty)
+		}
+		return pub, nil
 	}
 	if fresh && kid != "" && !p.mayRefetch() {
 		return nil, fmt.Errorf("%w names a signing key (%q) this provider has not published", ErrToken, kid)
