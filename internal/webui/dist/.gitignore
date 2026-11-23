@@ -1,5 +1,0 @@
-# Only this file is committed: the compiled interface is a build product.
-# make web-build fills this directory; go build works without it (a
-# placeholder page is served) because of the all: prefix on the embed.
-*
-!.gitignore

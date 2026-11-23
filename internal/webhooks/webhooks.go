@@ -236,11 +236,12 @@ func (d *Dispatcher) Close() error { return nil }
 // Deliverer drains the queue. The jobs runner owns one and calls Drain on a
 // ticker, under the cluster-wide job lock.
 type Deliverer struct {
-	byName  map[string]config.Webhook
-	clients map[string]*http.Client
-	store   *store.Store
-	log     *slog.Logger
-	agent   string
+	byName   map[string]config.Webhook
+	clients  map[string]*http.Client
+	store    *store.Store
+	log      *slog.Logger
+	agent    string
+	instance string
 }
 
 // NewDeliverer builds the sender. A broken ca_file is fatal: an operator who
@@ -248,11 +249,12 @@ type Deliverer struct {
 // silent downgrade.
 func NewDeliverer(cfg *config.Config, st *store.Store, log *slog.Logger, version string) (*Deliverer, error) {
 	d := &Deliverer{
-		byName:  map[string]config.Webhook{},
-		clients: map[string]*http.Client{},
-		store:   st,
-		log:     log,
-		agent:   "Peek/" + version + " (+webhook)",
+		byName:   map[string]config.Webhook{},
+		clients:  map[string]*http.Client{},
+		store:    st,
+		log:      log,
+		agent:    "Peek/" + version + " (+webhook)",
+		instance: cfg.PublicURL,
 	}
 	for _, hook := range cfg.Webhooks {
 		if hook.Disabled {
@@ -462,7 +464,7 @@ func (d *Deliverer) Ping(ctx context.Context, name string) (int, error) {
 		ID:       id,
 		Event:    PingEvent,
 		At:       time.Now().UTC(),
-		Instance: d.agent,
+		Instance: d.instance,
 		Org:      store.DefaultOrgID,
 		Detail:   map[string]string{"reason": "peek webhook test"},
 	})

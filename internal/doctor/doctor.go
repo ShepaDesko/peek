@@ -8,8 +8,10 @@ package doctor
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -130,6 +132,7 @@ func Run(ctx context.Context, opts Options) *Report {
 	}
 	r.add("configuration", OK, fmt.Sprintf("valid, public URL %s", cfg.PublicURL))
 
+	checkInstalledBinary(r)
 	checkMasterKey(r, cfg)
 	checkDirs(r, cfg)
 	checkStorage(ctx, r, cfg)
@@ -148,6 +151,80 @@ func Run(ctx context.Context, opts Options) *Report {
 		r.add("external reachability", SKIP, "run peek doctor --external to test the public URL from this host")
 	}
 	return r
+}
+
+// checkInstalledBinary warns when the host has more than one copy of peek and
+// they are not the same file.
+//
+// Found the hard way on a test host: an upgrade dropped a binary in
+// /usr/local/bin, which comes first in root's PATH, while systemd kept running
+// /usr/bin/peek from the package. Every command typed at the prompt was the
+// new version and the service was the old one, which made a configuration the
+// new binary accepted into a restart loop for the old one — with nothing in
+// the obvious places to explain it.
+func checkInstalledBinary(r *Report) {
+	type found struct {
+		path string
+		sum  string
+	}
+	var copies []found
+	for _, candidate := range []string{"/usr/bin/peek", "/usr/local/bin/peek", "/opt/peek/peek"} {
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		sum, err := fileDigest(candidate)
+		if err != nil {
+			continue
+		}
+		copies = append(copies, found{path: candidate, sum: sum})
+	}
+	switch {
+	case len(copies) == 0:
+		// Running from a build directory, which is normal in development.
+		if self, err := os.Executable(); err == nil {
+			r.add("installed binary", OK, self)
+		}
+		return
+	case len(copies) == 1:
+		r.add("installed binary", OK, copies[0].path)
+		return
+	}
+
+	same := true
+	for _, copy := range copies[1:] {
+		if copy.sum != copies[0].sum {
+			same = false
+			break
+		}
+	}
+	paths := make([]string, 0, len(copies))
+	for _, copy := range copies {
+		paths = append(paths, copy.path)
+	}
+	if same {
+		r.add("installed binary", OK, strings.Join(paths, " and ")+" (identical)")
+		return
+	}
+	r.add("installed binary", FAIL,
+		"this host has different versions of peek at "+strings.Join(paths, " and "),
+		"the service runs the one named in the unit file (usually /usr/bin/peek) while your "+
+			"shell runs whichever comes first in PATH. Remove the copy you did not install: "+
+			"systemctl cat peek | grep ExecStart")
+}
+
+// fileDigest hashes a file, for comparing two installed copies.
+func fileDigest(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec // a fixed list of installation paths
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func checkConfigFile(r *Report, path string) {

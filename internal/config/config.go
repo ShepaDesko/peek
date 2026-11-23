@@ -562,14 +562,51 @@ func Load(path string, allowMissing bool) (Config, error) {
 	dec := toml.NewDecoder(strings.NewReader(string(buf)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
-		var se *toml.StrictMissingError
-		if errors.As(err, &se) {
-			return cfg, fmt.Errorf("%s: unknown setting(s):\n%s", path, se.String())
-		}
-		return cfg, fmt.Errorf("%s: %w", path, err)
+		return cfg, decodeError(path, err)
 	}
 	cfg.applyEnv()
 	return cfg, cfg.Validate()
+}
+
+// decodeError turns a go-toml failure into a message that names the setting
+// and the line, and nothing else.
+//
+// This is not cosmetic. go-toml's String() renders a human-friendly excerpt of
+// the surrounding document, and it is the first thing one reaches for. On a
+// configuration file whose unknown setting happens to sit next to
+// mail.password, storage.s3_secret_key, backup.passphrase, sso.client_secret
+// or a webhook secret, that excerpt puts the credential in the message — which
+// goes to the terminal, to journald, and from there to whatever collects it.
+// Rule one of this project is that no secret reaches a log, and a crash loop
+// at boot is exactly when it would.
+func decodeError(path string, err error) error {
+	var missing *toml.StrictMissingError
+	if errors.As(err, &missing) {
+		lines := make([]string, 0, len(missing.Errors))
+		for i := range missing.Errors {
+			one := &missing.Errors[i]
+			row, _ := one.Position()
+			key := strings.Join(one.Key(), ".")
+			if key == "" {
+				key = "(unnamed)"
+			}
+			lines = append(lines, fmt.Sprintf("line %d: %s", row, key))
+		}
+		return fmt.Errorf("%s: unknown setting(s):\n  - %s\n"+
+			"check the spelling against docs/CONFIG.md; a setting Peek does not know is "+
+			"refused rather than ignored, so a typo cannot silently disable a protection",
+			path, strings.Join(lines, "\n  - "))
+	}
+	var decode *toml.DecodeError
+	if errors.As(err, &decode) {
+		row, column := decode.Position()
+		key := strings.Join(decode.Key(), ".")
+		if key != "" {
+			return fmt.Errorf("%s: line %d, column %d, setting %s: %w", path, row, column, key, err)
+		}
+		return fmt.Errorf("%s: line %d, column %d: %w", path, row, column, err)
+	}
+	return fmt.Errorf("%s: %w", path, err)
 }
 
 // applyEnv lets packaging and tests override a few values without rewriting
@@ -742,10 +779,134 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	c.validateSSO(add)
+	c.validateWebhooks(add)
+
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid configuration:\n  - %s", strings.Join(errs, "\n  - "))
 	}
 	return nil
+}
+
+// validateSSO refuses the combinations that would either not work or quietly
+// weaken the sign-in surface.
+func (c *Config) validateSSO(add func(string, ...any)) {
+	if !c.SSO.Enabled {
+		return
+	}
+	u, err := url.Parse(c.SSO.Issuer)
+	switch {
+	case c.SSO.Issuer == "" || err != nil || u.Scheme == "" || u.Host == "":
+		add("sso.issuer must be the provider's issuer URL, such as " +
+			"https://login.microsoftonline.com/<tenant-id>/v2.0")
+	case u.Scheme != "https" && !isLoopbackHost(u.Hostname()):
+		// An identity assertion over plain HTTP is an identity assertion
+		// anybody on the path can rewrite.
+		add("sso.issuer must be https (got %q)", c.SSO.Issuer)
+	}
+	if c.SSO.ClientID == "" {
+		add("sso.client_id is required")
+	}
+	if c.SSO.ClientSecret == "" {
+		add("sso.client_secret is required: Peek authenticates to the token endpoint as a confidential client")
+	}
+	if !c.SSO.Discovery {
+		for _, pair := range [][2]string{
+			{"sso.authorize_url", c.SSO.AuthorizeURL},
+			{"sso.token_url", c.SSO.TokenURL},
+			{"sso.jwks_url", c.SSO.JWKSURL},
+		} {
+			if pair[1] == "" {
+				add("%s is required when sso.discovery is false", pair[0])
+			}
+		}
+	}
+	switch c.SSO.Provider {
+	case "", "generic", "entra", "google", "keycloak", "authentik", "adfs":
+	default:
+		add("sso.provider must be generic, entra, google, keycloak, authentik or adfs (got %q)", c.SSO.Provider)
+	}
+	switch c.SSO.DefaultRole {
+	case "", "member", "manager", "auditor", "admin":
+	default:
+		add("sso.default_role must be member, manager, auditor or admin (got %q)", c.SSO.DefaultRole)
+	}
+	if c.SSO.RequireGroup && !c.SSO.MapsGroups() {
+		add("sso.require_group is set but no group is mapped to a role: nobody could sign in")
+	}
+	if c.SSO.Required && !c.SSO.Provision && !c.SSO.MapsGroups() {
+		add("sso.required with sso.provision = false needs accounts to exist already: " +
+			"create one with peek admin create first, or enable provisioning")
+	}
+	for _, domain := range c.SSO.AllowedDomains {
+		if domain == "" || strings.ContainsAny(domain, "@ ") {
+			add("sso.allowed_domains: %q must be a bare domain such as acme.com", domain)
+		}
+	}
+	for _, exempt := range c.SSO.PasswordExempt {
+		if !strings.Contains(exempt, "@") {
+			add("sso.password_exempt: %q must be an e-mail address", exempt)
+		}
+	}
+}
+
+// validateWebhooks checks each declared endpoint.
+func (c *Config) validateWebhooks(add func(string, ...any)) {
+	seen := map[string]bool{}
+	for i, hook := range c.Webhooks {
+		where := fmt.Sprintf("webhook[%d]", i)
+		if hook.Name == "" {
+			add("%s.name is required: the name is how the queue, the logs and peek webhook refer to it", where)
+		} else {
+			where = "webhook " + hook.Name
+			if seen[hook.Name] {
+				add("%s is declared twice", where)
+			}
+			seen[hook.Name] = true
+		}
+		u, err := url.Parse(hook.URL)
+		switch {
+		case hook.URL == "":
+			add("%s.url is required", where)
+		case err != nil || u.Host == "":
+			add("%s.url must be an absolute URL (got %q)", where, hook.URL)
+		case u.Scheme != "http" && u.Scheme != "https":
+			add("%s.url scheme must be http or https (got %q)", where, u.Scheme)
+		}
+		// An unsigned webhook is worse than none: the receiver has no way to
+		// tell Peek from anyone else who can reach it.
+		if len(hook.Secret) < 16 {
+			add("%s.secret must be at least 16 characters: it is the HMAC key the receiver verifies", where)
+		}
+		for _, event := range hook.Events {
+			if event == "*" {
+				continue
+			}
+			if area, name, ok := strings.Cut(event, "."); !ok || area == "" || name == "" {
+				add("%s.events: %q is not an event name such as secret.revealed", where, event)
+			}
+		}
+		if hook.MaxAttempts < 0 {
+			add("%s.max_attempts cannot be negative", where)
+		}
+		if hook.Timeout.Std() < 0 {
+			add("%s.timeout cannot be negative", where)
+		}
+		if hook.SkipVerify && hook.CAFile != "" {
+			add("%s: set either skip_tls_verify or ca_file, not both", where)
+		}
+	}
+}
+
+// isLoopbackHost allows a developer's provider on localhost through the https
+// requirement, and nothing else.
+func isLoopbackHost(host string) bool {
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
 }
 
 // Host returns the host[:port] part of the public URL.
