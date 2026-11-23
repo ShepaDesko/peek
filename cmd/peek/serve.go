@@ -16,6 +16,7 @@ import (
 	"github.com/ShepaDesko/peek/internal/server"
 	"github.com/ShepaDesko/peek/internal/storage"
 	"github.com/ShepaDesko/peek/internal/store"
+	"github.com/ShepaDesko/peek/internal/webhooks"
 )
 
 func runServe(ctx context.Context, args []string) error {
@@ -69,8 +70,19 @@ func runServe(ctx context.Context, args []string) error {
 		log.Info("e-mail enabled", "host", cfg.Mail.Host, "from", cfg.Mail.FromAddress)
 	}
 
+	// The audit trail goes to the database first, then to whatever else is
+	// configured. Syslog is one such copy; the webhook dispatcher is the
+	// other, and server.New attaches that one itself.
 	siem := audit.New(cfg.Audit.Syslog, log)
 	defer func() { _ = siem.Close() }()
+
+	hooks, err := webhooks.NewDeliverer(&cfg, st, log, version)
+	if err != nil {
+		return err
+	}
+	if hooks.Enabled() {
+		log.Info("webhooks enabled", "endpoints", hooks.Describe())
+	}
 
 	// File storage. A backend that cannot be opened is fatal rather than
 	// silently absent: an instance that accepts file secrets and drops them
@@ -82,20 +94,22 @@ func runServe(ctx context.Context, args []string) error {
 	log.Info("file storage ready", "backend", blobs.Describe())
 
 	srv, err := server.New(server.Options{
-		Config:  &cfg,
-		Logger:  log,
-		Store:   st,
-		Version: version,
-		Cipher:  cipher,
-		Mailer:  mailer,
-		SIEM:    siem,
-		Blobs:   blobs,
+		Config:   &cfg,
+		Logger:   log,
+		Store:    st,
+		Version:  version,
+		Cipher:   cipher,
+		Mailer:   mailer,
+		SIEM:     siem,
+		Blobs:    blobs,
+		Webhooks: hooks,
 	})
 	if err != nil {
 		return err
 	}
 
-	runner := jobs.New(&cfg, log, st, srv.Secrets(), srv.Requests())
+	runner := jobs.New(&cfg, log, st, srv.Secrets(), srv.Requests(), hooks)
+	log.Info("background jobs", "schedule", runner.Describe())
 
 	var wg sync.WaitGroup
 	wg.Add(1)

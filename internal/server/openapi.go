@@ -289,6 +289,34 @@ var operations = map[string]operation{
 		Description: "Version, driver, uptime and live secret count.",
 		Auth:        "session or token, administrator", ResponseRef: "Instance",
 	},
+	"GET /api/v1/webhooks": {
+		Summary: "Webhook endpoints and queue", Tag: "webhooks", Scope: store.ScopeInstanceRead, NoBody: true,
+		Description: "What is configured, how the signature is computed, and how many " +
+			"deliveries are owed, delivered or given up on. There is no call that *creates* " +
+			"an endpoint: a URL the API could set would turn this server into a request " +
+			"forwarder aimed at your own network, so endpoints live in `peek.toml`.",
+		Auth: "session or token, administrator", ResponseRef: "Webhooks",
+	},
+	"GET /api/v1/webhooks/deliveries": {
+		Summary: "The delivery queue", Tag: "webhooks", Scope: store.ScopeInstanceRead, NoBody: true,
+		Description: "Filter with `state` (pending, delivered, failed), `endpoint`, `event` " +
+			"and `limit`. The body of a delivery is not returned: it is the signed bytes, and " +
+			"it belongs to the receiver.",
+		Auth: "session or token, administrator", ResponseRef: "Deliveries",
+	},
+	"POST /api/v1/webhooks/{name}/test": {
+		Summary: "Send a test delivery", Tag: "webhooks", Session: true,
+		Description: "Sends one `peek.ping` synchronously and answers with what the receiver " +
+			"said, so the path can be proven without reading a real secret. Answers 200 with " +
+			"`ok: false` when the receiver refused: the call worked, the delivery did not.",
+		Auth: "session, administrator",
+	},
+	"POST /api/v1/webhooks/retry": {
+		Summary: "Requeue failed deliveries", Tag: "webhooks", Session: true,
+		Description: "With no body, every delivery that ran out of attempts goes back in the " +
+			"queue. `endpoint` narrows it to one; `id` to a single delivery.",
+		Auth: "session, administrator",
+	},
 	"GET /api/v1/branding/admin":            {Summary: "Brand as stored", Tag: "branding", NoBody: true, Session: true, Auth: "session, administrator"},
 	"PUT /api/v1/branding/admin":            {Summary: "Save the brand", Tag: "branding", Session: true, Auth: "session, administrator"},
 	"DELETE /api/v1/branding/admin":         {Summary: "Reset the brand", Tag: "branding", NoBody: true, Session: true, Auth: "session, administrator"},
@@ -385,6 +413,7 @@ func (s *Server) OpenAPI() (map[string]any, error) {
 			map[string]any{"name": "audit", "description": "The append-only trail."},
 			map[string]any{"name": "admin", "description": "Accounts and the instance."},
 			map[string]any{"name": "branding", "description": "White-labelling."},
+			map[string]any{"name": "webhooks", "description": "Outbound notifications."},
 		},
 		"components": map[string]any{
 			"securitySchemes": map[string]any{
@@ -494,15 +523,27 @@ func pathParameters(route string) []any {
 		}
 		name := strings.Trim(part, "{}")
 		schema := map[string]any{"type": "string"}
-		if name == "id" {
+		switch name {
+		case "id":
 			schema["pattern"] = "^[A-Za-z0-9_-]{22}$"
 			schema["description"] = "A public identifier: 128 random bits, base64url."
+		case "name":
+			schema["description"] = "The endpoint name from peek.toml."
+		case "kind":
+			schema["description"] = "Which asset: logo, logo_dark, favicon or email_logo."
 		}
 		params = append(params, map[string]any{
 			"name": name, "in": "path", "required": true, "schema": schema,
 		})
 	}
 	return params
+}
+
+// ref names a component schema. The coverage test resolves every one of these,
+// so a typo here is a failing test rather than a client generator that quietly
+// produces a half-typed model.
+func ref(name string) map[string]any {
+	return map[string]any{"$ref": "#/components/schemas/" + name}
 }
 
 func b64Field(description string) map[string]any {
@@ -852,6 +893,61 @@ func openAPISchemas() map[string]any {
 				"active_secrets":  map[string]any{"type": "integer"},
 				"multi_org":       map[string]any{"type": "boolean"},
 				"public_listener": map[string]any{"type": "boolean"},
+			},
+		},
+		"WebhookEndpoint": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name":         map[string]any{"type": "string"},
+				"url":          map[string]any{"type": "string"},
+				"events":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"max_attempts": map[string]any{"type": "integer", "description": "Including the first try."},
+				"timeout":      map[string]any{"type": "string"},
+				"disabled":     map[string]any{"type": "boolean"},
+				"insecure": map[string]any{"type": "boolean",
+					"description": "TLS verification is off for this endpoint."},
+			},
+		},
+		"Webhooks": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"endpoints": map[string]any{
+					"type": "array", "items": ref("WebhookEndpoint"),
+				},
+				"queue": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"pending":        map[string]any{"type": "integer"},
+						"delivered":      map[string]any{"type": "integer"},
+						"failed":         map[string]any{"type": "integer"},
+						"oldest_pending": map[string]any{"type": "string", "format": "date-time"},
+					},
+				},
+				"signature": map[string]any{
+					"type":        "object",
+					"description": "How to verify a delivery, so a receiver can be written from this response.",
+				},
+			},
+		},
+		"Delivery": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":              map[string]any{"type": "string", "description": "Repeated in X-Peek-Delivery."},
+				"endpoint":        map[string]any{"type": "string"},
+				"event":           map[string]any{"type": "string"},
+				"attempts":        map[string]any{"type": "integer"},
+				"next_attempt_at": map[string]any{"type": "string", "format": "date-time"},
+				"created_at":      map[string]any{"type": "string", "format": "date-time"},
+				"delivered_at":    map[string]any{"type": "string", "format": "date-time"},
+				"failed_at":       map[string]any{"type": "string", "format": "date-time"},
+				"last_status":     map[string]any{"type": "integer"},
+				"last_error":      map[string]any{"type": "string"},
+			},
+		},
+		"Deliveries": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"deliveries": map[string]any{"type": "array", "items": ref("Delivery")},
 			},
 		},
 	}

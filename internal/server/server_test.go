@@ -28,6 +28,7 @@ type harness struct {
 	public   http.Handler
 	cfg      *config.Config
 	blobs    *storage.Local
+	store    *store.Store
 }
 
 func newHarness(t *testing.T, tweak func(*config.Config)) *harness {
@@ -84,6 +85,7 @@ func newHarness(t *testing.T, tweak func(*config.Config)) *harness {
 		public:   srv.Handler("public"),
 		cfg:      &cfg,
 		blobs:    blobs,
+		store:    st,
 	}
 }
 

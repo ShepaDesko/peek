@@ -45,6 +45,11 @@ type Config struct {
 	Log      Log      `toml:"log"`
 	Branding Branding `toml:"branding"`
 	Backup   Backup   `toml:"backup"`
+
+	// Webhooks are declared as repeated [[webhook]] tables. They are
+	// operator-configured on purpose: a URL a user could set would turn the
+	// server into a request forwarder pointed at the operator's own network.
+	Webhooks []Webhook `toml:"webhook"`
 }
 
 // Server holds the listeners and the proxy trust configuration.
@@ -215,6 +220,96 @@ type Branding struct {
 	SupportURL    string `toml:"support_url"`
 	LegalURL      string `toml:"legal_url"`
 	PrivacyURL    string `toml:"privacy_url"`
+}
+
+// Webhook is one outbound notification endpoint.
+//
+// Peek never sends the content of a secret, a key or a passphrase: a delivery
+// carries the same facts as an audit entry, which is designed to be safe to
+// forward. It can still carry an e-mail address or an identifier, so point it
+// at somewhere you would be happy to see the audit trail.
+type Webhook struct {
+	// Name identifies the endpoint in the queue, the logs and the CLI. An
+	// operator who changes the URL keeps the queued events.
+	Name string `toml:"name"`
+	URL  string `toml:"url"`
+	// Secret is the HMAC-SHA256 key. Without one Peek refuses to start: an
+	// unsigned webhook is a notification anybody on the path can forge.
+	Secret string `toml:"secret"`
+	// Events is the subscription list. Empty means the four lifecycle events
+	// a sender usually cares about, not everything: an endpoint that receives
+	// the whole audit trail by accident is a privacy accident.
+	Events []string `toml:"events"`
+	// MaxAttempts counts the first try. The backoff is fixed: 30s, 2min,
+	// 10min, 1h, 6h, then the delivery is marked failed and kept for the
+	// operator to look at.
+	MaxAttempts int      `toml:"max_attempts"`
+	Timeout     Duration `toml:"timeout"`
+	// Disabled keeps the declaration in the file while silencing it.
+	Disabled bool `toml:"disabled"`
+	// SkipVerify accepts a self-signed certificate on the receiver. It is a
+	// real downgrade — the signature proves who sent the body, not who read
+	// it — so it is named as bluntly as mail.skip_tls_verify.
+	SkipVerify bool `toml:"skip_tls_verify"`
+	// CAFile pins the receiver's certificate authority, which is the right
+	// answer on an internal network instead of SkipVerify.
+	CAFile string `toml:"ca_file"`
+}
+
+// DefaultWebhookEvents is what an endpoint subscribes to when it says nothing:
+// the sender-facing lifecycle, as the brief puts it.
+var DefaultWebhookEvents = []string{
+	"secret.revealed",
+	"secret.expired",
+	"secret.burned",
+	"request.deposited",
+}
+
+// Subscribed reports whether this endpoint wants an event.
+func (w Webhook) Subscribed(event string) bool {
+	for _, want := range w.EventList() {
+		if want == event || want == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// EventList returns the configured events, or the default subscription.
+func (w Webhook) EventList() []string {
+	if len(w.Events) == 0 {
+		return DefaultWebhookEvents
+	}
+	return w.Events
+}
+
+// Attempts returns the attempt budget, defaulting to the length of the backoff
+// schedule plus the first try.
+func (w Webhook) Attempts() int {
+	if w.MaxAttempts <= 0 {
+		return 6
+	}
+	return w.MaxAttempts
+}
+
+// Backoff returns how long to wait before attempt n (1-based: attempt 1 has
+// already happened when this is called with n = 1).
+func WebhookBackoff(attempt int) time.Duration {
+	schedule := []time.Duration{
+		30 * time.Second,
+		2 * time.Minute,
+		10 * time.Minute,
+		time.Hour,
+		6 * time.Hour,
+	}
+	switch {
+	case attempt < 1:
+		return schedule[0]
+	case attempt > len(schedule):
+		return schedule[len(schedule)-1]
+	default:
+		return schedule[attempt-1]
+	}
 }
 
 // Backup configures the scheduled local backup.
@@ -547,6 +642,16 @@ func (c Config) Redacted() Config {
 	}
 	if c.Backup.Passphrase != "" {
 		c.Backup.Passphrase = "***"
+	}
+	if len(c.Webhooks) > 0 {
+		hooks := make([]Webhook, len(c.Webhooks))
+		copy(hooks, c.Webhooks)
+		for i := range hooks {
+			if hooks[i].Secret != "" {
+				hooks[i].Secret = "***"
+			}
+		}
+		c.Webhooks = hooks
 	}
 	return c
 }

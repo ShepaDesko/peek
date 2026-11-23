@@ -138,3 +138,15 @@ keep = 7
 # master key. With one, the archive is encrypted with age.
 passphrase = ""
 interval = "1d"
+
+# Outbound notifications. Repeat the table for each endpoint; remove it
+# entirely to send nothing. There is no way to add one over the API: a URL a
+# caller could set would make Peek fetch on their behalf, from inside this
+# network. See docs/CONFIG.md and docs/API.md.
+#
+# [[webhook]]
+# name    = "siem"
+# url     = "https://hooks.example.com/peek"
+# secret  = "a long random string, 16 characters minimum"
+# events  = ["secret.revealed", "secret.expired", "secret.burned", "request.deposited"]
+# # ca_file = "/etc/ssl/certs/internal-ca.pem"

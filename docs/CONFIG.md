@@ -191,6 +191,53 @@ See [BRANDING.md](BRANDING.md).
 | `passphrase` | empty | Set one: the archive is then encrypted with age. |
 | `interval` | `1d` | |
 
+## `[[webhook]]`
+
+Repeated. Each table declares one outbound endpoint.
+
+```toml
+[[webhook]]
+name    = "siem"
+url     = "https://hooks.example.com/peek"
+secret  = "a long random string, 16 characters minimum"
+events  = ["secret.revealed", "secret.expired", "secret.burned", "request.deposited"]
+
+[[webhook]]
+name     = "chat"
+url      = "http://mattermost.internal/hooks/xxxx"
+secret   = "another long random string"
+events   = ["*"]
+ca_file  = "/etc/ssl/certs/internal-ca.pem"
+```
+
+| Key | Default | What it does |
+|---|---|---|
+| `name` | required | How the queue, the logs and `peek webhook` refer to it. Change the URL and the queued events survive. |
+| `url` | required | `http` or `https`. |
+| `secret` | required, 16 characters minimum | The HMAC-SHA256 key the receiver verifies. An unsigned webhook is a notification anybody who can reach the receiver can forge. |
+| `events` | the four below | Audit event names, or `["*"]` for the whole trail. |
+| `max_attempts` | `6` | Counts the first try. |
+| `timeout` | `10s` | Per attempt. |
+| `disabled` | `false` | Keeps the declaration while silencing it. |
+| `skip_tls_verify` | `false` | A real downgrade: the signature proves who sent the body, not who read it. Prefer `ca_file`. |
+| `ca_file` | empty | Pin the receiver's authority. The right answer on an internal network. |
+
+The default subscription is the sender-facing lifecycle:
+`secret.revealed`, `secret.expired`, `secret.burned`, `request.deposited`.
+
+There is no API call that creates an endpoint, and there never will be: a URL
+a caller could set would make Peek fetch on their behalf, from inside the
+network they cannot reach. Endpoints live in this file.
+
+The body of a delivery is an audit entry. That trail is built never to contain
+a secret, a key, a passphrase or a URL fragment, so forwarding it is safe by
+construction — but it does carry identifiers and sometimes an e-mail address.
+Point a webhook somewhere you would be happy to see the audit trail.
+
+`docs/API.md` has the signature scheme and a receiver in twenty lines.
+`peek webhook list|test|queue|retry` inspects it from the host, and
+`peek doctor` warns when the queue stops draining.
+
 ## Environment overrides
 
 For packaging and tests, not for secrets: `PEEK_CONFIG`, `PEEK_PUBLIC_URL`,

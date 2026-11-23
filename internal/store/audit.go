@@ -42,6 +42,11 @@ const (
 	EventTestEmailSent   = "admin.test_email_sent"
 	EventUpdateApplied   = "admin.update_applied"
 
+	// Webhooks. The deliveries themselves are not audited — they would double
+	// the trail they carry — but an operator poking the queue is.
+	EventWebhookTested   = "admin.webhook_tested"
+	EventWebhookRequeued = "admin.webhook_requeued"
+
 	// Accounts and sessions.
 	EventLogin                  = "auth.login"
 	EventLoginFailed            = "auth.login_failed"

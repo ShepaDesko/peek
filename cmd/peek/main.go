@@ -10,6 +10,8 @@
 //	peek update|rollback       signed update, offline or online
 //	peek key rotate            rotate the server master key
 //	peek branding export|import
+//	peek token create|list|revoke
+//	peek webhook list|test|queue|retry
 //	peek version
 package main
 
@@ -17,11 +19,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/ShepaDesko/peek/internal/config"
+	"github.com/ShepaDesko/peek/internal/store"
 )
 
 // Build information, set by the linker in release builds (see .goreleaser.yaml).
@@ -61,6 +68,7 @@ func run() int {
 		{"branding", "export or import the brand", runBranding},
 		{"admin", "manage administrator accounts", runAdmin},
 		{"token", "issue, list and revoke API tokens", runToken},
+		{"webhook", "inspect, test and retry outbound notifications", runWebhook},
 		{"version", "print the version", runVersion},
 	}
 
@@ -148,4 +156,20 @@ func defaultConfigPath() string {
 // fail builds a user-facing error without a stack trace.
 func fail(format string, args ...any) error {
 	return fmt.Errorf(strings.TrimSpace(format), args...)
+}
+
+// openStore opens the database for a one-shot command and returns its closer.
+// Every CLI command that touches rows does the same three lines; this is them.
+func openStore(ctx context.Context, cfg *config.Config) (*store.Store, func(), error) {
+	st, err := store.Open(ctx, cfg.Database)
+	if err != nil {
+		return nil, nil, err
+	}
+	return st, func() { _ = st.Close() }, nil
+}
+
+// quietLogger is for commands that call into a package which logs: the command
+// prints its own result, and journald-shaped lines in a terminal are noise.
+func quietLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 }

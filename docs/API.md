@@ -506,6 +506,120 @@ GET /api/v1/instance
   "public_listener": true }
 ```
 
+## Webhooks
+
+Peek calls you when something happens to a secret. Endpoints are declared in
+`peek.toml` (see `docs/CONFIG.md`) and nowhere else — a URL the API could set
+would make the server fetch on a caller's behalf, from inside the network that
+caller cannot reach.
+
+### What arrives
+
+```http
+POST /your/endpoint
+Content-Type: application/json; charset=utf-8
+User-Agent: Peek/1.0.0 (+webhook)
+X-Peek-Event: secret.revealed
+X-Peek-Delivery: 9mJ2v7QpR1sT4uW8xY0zAb
+X-Peek-Timestamp: 1763894400
+X-Peek-Attempt: 1
+X-Peek-Signature: v1=4f1c…
+```
+
+```json
+{
+  "id": "9mJ2v7QpR1sT4uW8xY0zAb",
+  "event": "secret.revealed",
+  "at": "2026-11-23T10:00:00Z",
+  "instance": "https://secrets.acme.com",
+  "org": "default",
+  "secret_id": "KJh8s0LmNpQrStUvWxYz12",
+  "ip": "203.0.113.4",
+  "user_agent": "Mozilla/5.0 …",
+  "detail": { "views_left": "0" }
+}
+```
+
+The field set is fixed — `id`, `event`, `at`, `instance`, `org`, `secret_id`,
+`user_id`, `ip`, `user_agent`, `detail` — and a test fails if it changes, so
+adding one is a deliberate decision rather than an accident. Nothing else can
+leave the instance this way: no ciphertext, no key, no passphrase, no fragment.
+
+### Verifying a delivery
+
+The signature is `HMAC-SHA256` over `<X-Peek-Timestamp>.<raw body>`, keyed with
+the endpoint's `secret`, hex-encoded and prefixed `v1=`. The timestamp is
+inside the signed string, not only in the header, so a recorded delivery
+cannot be replayed with a fresh one.
+
+Compare in constant time, and refuse a timestamp more than a few minutes old.
+
+```python
+import hashlib, hmac, time
+from flask import Flask, request
+
+SECRET = b"a long random string"
+app = Flask(__name__)
+
+@app.post("/peek")
+def peek():
+    body = request.get_data()                      # the raw bytes, not the parsed JSON
+    ts = request.headers.get("X-Peek-Timestamp", "")
+    if abs(time.time() - int(ts or 0)) > 300:
+        return "stale", 400
+    want = "v1=" + hmac.new(SECRET, ts.encode() + b"." + body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(want, request.headers.get("X-Peek-Signature", "")):
+        return "bad signature", 401
+    # X-Peek-Delivery repeats for a retry: use it to be idempotent.
+    handle(request.get_json())
+    return "", 204
+```
+
+Receivers written in Go can import `internal/webhooks` and call
+`webhooks.Verify`.
+
+### Retries, and what the status code means
+
+Answer `2xx` and the delivery is done. Anything else is retried after 30
+seconds, 2 minutes, 10 minutes, 1 hour and 6 hours, then given up on and kept
+for the operator.
+
+`5xx`, `408`, `429` and a connection failure are temporary. **Any other `4xx`
+is permanent**: the receiver understood and refused, so retrying for six hours
+would only fill its logs. A `3xx` is refused outright — following it would send
+the signed body to a host nobody configured.
+
+Delivery is *at least once*: a receiver that times out after processing the
+body gets the same `X-Peek-Delivery` again. That identifier is how you make
+your side idempotent.
+
+### Watching the queue
+
+```http
+GET    /api/v1/webhooks                  # endpoints, queue counts, signature scheme
+GET    /api/v1/webhooks/deliveries       # ?state=pending|delivered|failed&endpoint=&event=&limit=
+POST   /api/v1/webhooks/{name}/test      # one peek.ping, synchronously
+POST   /api/v1/webhooks/retry            # {} | {"endpoint":"siem"} | {"id":"…"}
+```
+
+The two `GET`s take `instance:read`, so a monitoring script may poll them. The
+two `POST`s need a session: making the server call out is an administrator at a
+keyboard, not a token in a cron job. The listing never returns the body — those
+are the signed bytes, and they belong to the receiver.
+
+`POST /webhooks/{name}/test` answers `200` with `{"ok": false, "error": …}`
+when the receiver refuses: the call worked, the delivery did not, and the
+difference is what you are debugging.
+
+From the host, with the service stopped if need be:
+
+```bash
+sudo peek webhook list
+sudo peek webhook test siem
+sudo peek webhook queue --state failed
+sudo peek webhook retry --endpoint siem
+```
+
 ## The machine-readable description
 
 ```http

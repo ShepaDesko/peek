@@ -130,3 +130,55 @@ hands out a short-lived grant, stored hashed like every other token, and the
 blobs' expiry is pushed past the end of it. Keeping the secret row alive "just
 for the files" would have been the other option, and it would have meant a
 secret that is readable after it was supposed to be gone.
+
+### Webhook endpoints live in the configuration file, not in the API
+
+Every other product in this space lets a user add a webhook URL in the
+interface. Peek does not, and will not.
+
+An endpoint URL that a caller can set turns the server into a request
+forwarder: it will connect to anything reachable from where it runs, which on
+an on-premise installation is the customer's own network — the metadata
+service, the management interface of the hypervisor, an unauthenticated
+internal API. The usual mitigation is a blocklist of private ranges, and Peek
+is *installed in* those private ranges, so the blocklist would have to forbid
+exactly the hosts a legitimate webhook points at.
+
+So the vector is removed instead of filtered. Endpoints are `[[webhook]]`
+tables in `peek.toml`, which only root can write, and the API offers visibility
+and retries over that list and nothing else. The cost is real: adding an
+endpoint needs a configuration change and a restart. On a product whose whole
+claim is that it is safe to install inside a network, that is the right side of
+the trade.
+
+### A webhook body is an audit entry, and the field list is a test
+
+The payload could have been built per event, carrying whatever that event had
+to hand. Instead every delivery is the same ten fields, taken from the audit
+entry that triggered it.
+
+The audit trail is already built never to contain a secret, a key, a
+passphrase or a URL fragment — that is rule one of the project, enforced
+everywhere it is written. Reusing it means forwarding is safe *by
+construction* rather than by review: there is no path where a future event
+hands the dispatcher a field nobody thought about. A test asserts the exact
+field set, so adding one is a decision somebody has to make on purpose.
+
+### The delivery queue is a database table
+
+The obvious implementation is a goroutine with a channel and a retry loop. It
+fails twice. A restart during a retry window drops the event — and the events
+worth a webhook are the ones an operator is watching for. And a cluster of
+three nodes behind a load balancer sends three copies of everything, because
+each one saw the reveal.
+
+Rows in `webhook_deliveries` fix both. The drain is claimed with the same job
+lock as the purge, so one node at a time sends, which makes delivery
+at-least-once per cluster rather than once per node. The identifier in
+`X-Peek-Delivery` is how a receiver makes its own side idempotent; the
+documentation says so rather than claiming exactly-once, which no HTTP
+notification can honestly offer.
+
+Enqueueing is one small insert on the request path, next to the audit insert
+that is already there. Nothing in a handler waits on an outbound call: a
+receiver that hangs for thirty seconds cannot slow a reveal by a millisecond.

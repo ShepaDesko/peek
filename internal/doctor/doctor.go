@@ -137,6 +137,7 @@ func Run(ctx context.Context, opts Options) *Report {
 	checkTLS(r, cfg)
 	checkClock(r)
 	checkMail(r, cfg, opts.SendTestEmail)
+	checkWebhooks(ctx, r, cfg)
 
 	if opts.External {
 		checkExternal(ctx, r, cfg)
@@ -600,6 +601,60 @@ func certNames(leaf *x509.Certificate) string {
 // user tried to send their first file. A listing is the lightest request that
 // proves credentials, signature and reachability at once, and it writes
 // nothing.
+// checkWebhooks reports the configuration and, more usefully, the state of the
+// queue. A backlog whose oldest row keeps ageing is a receiver that is down,
+// and that is invisible from everywhere else: the deliveries are retried
+// quietly by design, so nothing fails loudly until an operator looks.
+func checkWebhooks(ctx context.Context, r *Report, cfg *config.Config) {
+	if len(cfg.Webhooks) == 0 {
+		r.add("webhooks", SKIP, "none configured")
+		return
+	}
+	var names []string
+	insecure := 0
+	for _, hook := range cfg.Webhooks {
+		label := hook.Name
+		if hook.Disabled {
+			label += " (disabled)"
+		}
+		if hook.SkipVerify {
+			insecure++
+		}
+		names = append(names, label)
+	}
+	line := fmt.Sprintf("%d endpoint(s): %s", len(cfg.Webhooks), strings.Join(names, ", "))
+	if insecure > 0 {
+		r.add("webhooks", WARN, line,
+			fmt.Sprintf("%d endpoint(s) have skip_tls_verify = true: the signature proves who sent the body, not who read it", insecure))
+	} else {
+		r.add("webhooks", OK, line)
+	}
+
+	st, err := store.Open(ctx, cfg.Database)
+	if err != nil {
+		// checkDatabase has already said so; do not say it twice.
+		return
+	}
+	defer func() { _ = st.Close() }()
+
+	stats, err := st.DeliveryStats(ctx)
+	if err != nil {
+		r.add("webhook queue", FAIL, err.Error())
+		return
+	}
+	line = fmt.Sprintf("%d pending, %d delivered, %d given up on", stats.Pending, stats.Delivered, stats.Failed)
+	switch {
+	case stats.Failed > 0:
+		r.add("webhook queue", WARN, line,
+			"peek webhook queue --state failed says why; peek webhook retry sends them again once the receiver is back")
+	case !stats.Oldest.IsZero() && time.Since(stats.Oldest) > time.Hour:
+		r.add("webhook queue", WARN, line+fmt.Sprintf(", oldest %s old", time.Since(stats.Oldest).Round(time.Minute)),
+			"a pending delivery older than an hour means the receiver is refusing or unreachable")
+	default:
+		r.add("webhook queue", OK, line)
+	}
+}
+
 func checkStorage(ctx context.Context, r *Report, cfg *config.Config) {
 	backend, err := storage.Open(cfg.Storage)
 	if err != nil {

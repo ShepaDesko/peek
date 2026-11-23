@@ -18,6 +18,7 @@ import (
 	"github.com/ShepaDesko/peek/internal/requests"
 	"github.com/ShepaDesko/peek/internal/secrets"
 	"github.com/ShepaDesko/peek/internal/store"
+	"github.com/ShepaDesko/peek/internal/webhooks"
 )
 
 // Runner owns the background tickers.
@@ -27,11 +28,16 @@ type Runner struct {
 	store    *store.Store
 	secrets  *secrets.Service
 	requests *requests.Service
+	hooks    *webhooks.Deliverer
 
 	// PurgeInterval defaults to one minute: an expired ciphertext should not
 	// outlive its expiry by more than that.
 	PurgeInterval time.Duration
 	AuditInterval time.Duration
+	// WebhookInterval is short: a notification that arrives a minute after the
+	// reveal is a notification nobody trusts. The tick costs one indexed query
+	// when the queue is empty.
+	WebhookInterval time.Duration
 
 	// holder identifies this node in the lock table.
 	holder string
@@ -39,20 +45,22 @@ type Runner struct {
 
 // New builds a Runner. The request service may be nil on a node that only
 // serves secrets; the request purge is then skipped rather than crashing.
-func New(cfg *config.Config, log *slog.Logger, st *store.Store, svc *secrets.Service, reqs *requests.Service) *Runner {
+func New(cfg *config.Config, log *slog.Logger, st *store.Store, svc *secrets.Service, reqs *requests.Service, hooks *webhooks.Deliverer) *Runner {
 	host, err := os.Hostname()
 	if err != nil || host == "" {
 		host = "node"
 	}
 	return &Runner{
-		cfg:           cfg,
-		log:           log,
-		store:         st,
-		secrets:       svc,
-		requests:      reqs,
-		PurgeInterval: time.Minute,
-		AuditInterval: time.Hour,
-		holder:        host + "/" + strconv.Itoa(os.Getpid()),
+		cfg:             cfg,
+		log:             log,
+		store:           st,
+		secrets:         svc,
+		requests:        reqs,
+		hooks:           hooks,
+		PurgeInterval:   time.Minute,
+		AuditInterval:   time.Hour,
+		WebhookInterval: 10 * time.Second,
+		holder:          host + "/" + strconv.Itoa(os.Getpid()),
 	}
 }
 
@@ -63,9 +71,13 @@ func (r *Runner) Run(ctx context.Context) {
 	defer purge.Stop()
 	defer audit.Stop()
 
+	hooks := newIdleTicker(r.WebhookInterval, r.hooks.Enabled())
+	defer hooks.Stop()
+
 	// Run once at start: a node that was down over an expiry window should not
 	// wait a full tick before cleaning up.
 	r.purgeOnce(ctx)
+	r.deliverWebhooks(ctx)
 
 	for {
 		select {
@@ -76,6 +88,8 @@ func (r *Runner) Run(ctx context.Context) {
 			r.purgeOnce(ctx)
 		case <-audit.C:
 			r.housekeeping(ctx)
+		case <-hooks.C:
+			r.deliverWebhooks(ctx)
 		}
 	}
 }
@@ -147,6 +161,36 @@ func (r *Runner) purgeRequests(ctx context.Context) {
 	}
 }
 
+// deliverWebhooks drains the delivery queue.
+//
+// The lease is shorter than the interval on purpose, as everywhere else here,
+// but it is also longer than one attempt can take: a node that dies mid-drain
+// must not leave the queue locked, and must not have two nodes sending the
+// same row at once either.
+func (r *Runner) deliverWebhooks(ctx context.Context) {
+	if !r.hooks.Enabled() {
+		return
+	}
+	if !r.claim(ctx, "webhooks", 2*time.Minute) {
+		return
+	}
+	sent, retried, failed := r.hooks.Drain(ctx, time.Now())
+	if sent > 0 || retried > 0 || failed > 0 {
+		r.log.Info("webhook queue drained", "sent", sent, "retried", retried, "failed", failed)
+	}
+}
+
+// newIdleTicker returns a ticker that never fires when the feature is off, so
+// an instance with no webhooks does not wake up every ten seconds.
+func newIdleTicker(every time.Duration, enabled bool) *time.Ticker {
+	if !enabled || every <= 0 {
+		t := time.NewTicker(time.Hour)
+		t.Stop()
+		return t
+	}
+	return time.NewTicker(every)
+}
+
 // housekeeping trims the audit trail and the shared rate-limit table.
 func (r *Runner) housekeeping(ctx context.Context) {
 	if !r.claim(ctx, "housekeeping", 30*time.Minute) {
@@ -155,6 +199,7 @@ func (r *Runner) housekeeping(ctx context.Context) {
 	r.trimAudit(ctx)
 	r.trimRateLimits(ctx)
 	r.trimSessions(ctx)
+	r.trimWebhookQueue(ctx)
 }
 
 func (r *Runner) trimAudit(ctx context.Context) {
@@ -194,8 +239,26 @@ func (r *Runner) trimSessions(ctx context.Context) {
 	}
 }
 
+func (r *Runner) trimWebhookQueue(ctx context.Context) {
+	if !r.hooks.Enabled() {
+		return
+	}
+	n, err := r.hooks.Purge(ctx, time.Now())
+	if err != nil {
+		r.log.Error("trim webhook queue", "error", err.Error())
+		return
+	}
+	if n > 0 {
+		r.log.Info("trimmed the webhook queue", "removed", n)
+	}
+}
+
 // Describe returns a line for the logs at startup.
 func (r *Runner) Describe() string {
-	return fmt.Sprintf("purge every %s, housekeeping every %s, as %s",
+	line := fmt.Sprintf("purge every %s, housekeeping every %s, as %s",
 		r.PurgeInterval, r.AuditInterval, r.holder)
+	if r.hooks.Enabled() {
+		line += fmt.Sprintf(", webhooks every %s", r.WebhookInterval)
+	}
+	return line
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/ShepaDesko/peek/internal/secrets"
 	"github.com/ShepaDesko/peek/internal/storage"
 	"github.com/ShepaDesko/peek/internal/store"
+	"github.com/ShepaDesko/peek/internal/webhooks"
 	"github.com/ShepaDesko/peek/internal/webui"
 )
 
@@ -59,6 +60,7 @@ type Server struct {
 	accounts *accounts.Service
 	mailer   mail.Sender
 	siem     audit.Forwarder
+	hooks    *webhooks.Deliverer
 	cipher   *pcrypto.ServerCipher
 
 	ui      *webui.Handler
@@ -88,6 +90,9 @@ type Options struct {
 	// Blobs stores encrypted attachments. Without one, file secrets are
 	// refused with a clear message rather than quietly dropped.
 	Blobs storage.Backend
+	// Webhooks sends the queued deliveries. The server only needs it to send
+	// a test ping; the queue itself is drained by the background job.
+	Webhooks *webhooks.Deliverer
 }
 
 // New builds a Server. It fails rather than start with a configuration whose
@@ -146,6 +151,19 @@ func New(opts Options) (*Server, error) {
 	s.siem = opts.SIEM
 	if s.siem == nil {
 		s.siem = audit.Nop{}
+	}
+	// A configured webhook fires because it is configured, not because a
+	// caller remembered to wire the dispatcher in. Queueing is attached here,
+	// in the one place that also writes the audit trail, so no entry point can
+	// end up with endpoints in peek.toml and a queue that stays empty.
+	if dispatcher := webhooks.NewDispatcher(opts.Config, opts.Store, log); dispatcher.Enabled() {
+		s.siem = audit.Multi{s.siem, dispatcher}
+	}
+	s.hooks = opts.Webhooks
+	if s.hooks == nil {
+		// A nil deliverer is a valid one: Enabled reports false and the
+		// webhook routes answer "nothing is configured".
+		s.hooks, _ = webhooks.NewDeliverer(opts.Config, opts.Store, log, opts.Version)
 	}
 	return s, nil
 }
@@ -320,7 +338,20 @@ func (s *Server) Handler(listener string) http.Handler {
 					instance.Use(s.requireRole(store.RoleAdmin))
 					instance.Use(s.requireScope(store.ScopeInstanceRead))
 					instance.Get("/instance", s.handleInstance)
+					// Reading the webhook queue is a monitoring job, so a
+					// token may do it. Declaring an endpoint is not an API
+					// operation at all: it lives in peek.toml.
+					instance.Get("/webhooks", s.handleWebhooks)
+					instance.Get("/webhooks/deliveries", s.handleWebhookDeliveries)
+				})
 
+				// Poking the queue makes the server call out. That is an
+				// administrator at a keyboard, not a script with a token.
+				admin.Group(func(hooks chi.Router) {
+					hooks.Use(s.requireSession)
+					hooks.Use(s.requireRole(store.RoleAdmin))
+					hooks.Post("/webhooks/{name}/test", s.handleWebhookTest)
+					hooks.Post("/webhooks/retry", s.handleWebhookRetry)
 				})
 
 				// Customisation. A manager runs the users; the brand of the

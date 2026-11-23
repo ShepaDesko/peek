@@ -433,6 +433,57 @@
         },
         "type": "object"
       },
+      "Deliveries": {
+        "properties": {
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/Delivery"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "Delivery": {
+        "properties": {
+          "attempts": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delivered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "failed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Repeated in X-Peek-Delivery.",
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "last_status": {
+            "type": "integer"
+          },
+          "next_attempt_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "Deposit": {
         "properties": {
           "files": {
@@ -1106,6 +1157,70 @@
           "token": {
             "description": "The claim token. Shown once; attaching needs it. base64url, unpadded.",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WebhookEndpoint": {
+        "properties": {
+          "disabled": {
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "insecure": {
+            "description": "TLS verification is off for this endpoint.",
+            "type": "boolean"
+          },
+          "max_attempts": {
+            "description": "Including the first try.",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Webhooks": {
+        "properties": {
+          "endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEndpoint"
+            },
+            "type": "array"
+          },
+          "queue": {
+            "properties": {
+              "delivered": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              },
+              "oldest_pending": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "pending": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "signature": {
+            "description": "How to verify a delivery, so a receiver can be written from this response.",
+            "type": "object"
           }
         },
         "type": "object"
@@ -2143,6 +2258,7 @@
           "name": "kind",
           "required": true,
           "schema": {
+            "description": "Which asset: logo, logo_dark, favicon or email_logo.",
             "type": "string"
           }
         }
@@ -3580,6 +3696,157 @@
         ]
       }
     },
+    "/api/v1/webhooks": {
+      "get": {
+        "description": "What is configured, how the signature is computed, and how many deliveries are owed, delivered or given up on. There is no call that *creates* an endpoint: a URL the API could set would turn this server into a request forwarder aimed at your own network, so endpoints live in `peek.toml`.\n\n**Authentication**: session or token, administrator.\n\n**Token scope**: `instance:read`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhooks"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "instance:read"
+            ]
+          }
+        ],
+        "summary": "Webhook endpoints and queue",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/deliveries": {
+      "get": {
+        "description": "Filter with `state` (pending, delivered, failed), `endpoint`, `event` and `limit`. The body of a delivery is not returned: it is the signed bytes, and it belongs to the receiver.\n\n**Authentication**: session or token, administrator.\n\n**Token scope**: `instance:read`.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deliveries"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": [
+              "instance:read"
+            ]
+          }
+        ],
+        "summary": "The delivery queue",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/retry": {
+      "post": {
+        "description": "With no body, every delivery that ran out of attempts goes back in the queue. `endpoint` narrows it to one; `id` to a single delivery.\n\n**Authentication**: session, administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Requeue failed deliveries",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{name}/test": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "name",
+          "required": true,
+          "schema": {
+            "description": "The endpoint name from peek.toml.",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Sends one `peek.ping` synchronously and answers with what the receiver said, so the path can be proven without reading a real secret. Answers 200 with `ok: false` when the receiver refused: the call worked, the delivery did not.\n\n**Authentication**: session, administrator.\n\n**Refuses API tokens**: this call needs a signed-in person.\n\nInternal listener only.",
+        "responses": {
+          "200": {
+            "description": "Success."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited; see `Retry-After`."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Send a test delivery",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
     "/branding.css": {
       "get": {
         "description": "The instance theme as CSS custom properties. Supports If-None-Match.\n\n**Authentication**: none.\n\nServed on both listeners.",
@@ -3633,6 +3900,7 @@
           "name": "kind",
           "required": true,
           "schema": {
+            "description": "Which asset: logo, logo_dark, favicon or email_logo.",
             "type": "string"
           }
         }
@@ -3771,6 +4039,10 @@
     {
       "description": "White-labelling.",
       "name": "branding"
+    },
+    {
+      "description": "Outbound notifications.",
+      "name": "webhooks"
     }
   ]
 }

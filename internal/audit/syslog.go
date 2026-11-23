@@ -311,3 +311,33 @@ func New(cfg config.Syslog, log *slog.Logger) Forwarder {
 		"address", cfg.Address, "protocol", cfg.Protocol)
 	return NewSyslog(cfg, log)
 }
+
+// Multi fans one event out to several forwarders.
+//
+// The database copy of the trail is written before any of this runs, so a
+// forwarder that fails takes nothing with it: Forward never returns an error
+// and Close reports the first one it met while still closing the rest.
+type Multi []Forwarder
+
+// Forward hands the event to every forwarder.
+func (m Multi) Forward(event store.AuditEvent) {
+	for _, f := range m {
+		if f != nil {
+			f.Forward(event)
+		}
+	}
+}
+
+// Close closes every forwarder and returns the first error.
+func (m Multi) Close() error {
+	var first error
+	for _, f := range m {
+		if f == nil {
+			continue
+		}
+		if err := f.Close(); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
