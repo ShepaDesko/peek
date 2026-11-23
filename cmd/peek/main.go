@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -174,4 +175,31 @@ func openStore(ctx context.Context, cfg *config.Config) (*store.Store, func(), e
 // prints its own result, and journald-shaped lines in a terminal are noise.
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+// parseFlags parses a flag set, allowing flags and positional arguments in any
+// order, and returns the positional ones.
+//
+// Go's flag package stops at the first non-flag argument, by design. That
+// makes `peek org create acme --config /etc/peek/other.toml` silently ignore
+// --config: "acme" ends the flags, and everything after it is a positional
+// argument nobody reads. It was found on a real host, where the command then
+// loaded the wrong configuration file and reported that the instance was
+// single-tenant.
+//
+// The loop below is the idiom the flag package documents for this: parse,
+// take one positional, parse what is left, until nothing is left.
+func parseFlags(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	rest := args
+	for {
+		if err := fs.Parse(rest); err != nil {
+			return nil, err
+		}
+		if fs.NArg() == 0 {
+			return positional, nil
+		}
+		positional = append(positional, fs.Arg(0))
+		rest = fs.Args()[1:]
+	}
 }

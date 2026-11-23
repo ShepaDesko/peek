@@ -35,7 +35,8 @@ func runWebhook(ctx context.Context, args []string) error {
 	endpoint := fs.String("endpoint", "", "limit to one endpoint")
 	id := fs.String("id", "", "a single delivery, for retry")
 	limit := fs.Int("limit", 30, "how many rows to show")
-	if err := fs.Parse(rest); err != nil {
+	positional, err := parseFlags(fs, rest)
+	if err != nil {
 		return err
 	}
 
@@ -48,7 +49,10 @@ func runWebhook(ctx context.Context, args []string) error {
 	case "list":
 		return webhookList(cfg)
 	case "test":
-		name := strings.TrimSpace(strings.Join(fs.Args(), " "))
+		name := ""
+		if len(positional) > 0 {
+			name = positional[0]
+		}
 		if name == "" && *endpoint != "" {
 			name = *endpoint
 		}

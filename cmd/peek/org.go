@@ -35,7 +35,8 @@ func runOrg(ctx context.Context, args []string) error {
 	name := fs.String("name", "", "display name")
 	status := fs.String("status", "", "active or suspended")
 	domain := fs.String("domain", "", "domain name")
-	if err := fs.Parse(rest); err != nil {
+	positional, err := parseFlags(fs, rest)
+	if err != nil {
 		return err
 	}
 
@@ -52,27 +53,30 @@ func runOrg(ctx context.Context, args []string) error {
 	svc := orgs.New(&cfg, st, quietLogger())
 	// A positional argument reads better than a flag for the common cases:
 	// peek org create acme, peek org domain-verify secrets.acme.com.
-	positional := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	first := ""
+	if len(positional) > 0 {
+		first = positional[0]
+	}
 
 	switch sub {
 	case "list":
 		return orgList(ctx, svc)
 	case "create":
-		return orgCreate(ctx, svc, firstSet(*slug, positional), *name)
+		return orgCreate(ctx, svc, firstSet(*slug, first), *name)
 	case "update":
-		return orgUpdate(ctx, svc, st, firstSet(*slug, positional), *name, *status)
+		return orgUpdate(ctx, svc, st, firstSet(*slug, first), *name, *status)
 	case "delete":
-		return orgDelete(ctx, svc, st, firstSet(*slug, positional))
+		return orgDelete(ctx, svc, st, firstSet(*slug, first))
 	case "domains":
-		return orgDomains(ctx, svc, st, firstSet(*slug, positional))
+		return orgDomains(ctx, svc, st, firstSet(*slug, first))
 	case "domain-add":
-		return orgDomainAdd(ctx, svc, st, *slug, firstSet(*domain, positional))
+		return orgDomainAdd(ctx, svc, st, *slug, firstSet(*domain, first))
 	case "domain-verify":
-		return orgDomainVerify(ctx, svc, firstSet(*domain, positional))
+		return orgDomainVerify(ctx, svc, firstSet(*domain, first))
 	case "domain-primary":
-		return orgDomainPrimary(ctx, svc, st, *slug, firstSet(*domain, positional))
+		return orgDomainPrimary(ctx, svc, st, *slug, firstSet(*domain, first))
 	case "domain-remove":
-		return orgDomainRemove(ctx, svc, st, *slug, firstSet(*domain, positional))
+		return orgDomainRemove(ctx, svc, st, *slug, firstSet(*domain, first))
 	default:
 		return fail("unknown subcommand %q", sub)
 	}

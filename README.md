@@ -142,6 +142,7 @@ make dev
 | [INSTALL.md](docs/INSTALL.md) | Installation, compte de service, première mise en route |
 | [CONFIG.md](docs/CONFIG.md) | Tous les réglages de `peek.toml` |
 | [REVERSE-PROXY.md](docs/REVERSE-PROXY.md) | Kemp, HAProxy, nginx, F5, Apache, Traefik, exposition directe |
+| [HIGH-AVAILABILITY.md](docs/HIGH-AVAILABILITY.md) | Plusieurs nœuds, PostgreSQL partagé, stockage partagé |
 | [UPGRADE.md](docs/UPGRADE.md) | Mises à jour, mise à jour hors ligne, retour arrière |
 | [BACKUP.md](docs/BACKUP.md) | Sauvegarde, restauration, contenu d'une archive |
 | [CRYPTO.md](docs/CRYPTO.md) | Le format v1, dérivation des clés, vecteurs de test |
