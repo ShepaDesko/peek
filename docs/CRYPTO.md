@@ -1,142 +1,151 @@
-# Cryptography — format v1
+# Cryptographie — format v1
 
-This document is the normative description of what Peek encrypts, where each
-key lives, and what the server is able to learn. Two implementations follow it
-— Go (`internal/crypto`, used by the server and `peek-cli`) and TypeScript
-(`web/src/crypto`, used by the browser) — and they are pinned together by
-shared test vectors that both must reproduce byte for byte.
+Ce document est la description normative de ce que Peek chiffre, de l'endroit où
+vit chaque clé, et de ce que le serveur est en mesure d'apprendre. Deux
+implémentations le suivent — Go (`internal/crypto`, utilisée par le serveur et
+`peek-cli`) et TypeScript (`web/src/crypto`, utilisée par le navigateur) — et
+elles sont tenues ensemble par des vecteurs de test partagés que les deux
+doivent reproduire octet pour octet.
 
 ## 1. Primitives
 
-| Purpose | Primitive |
+| À quoi | Primitive |
 |---|---|
-| Payload encryption | AES-256-GCM, 96-bit nonce, 128-bit tag |
-| Key derivation | HKDF-SHA256 (RFC 5869) |
-| Passphrase stretching | Argon2id, 19 456 KiB, 2 passes, 1 lane, 32-byte output |
-| Read-token digest | SHA-256 |
-| Randomness | `crypto/rand` (Go), `crypto.getRandomValues` (browser) |
+| Chiffrement de la charge utile | AES-256-GCM, nonce de 96 bits, tag de 128 bits |
+| Dérivation de clé | HKDF-SHA256 (RFC 5869) |
+| Étirement de passphrase | Argon2id, 19 456 Kio, 2 passes, 1 voie, sortie de 32 octets |
+| Empreinte du jeton de lecture | SHA-256 |
+| Aléa | `crypto/rand` (Go), `crypto.getRandomValues` (navigateur) |
 
-Argon2id runs as WebAssembly in the browser. Those parameters follow current
-OWASP guidance and stay usable on a mid-range phone (roughly 100–300 ms); they
-are stored per secret, so they can be raised later without breaking old links.
+Argon2id tourne en WebAssembly dans le navigateur. Ces paramètres suivent les
+recommandations actuelles de l'OWASP et restent utilisables sur un téléphone de
+milieu de gamme (de l'ordre de 100 à 300 ms) ; ils sont stockés par secret, ils
+peuvent donc être relevés plus tard sans casser les anciens liens.
 
-## 2. Values and where they live
+## 2. Les valeurs, et où elles vivent
 
-| Value | Size | Where it exists |
+| Valeur | Taille | Où elle existe |
 |---|---|---|
-| Content key `K` | 32 B | Generated in the browser; lives **only** in the URL fragment |
-| Passphrase | — | Only in the sender's and recipient's heads; never transmitted |
-| KDF salt | 16 B | Stored server side (public, useless alone) |
-| Final key | 32 B | Derived in the browser, never transmitted |
-| Encryption key | 32 B | Derived in the browser, never transmitted |
-| Read token | 32 B | Derived in the browser, sent **once** to prove possession |
-| `SHA-256(read token)` | 32 B | Stored server side |
-| Receipt token | 32 B | Generated in the browser, kept in the receipt URL fragment |
-| `SHA-256(receipt token)` | 32 B | Stored server side |
-| Ciphertext | n | Stored server side |
+| Clé de contenu `K` | 32 o | Engendrée dans le navigateur ; vit **uniquement** dans le fragment d'URL |
+| Passphrase | — | Seulement dans la tête de l'expéditeur et du destinataire ; jamais transmise |
+| Sel du KDF | 16 o | Stocké côté serveur (public, inutile seul) |
+| Clé finale | 32 o | Dérivée dans le navigateur, jamais transmise |
+| Clé de chiffrement | 32 o | Dérivée dans le navigateur, jamais transmise |
+| Jeton de lecture | 32 o | Dérivé dans le navigateur, envoyé **une fois** pour prouver la possession |
+| `SHA-256(jeton de lecture)` | 32 o | Stocké côté serveur |
+| Jeton d'accusé | 32 o | Engendré dans le navigateur, gardé dans le fragment de l'URL d'accusé |
+| `SHA-256(jeton d'accusé)` | 32 o | Stocké côté serveur |
+| Chiffré | n | Stocké côté serveur |
 
-A URL fragment (`#…`) is never sent in an HTTP request. Combined with
-`Referrer-Policy: no-referrer` and a CSP that forbids third-party origins, the
-key cannot leak to the server, to a proxy, or to another site.
+Un fragment d'URL (`#…`) n'est jamais envoyé dans une requête HTTP. Combiné à
+`Referrer-Policy: no-referrer` et à une CSP qui interdit les origines tierces,
+la clé ne peut pas fuiter vers le serveur, vers un proxy, ni vers un autre site.
 
-## 3. Derivation
+## 3. Dérivation
 
 ```
-A      = passphrase = ""  ?  (nothing)  :  Argon2id(passphrase, salt, m, t, p, 32)
-final  = HKDF-SHA256(ikm = K ‖ A, salt = salt, info = "peek-key-v1",  len = 32)
+A      = passphrase = ""  ?  (rien)  :  Argon2id(passphrase, sel, m, t, p, 32)
+final  = HKDF-SHA256(ikm = K ‖ A, salt = sel, info = "peek-key-v1",  len = 32)
 enc    = HKDF-Expand(final, info = "peek-enc-v1",  len = 32)
 token  = HKDF-Expand(final, info = "peek-read-v1", len = 32)
 stored = SHA-256(token)
 ```
 
-`HKDF-Expand` is the expand half alone, without a second extract. WebCrypto
-only exposes the combined form, so the browser implements extract and expand
-over HMAC-SHA256 directly — that is why `web/src/crypto/hkdf.ts` exists, and
-why the vectors cover it.
+`HKDF-Expand` est la moitié « expand » seule, sans second extract. WebCrypto
+n'expose que la forme combinée, le navigateur implémente donc extract et expand
+directement au-dessus de HMAC-SHA256 — c'est pour ça que
+`web/src/crypto/hkdf.ts` existe, et pour ça que les vecteurs le couvrent.
 
-## 4. Sealing
+## 4. Le scellement
 
 ```
 AAD   = "peek-v1|" ‖ secret_id
-blob  = nonce(12 random bytes) ‖ AES-256-GCM(enc, nonce, plaintext, AAD)
+blob  = nonce (12 octets aléatoires) ‖ AES-256-GCM(enc, nonce, clair, AAD)
 ```
 
-The public identifier is generated **by the client** (16 random bytes,
-base64url) and bound into the AAD, so a ciphertext cannot be moved from one
-identifier to another. The server rejects a duplicate identifier rather than
-overwriting.
+L'identifiant public est engendré **par le client** (16 octets aléatoires,
+base64url) et lié dans l'AAD : un chiffré ne peut donc pas être déplacé d'un
+identifiant à un autre. Le serveur refuse un identifiant en double plutôt que de
+l'écraser.
 
-The plaintext is a JSON payload; the kind, the sender's message and any file
-name are inside the ciphertext, never in metadata:
+Le clair est une charge utile JSON ; le type, le message de l'expéditeur et tout
+nom de fichier sont à l'intérieur du chiffré, jamais dans les métadonnées :
 
 ```json
 { "v": 1, "kind": "text", "text": "…", "message": "…" }
 ```
 
-## 5. Proof of possession before reveal
+## 5. La preuve de possession avant la révélation
 
-This is the step that makes the click-to-reveal guarantee real.
+C'est l'étape qui rend réelle la garantie du clic pour révéler.
 
-1. `GET /api/v1/secrets/{id}` returns public metadata only: whether a
-   passphrase is needed, the KDF parameters, the reads left, the expiry. **No
-   read is consumed**, which is why a link-preview bot (Teams, Slack, Outlook
-   Safe Links, a mail antivirus) costs nothing.
-2. The browser derives the read token and sends it to
+1. `GET /api/v1/secrets/{id}` ne retourne que des métadonnées publiques : s'il
+   faut une passphrase, les paramètres du KDF, les lectures restantes,
+   l'expiration. **Aucune lecture n'est consommée**, et c'est pour ça qu'un robot
+   d'aperçu de lien (Teams, Slack, Outlook Safe Links, un antivirus de
+   messagerie) ne coûte rien.
+2. Le navigateur dérive le jeton de lecture et l'envoie à
    `POST /api/v1/secrets/{id}/reveal`.
-3. The server compares `SHA-256(token)` with the stored digest **in constant
-   time**. On mismatch it increments a failure counter and returns 403 with the
-   attempts left; no read is spent and no ciphertext is released. After
-   `security.max_passphrase_attempts` failures the secret is destroyed.
-4. On match, within a single transaction, the server decrements the read
-   counter with a conditional `UPDATE … WHERE views_remaining > 0`, checks that
-   exactly one row changed — which is the proof this caller won the race — and
-   deletes the row when the last read is spent.
+3. Le serveur compare `SHA-256(token)` à l'empreinte stockée **en temps
+   constant**. En cas de non-correspondance, il incrémente un compteur d'échecs
+   et retourne 403 avec les essais restants ; aucune lecture n'est dépensée et
+   aucun chiffré n'est relâché. Après `security.max_passphrase_attempts` échecs,
+   le secret est détruit.
+4. En cas de correspondance, dans une seule transaction, le serveur décrémente
+   le compteur de lectures avec un `UPDATE … WHERE views_remaining > 0`
+   conditionnel, vérifie qu'exactement une ligne a changé — ce qui est la preuve
+   que cet appelant a gagné la course — et supprime la ligne quand la dernière
+   lecture est dépensée.
 
-Fifty simultaneous reads of a one-read secret therefore produce exactly one
-success. That property is tested at the store level and over HTTP
-(`internal/store/store_test.go`, `internal/server/server_test.go`).
+Cinquante lectures simultanées d'un secret à une lecture produisent donc
+exactement un succès. Cette propriété est testée au niveau du store et à travers
+HTTP (`internal/store/store_test.go`, `internal/server/server_test.go`).
 
-## 6. Files
+## 6. Les fichiers
 
-A file never reaches the server in the clear, and it is never held whole in a
-tab either: it is sealed chunk by chunk as it is read, and streamed out.
-
-```
-stream = header || chunk[0] || chunk[1] || … || chunk[n-1]
-header = "PEEKF1" || chunk size (uint32 BE) || nonce prefix (7 B)   = 17 bytes
-```
-
-The per-file key `F` is a fresh random 256 bits, carried **inside the sealed
-payload** of each recipient's secret — which is why one upload can serve ten
-links while the server learns nothing.
+Un fichier n'atteint jamais le serveur en clair, et il n'est jamais tenu en
+entier dans un onglet non plus : il est scellé morceau par morceau à mesure
+qu'il est lu, et envoyé en flux.
 
 ```
-file enc key = HKDF-Expand(F, "peek-file-v1", 32)
-nonce[i]     = nonce prefix || i (uint32 BE) || final flag (0x00 or 0x01)
-chunk[i]     = AES-256-GCM(file enc key, nonce[i], plaintext[i], AAD = header)
+flux   = en-tête || morceau[0] || morceau[1] || … || morceau[n-1]
+en-tête = "PEEKF1" || taille de morceau (uint32 BE) || préfixe de nonce (7 o) = 17 octets
 ```
 
-This is the STREAM construction (Rogaway & Hoang), the same shape `age` uses,
-and every part of it earns its place:
+La clé par fichier `F` est 256 bits aléatoires frais, portée **à l'intérieur de
+la charge utile scellée** du secret de chaque destinataire — c'est pour ça qu'un
+seul envoi peut servir dix liens sans que le serveur apprenne quoi que ce soit.
 
-- the **counter inside the nonce** authenticates order: swap two chunks and
-  neither opens, because each was sealed under the counter of its own position;
-- the **final flag** authenticates the end of the stream: a truncated file is
-  missing the chunk that carries it, so the reader refuses the whole thing
-  instead of handing back something shorter. Appending chunks fails the same
-  way;
-- the **header as AAD** binds the chunk size and the nonce prefix, so neither
-  can be rewritten in transit.
+```
+clé de chiffrement du fichier = HKDF-Expand(F, "peek-file-v1", 32)
+nonce[i]      = préfixe de nonce || i (uint32 BE) || drapeau de fin (0x00 ou 0x01)
+morceau[i]    = AES-256-GCM(clé du fichier, nonce[i], clair[i], AAD = en-tête)
+```
 
-Every chunk but the last is exactly `chunk size` bytes of plaintext (1 MiB by
-default). An empty file still produces one chunk, final and empty, so the
-stream of a zero-byte file is 33 bytes and not a special case anywhere.
+C'est la construction STREAM (Rogaway et Hoang), la même forme qu'utilise `age`,
+et chacune de ses parties gagne sa place :
 
-The encrypted length is therefore exact and known before the first byte is
-read — `17 + plaintext + 16 per chunk` — which is what lets the server check an
-announced upload size and sign a non-chunked S3 `PUT`.
+- le **compteur dans le nonce** authentifie l'ordre : échangez deux morceaux et
+  aucun des deux ne s'ouvre, parce que chacun a été scellé sous le compteur de sa
+  propre position ;
+- le **drapeau de fin** authentifie la fin du flux : un fichier tronqué est
+  privé du morceau qui le porte, le lecteur refuse donc le tout plutôt que de
+  rendre quelque chose de plus court. Ajouter des morceaux échoue de la même
+  façon ;
+- l'**en-tête en AAD** lie la taille de morceau et le préfixe de nonce : ni l'un
+  ni l'autre ne peut être réécrit en transit.
 
-Names and MIME types are **not** in the stream. They are in the payload:
+Chaque morceau sauf le dernier fait exactement `taille de morceau` octets de
+clair (1 Mio par défaut). Un fichier vide produit quand même un morceau, final
+et vide, si bien que le flux d'un fichier de zéro octet fait 33 octets et n'est
+un cas particulier nulle part.
+
+La longueur chiffrée est donc exacte et connue avant que le premier octet ne
+soit lu — `17 + clair + 16 par morceau` — et c'est ce qui permet au serveur de
+vérifier une taille d'envoi annoncée et de signer un `PUT` S3 non découpé.
+
+Les noms et les types MIME ne sont **pas** dans le flux. Ils sont dans la charge
+utile :
 
 ```json
 { "v": 1, "kind": "file", "message": "…",
@@ -144,117 +153,122 @@ Names and MIME types are **not** in the stream. They are in the payload:
                "size": 4096, "key": "<base64url(F)>", "chunk_size": 1048576 } ] }
 ```
 
-## 7. Secret requests
+## 7. Les demandes de secret
 
-A secret request inverts the usual direction: the person asking must be the
-only one who can read, and the person answering must not be able to read back
-what they deposited — nor must anyone who merely holds the request link.
+Une demande de secret inverse le sens habituel : celui qui demande doit être le
+seul à pouvoir lire, et celui qui répond ne doit pas pouvoir relire ce qu'il a
+déposé — ni personne qui détient simplement le lien de la demande.
 
-The requester generates a **P-256 key pair**. The public half is stored on the
-server so a deposit can be sealed to it; the private half never leaves the
-fragment of the requester's own tracking link. A separate symmetric **request
-key** `R` travels in the deposit link and plays exactly the role a content key
-plays for a secret: `HKDF` gives an encryption key that seals the prompt and a
-read token whose digest the server stores.
+Le demandeur engendre une **paire de clés P-256**. La moitié publique est
+stockée sur le serveur pour qu'un dépôt puisse lui être scellé ; la moitié privée
+ne quitte jamais le fragment du lien de suivi du demandeur. Une **clé de
+demande** symétrique `R`, séparée, voyage dans le lien de dépôt et joue
+exactement le rôle qu'une clé de contenu joue pour un secret : `HKDF` en donne
+une clé de chiffrement qui scelle l'intitulé, et un jeton de lecture dont le
+serveur stocke l'empreinte.
 
-A deposit is an ordinary v1 secret. What makes it a deposit is that its content
-key `K` is wrapped to the requester's public key with ECIES:
+Un dépôt est un secret v1 ordinaire. Ce qui en fait un dépôt, c'est que sa clé
+de contenu `K` est enveloppée vers la clé publique du demandeur avec ECIES :
 
 ```
-Z   = ECDH(ephemeral private, requester public)        // 32-byte X coordinate
-key = HKDF-SHA256(ikm = Z || ephemeral public || requester public,
+Z   = ECDH(privée éphémère, publique du demandeur)      // coordonnée X, 32 octets
+key = HKDF-SHA256(ikm = Z || publique éphémère || publique du demandeur,
                   salt = nil, info = "peek-request-v1")
-box = ephemeral public (65 B) || nonce (12 B) || AES-256-GCM(key, nonce, K,
-                                                 AAD = "peek-req-v1|" || request id)
+box = publique éphémère (65 o) || nonce (12 o) || AES-256-GCM(key, nonce, K,
+                                                 AAD = "peek-req-v1|" || id de la demande)
 ```
 
-Both public keys are in the IKM, so the derivation is bound to the exact pair
-involved: substituting another ephemeral key lands on different key material
-and the box no longer opens. The AAD binds the box to one request, so a deposit
-captured from one cannot be replayed into another.
+Les deux clés publiques sont dans l'IKM, la dérivation est donc liée à la paire
+exacte en jeu : substituer une autre clé éphémère tombe sur un autre matériel de
+clé et la boîte ne s'ouvre plus. L'AAD lie la boîte à une demande, un dépôt
+capturé sur l'une ne peut donc pas être rejoué dans une autre.
 
-**P-256 and not X25519.** X25519 only reached Safari and Firefox recently, and
-Peek runs in managed enterprise browsers that are routinely several versions
-behind; P-256 ECDH has been in every WebCrypto implementation for a decade.
-The trade is recorded in [DECISIONS.md](DECISIONS.md).
+**P-256 et non X25519.** X25519 n'est arrivé que récemment dans Safari et
+Firefox, et Peek tourne dans des navigateurs d'entreprise administrés qui ont
+couramment plusieurs versions de retard ; l'ECDH P-256 est dans chaque
+implémentation de WebCrypto depuis dix ans. L'arbitrage est consigné dans
+[DECISIONS.md](DECISIONS.md).
 
-**The public key travels in the link, never through the API.** This is the
-load-bearing part. A compromised server that could hand out its own public key
-would read every answer; a browser that only ever takes it from the fragment
-cannot be fooled that way. Nothing in the deposit page asks the server for a
-key.
+**La clé publique voyage dans le lien, jamais par l'API.** C'est la partie
+porteuse. Un serveur compromis qui pourrait distribuer sa propre clé publique
+lirait chaque réponse ; un navigateur qui ne la prend jamais que dans le fragment
+ne peut pas être trompé comme ça. Rien dans la page de dépôt ne demande une clé
+au serveur.
 
-Invalid points are refused on the way in, both when a request is created and
-when a link is parsed: feeding a point that is not on the curve into someone
-else's ECDH is a known attack, and it costs one check to close.
+Les points invalides sont refusés à l'entrée, à la création d'une demande comme
+à l'analyse d'un lien : donner un point qui n'est pas sur la courbe à l'ECDH de
+quelqu'un d'autre est une attaque connue, et il ne coûte qu'une vérification de
+la fermer.
 
-## 8. Link formats
+## 8. Les formats de lien
 
 ```
-recipient:  https://host/s/<id>#v1.<base64url(K)>
-sender:     https://host/r/<id>#v1.<base64url(K)>~<base64url(receipt token)>
-deposit:    https://host/q/<id>#v1q.<base64url(R || requester public key)>
-tracking:   https://host/qs/<id>#v1r.<base64url(private || public)>~<R>~<receipt token>
+destinataire : https://hôte/s/<id>#v1.<base64url(K)>
+expéditeur   : https://hôte/r/<id>#v1.<base64url(K)>~<base64url(jeton d'accusé)>
+dépôt        : https://hôte/q/<id>#v1q.<base64url(R || publique du demandeur)>
+suivi        : https://hôte/qs/<id>#v1r.<base64url(privée || publique)>~<R>~<jeton d'accusé>
 ```
 
-The sender's page holds both tokens: the content key, to rebuild the recipient
-link, and the receipt token, which authorises status checks and burning. Both
-stay in the fragment.
+La page de l'expéditeur détient les deux jetons : la clé de contenu, pour
+reconstruire le lien destinataire, et le jeton d'accusé, qui autorise les
+vérifications d'état et la destruction. Les deux restent dans le fragment.
 
-Each prefix is distinct — `v1`, `v1q`, `v1r` — so the three kinds can never be
-mistaken for one another: one is a symmetric key, one carries a public key, one
-carries a private key. Parsing the wrong kind fails rather than half-works, and
-a test asserts it on both sides.
+Chaque préfixe est distinct — `v1`, `v1q`, `v1r` — pour que les trois sortes ne
+puissent jamais être prises l'une pour l'autre : l'une est une clé symétrique,
+l'une porte une clé publique, l'une porte une clé privée. Analyser la mauvaise
+sorte échoue plutôt que de marcher à moitié, et un test l'affirme des deux côtés.
 
-The tracking link carries the private key of the request, which means losing it
-means losing the answers. The page says so in as many words; the server has no
-copy, by construction.
+Le lien de suivi porte la clé privée de la demande, ce qui veut dire que le
+perdre, c'est perdre les réponses. La page le dit en autant de mots ; le serveur
+n'en a pas de copie, par construction.
 
-## 9. What the server can and cannot do
+## 9. Ce que le serveur peut et ne peut pas
 
-**Cannot**: read a secret, recover a passphrase, brute-force a key (256-bit,
-uniformly random), prove which secret a given ciphertext belongs to without its
-identifier, or restore a secret once it is consumed.
+**Ne peut pas** : lire un secret, retrouver une passphrase, casser une clé par
+force brute (256 bits, uniformément aléatoires), prouver à quel secret
+appartient un chiffré donné sans son identifiant, ou restaurer un secret une
+fois consommé.
 
-**Can**, and this is deliberate: know that a secret exists, its size, when it
-was created, when it expires, how many reads remain, whether it carries a
-passphrase, and the IP addresses that interacted with it (subject to
+**Peut**, et c'est délibéré : savoir qu'un secret existe, sa taille, quand il a
+été créé, quand il expire, combien de lectures restent, s'il porte une
+passphrase, et les adresses IP qui ont interagi avec lui (sous réserve de
 `security.anonymize_ips`).
 
-**A compromised server** can serve modified JavaScript to future visitors and
-capture what they type. Zero-knowledge protects data at rest and in transit, not
-a backend you no longer control. [THREAT-MODEL.md](THREAT-MODEL.md) says what
-to do about it.
+**Un serveur compromis** peut servir du JavaScript modifié aux visiteurs à venir
+et capturer ce qu'ils tapent. Le zero-knowledge protège les données au repos et
+en transit, pas un back-end que vous ne contrôlez plus.
+[THREAT-MODEL.md](THREAT-MODEL.md) dit quoi y faire.
 
-## 10. Test vectors
+## 10. Les vecteurs de test
 
-`crypto/vectors/v1.json` holds three families of cases, all with fixed inputs
-**and fixed expected outputs**:
+`crypto/vectors/v1.json` porte trois familles de cas, toutes avec des entrées
+fixes **et des sorties attendues fixes** :
 
-- **secrets** — without a passphrase, with a passphrase at the default
-  parameters, with a passphrase at cheap parameters, and an empty plaintext.
-  Each fixes the final key, the encryption key, the read token, its digest, the
-  sealed blob for a fixed nonce, and the fragment.
-- **files** — an empty file, a short one, one that is exactly one chunk (no
-  spurious trailing chunk), and one of several chunks plus a remainder. Each
-  fixes the derived key and the whole stream for a fixed nonce prefix. These
-  are the boundaries that get got wrong.
-- **secret requests** — a wrapped content key for a fixed key pair, ephemeral
-  key and nonce. The box is not reproducible from the TypeScript side without
-  the ephemeral private key, so the browser test opens what Go sealed instead:
-  one format, two implementations.
+- **secrets** — sans passphrase, avec une passphrase aux paramètres par défaut,
+  avec une passphrase à des paramètres bon marché, et un clair vide. Chacun fixe
+  la clé finale, la clé de chiffrement, le jeton de lecture, son empreinte, le
+  blob scellé pour un nonce fixe, et le fragment.
+- **fichiers** — un fichier vide, un court, un qui fait exactement un morceau
+  (sans morceau de fin parasite), et un de plusieurs morceaux plus un reste.
+  Chacun fixe la clé dérivée et le flux entier pour un préfixe de nonce fixe. Ce
+  sont les bornes qu'on se trompe à écrire.
+- **demandes de secret** — une clé de contenu enveloppée pour une paire de clés,
+  une clé éphémère et un nonce fixes. La boîte n'est pas reproductible depuis le
+  côté TypeScript sans la clé privée éphémère, le test du navigateur ouvre donc
+  ce que Go a scellé : un format, deux implémentations.
 
 ```bash
-go test ./internal/crypto/...      # Go reads the vectors
-npm run test --prefix web          # TypeScript reads the same file
-go run ./tools/genvectors          # regenerate; CI fails if the file changes
+go test ./internal/crypto/...      # Go lit les vecteurs
+npm run test --prefix web          # TypeScript lit le même fichier
+go run ./tools/genvectors          # les régénérer ; la CI échoue si le fichier change
 ```
 
-CI regenerates the vectors and fails on any diff: changing the format without
-bumping its version is caught before it ships.
+La CI régénère les vecteurs et échoue sur le moindre écart : changer le format
+sans incrémenter sa version est attrapé avant d'être livré.
 
-## 11. Changing the format
+## 11. Changer le format
 
-Version `v1` is frozen. A new format gets `v2`, a new set of `info` strings and
-its own vectors; `v1` stays readable so existing links keep working. The
-version prefixes every fragment, so a client always knows what it is holding.
+La version `v1` est gelée. Un nouveau format reçoit `v2`, un nouveau jeu de
+chaînes `info` et ses propres vecteurs ; `v1` reste lisible pour que les liens
+existants continuent de fonctionner. La version préfixe chaque fragment, un
+client sait donc toujours ce qu'il tient.

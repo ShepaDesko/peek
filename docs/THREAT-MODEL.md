@@ -1,125 +1,141 @@
-# Threat model
+# Modèle de menace
 
-This document says what Peek protects against, what it does not, and which
-decisions follow from that. It is meant to be read before a deployment, and
-quoted honestly to a customer who asks "so you can't read our secrets?".
+Ce document dit contre quoi Peek protège, contre quoi il ne protège pas, et
+quelles décisions en découlent. Il est fait pour être lu avant un déploiement,
+et cité honnêtement à un client qui demande « donc vous ne pouvez pas lire nos
+secrets ? ».
 
-## Assets
+## Ce qu'il y a à protéger
 
-1. The content of a secret — the thing everything else exists for.
-2. The passphrase, when one is used.
-3. Metadata: who shared what, with whom, when, from which address.
-4. The instance itself: availability, configuration, master key.
+1. Le contenu d'un secret — la chose pour laquelle tout le reste existe.
+2. La passphrase, quand il y en a une.
+3. Les métadonnées : qui a partagé quoi, avec qui, quand, depuis quelle
+   adresse.
+4. L'instance elle-même : disponibilité, configuration, clé maîtresse.
 
-## What an attacker can be
+## Qui peut être l'attaquant
 
-| Attacker | Capability |
+| Attaquant | Ce qu'il peut faire |
 |---|---|
-| A passer-by with the link | Has the URL, therefore the key. Treated as the recipient. |
-| A network observer | Sees TLS traffic. Sees no fragment: it is never sent. |
-| A link-preview bot | Fetches the page automatically (Teams, Slack, Outlook Safe Links, mail antivirus). |
-| A curious administrator of the host | Full access to the database, the files and the logs. |
-| A thief of a backup | Has the archive, including ciphertexts and the master key. |
-| An attacker on the network | Can reach the exposed listener and guess identifiers. |
-| An attacker who compromises the server | Can change the code Peek serves. |
+| Un passant qui a le lien | Il a l'URL, donc la clé. Traité comme le destinataire. |
+| Un observateur du réseau | Voit du trafic TLS. Ne voit aucun fragment : il n'est jamais envoyé. |
+| Un robot d'aperçu de lien | Charge la page automatiquement (Teams, Slack, Outlook Safe Links, antivirus de messagerie). |
+| Un administrateur curieux de la machine | Accès complet à la base, aux fichiers et aux logs. |
+| Un voleur de sauvegarde | A l'archive, donc les chiffrés et la clé maîtresse. |
+| Un attaquant sur le réseau | Peut atteindre l'écouteur exposé et deviner des identifiants. |
+| Un attaquant qui compromet le serveur | Peut modifier le code que Peek sert. |
 
-## What is protected
+## Ce qui est protégé
 
-**A stolen database tells an attacker nothing about content.** Every payload is
-AES-256-GCM with a key that never reaches the server. There is no key escrow,
-no recovery mechanism and no administrator override — on purpose.
+**Une base volée n'apprend rien sur le contenu.** Chaque charge utile est en
+AES-256-GCM avec une clé qui n'atteint jamais le serveur. Il n'y a pas de
+séquestre de clé, pas de mécanisme de récupération et pas de contournement
+administrateur — volontairement.
 
-**A link-preview bot never destroys a secret.** Fetching the page returns
-metadata only. Spending a read requires a POST carrying a token derived from
-the key, which a bot does not have. This is the click-to-reveal step, on by
-default and forceable by policy.
+**Un robot d'aperçu ne détruit jamais un secret.** Charger la page ne renvoie
+que des métadonnées. Consommer une lecture demande un POST portant un jeton
+dérivé de la clé, que le robot n'a pas. C'est l'étape « cliquer pour
+révéler », active par défaut et imposable par politique.
 
-**Guessing a passphrase costs the attacker, not the recipient.** A wrong
-passphrase produces a wrong read token, which is rejected before any read is
-spent. After `security.max_passphrase_attempts` failures the secret is
-destroyed. Guessing a 256-bit identifier is not practical, and guessing the key
-even less so.
+**Deviner une passphrase coûte à l'attaquant, pas au destinataire.** Une
+mauvaise passphrase produit un mauvais jeton de lecture, rejeté avant qu'aucune
+lecture ne soit consommée. Au-delà de `security.max_passphrase_attempts`
+échecs, le secret est détruit. Deviner un identifiant de 128 bits n'est pas
+praticable, et deviner la clé encore moins.
 
-**A read is spent exactly once.** The decrement is a conditional `UPDATE` in a
-transaction, checked by row count; fifty concurrent readers of a one-read
-secret produce exactly one success. Tested at both the store and the HTTP
-layer.
+**Une lecture est consommée exactement une fois.** Le décompte est un `UPDATE`
+conditionnel dans une transaction, contrôlé par le nombre de lignes ; cinquante
+lecteurs simultanés d'un secret à lecture unique produisent exactement un
+succès. Testé au niveau du store, au niveau HTTP, et à travers un répartiteur
+sur deux nœuds.
 
-**A consumed secret is gone.** The row is deleted inside the same transaction,
-not flagged. A per-minute job purges whatever expired. Only a tombstone (status
-and counters) and the audit trail remain, and neither holds content.
+**Un secret consommé a disparu.** La ligne est supprimée dans la même
+transaction, pas marquée. Une tâche passe chaque minute purger ce qui a expiré.
+Il ne reste qu'une pierre tombale (statut et compteurs) et le journal d'audit,
+et ni l'un ni l'autre ne contient de contenu.
 
-**The admin surface can be made unreachable from the internet.** Two listeners
-plus CIDR gates, and `peek doctor --external` verifies the result rather than
-trusting the configuration.
+**La surface d'administration peut être rendue injoignable depuis Internet.**
+Deux écouteurs plus des filtres CIDR, et `peek doctor --external` vérifie le
+résultat au lieu de faire confiance à la configuration.
 
-**A forged client IP does not work.** Forwarded headers are honoured only from
-declared proxies; everywhere else the peer address wins. Rate limits, gates and
-audit entries are therefore written against an address an attacker cannot
-choose.
+**Une IP client falsifiée ne marche pas.** Les en-têtes transférés ne sont
+honorés que depuis les proxys déclarés ; partout ailleurs l'adresse du pair
+gagne. Les limites de débit, les filtres et les entrées d'audit sont donc
+écrits contre une adresse que l'attaquant ne choisit pas.
 
-**Nothing leaves the host by default.** No CDN, no font service, no analytics,
-no telemetry. Outbound traffic happens only for SMTP, an IdP, webhooks and the
-update check — each of which you configure, and each of which can be off. Peek
-runs air-gapped.
+**Rien ne quitte la machine par défaut.** Pas de CDN, pas de service de
+polices, pas d'analytique, pas de télémétrie. Du trafic sortant, il n'y en a
+que pour SMTP, un fournisseur d'identité, les webhooks et la vérification de
+mise à jour — chacun que vous configurez, chacun désactivable. Peek fonctionne
+sur un réseau isolé.
 
-## What is not protected
+## Ce qui n'est pas protégé
 
-**A compromised server can serve modified JavaScript.** This is the structural
-limit of browser-side encryption, and no amount of design removes it: whoever
-controls the code the browser runs can capture what the browser sees. What Peek
-does about it: a strict CSP with no third-party origin and no inline script;
-hashed, immutable assets served from the binary; a hardened systemd unit with a
-read-only filesystem; and signed releases so the binary itself cannot be
-swapped unnoticed. What you should do about it: treat the host as a
-high-value system, keep it patched, watch the audit trail, and prefer a
-passphrase for genuinely sensitive material — it is never sent and therefore
-cannot be captured server-side without a *targeted* code change.
+**Un serveur compromis peut servir un JavaScript modifié.** C'est la limite
+structurelle du chiffrement côté navigateur, et aucune conception ne la
+supprime : qui contrôle le code que le navigateur exécute peut capturer ce que
+le navigateur voit. Ce que Peek fait malgré tout : une CSP stricte sans aucune
+origine tierce et sans script en ligne ; des assets immuables, empreintés,
+servis depuis le binaire ; une unité systemd durcie avec un système de fichiers
+en lecture seule ; et des releases signées pour que le binaire lui-même ne
+puisse pas être remplacé sans qu'on le voie. Ce que vous devez faire : traiter
+la machine comme un système à forte valeur, la tenir à jour, surveiller le
+journal d'audit, et préférer une passphrase pour du matériel réellement
+sensible — elle n'est jamais envoyée, et ne peut donc pas être capturée côté
+serveur sans une modification de code **ciblée**.
 
-**Whoever has the link has the secret.** The key is in the URL. A link shared
-in a group chat is a secret shared with that group. A passphrase on a second
-channel is the answer, which is why Peek never sends the passphrase by e-mail,
-even when it is sending the link.
+**Qui a le lien a le secret.** La clé est dans l'URL. Un lien partagé dans une
+conversation de groupe est un secret partagé avec ce groupe. La réponse est une
+passphrase sur un second canal, et c'est pourquoi Peek n'envoie jamais la
+passphrase par e-mail, même quand il envoie le lien.
 
-**The recipient's device is out of scope.** A revealed secret can be screenshot,
-copied, logged by a password manager or synced somewhere. Peek controls its own
-page: `no-store`, no browser cache, nothing written to local storage except a
-language and a theme preference.
+**L'appareil du destinataire est hors périmètre.** Un secret révélé peut être
+capturé en image, copié, journalisé par un gestionnaire de mots de passe ou
+synchronisé ailleurs. Peek contrôle sa propre page : `no-store`, aucun cache
+navigateur, rien d'écrit en stockage local sauf une langue et un thème.
 
-**Metadata is visible to the server, and that is the trade.** Existence,
-size, timings, reads and IP addresses are what make the audit trail, the
-expiry and the rate limiting work. `security.anonymize_ips` keeps only a /24 or
-/48 prefix; `security.audit_retention` bounds how long any of it is kept.
+**Les métadonnées sont visibles du serveur, et c'est le compromis.**
+L'existence, la taille, les horodatages, les lectures et les adresses IP sont
+ce qui fait fonctionner le journal d'audit, l'expiration et la limitation de
+débit. `security.anonymize_ips` ne garde qu'un préfixe /24 ou /48 ;
+`security.audit_retention` borne la durée de conservation.
 
-**A backup is as sensitive as the live database, plus the master key.** See
-[BACKUP.md](BACKUP.md): encrypt the archive, keep the retention short.
+**Une sauvegarde est aussi sensible que la base vivante, plus la clé
+maîtresse.** Voir [BACKUP.md](BACKUP.md) : chiffrez l'archive, gardez une
+rétention courte. `peek doctor` échoue quand les sauvegardes sont actives sans
+passphrase, parce que lire le répertoire de sauvegarde suffirait alors à
+prendre l'instance.
 
-**Denial of service is bounded, not eliminated.** Rate limits per real client
-IP, body size caps and timeouts raise the cost; sizing the pipe and the load
-balancer in front is still your job.
+**Le déni de service est borné, pas éliminé.** Les limites de débit par IP
+client réelle, les plafonds de taille de corps et les délais d'attente
+augmentent le coût ; dimensionner le lien et le répartiteur devant reste votre
+travail.
 
-**Plain HTTP breaks the product, not just its transport.** WebCrypto is only
-available in a secure context, so an instance served over `http://` on anything
-other than localhost cannot encrypt at all. The interface says so instead of
-failing obscurely, and `peek doctor` warns about an `http://` public URL.
+**Le HTTP simple casse le produit, pas seulement son transport.** WebCrypto
+n'est disponible que dans un contexte sécurisé : une instance servie en
+`http://` sur autre chose que localhost ne peut pas chiffrer du tout.
+L'interface le dit au lieu d'échouer obscurément, et `peek doctor` avertit
+pour une URL publique en `http://`.
 
-**An old browser may be unable to decrypt.** WebCrypto, WebAssembly and
-`'wasm-unsafe-eval'` support are required. The page says so rather than failing
-silently.
+**Un navigateur ancien peut être incapable de déchiffrer.** WebCrypto,
+WebAssembly et le support de `'wasm-unsafe-eval'` sont nécessaires. La page le
+dit plutôt que d'échouer en silence.
 
-## Decisions that follow
+## Les décisions qui en découlent
 
-| Decision | Reason |
+| Décision | Pourquoi |
 |---|---|
-| The key lives in the fragment, never in a query string | Query strings land in proxy and server logs |
-| `Referrer-Policy: no-referrer` everywhere | Stops the fragment-bearing URL leaking to another site |
-| Proof of possession before releasing a ciphertext | Lets a wrong passphrase, and a bot, cost nothing |
-| Identical answer for expired, consumed and unknown | A caller cannot enumerate what exists |
-| 404, not 403, from a CIDR gate | An unauthorised network learns nothing |
-| Creation disabled by default | An exposed instance is not an open relay on day one |
-| The release signature is verified by the updater, with the key in the binary | The update path does not depend on trusting a web server |
-| PostgreSQL and ACME refuse rather than approximate | A silent fallback would break the single-read guarantee, or serve plain HTTP |
+| La clé vit dans le fragment, jamais dans une chaîne de requête | Les chaînes de requête finissent dans les logs des proxys et des serveurs |
+| `Referrer-Policy: no-referrer` partout | Empêche l'URL porteuse du fragment de fuiter vers un autre site |
+| Preuve de possession avant de libérer un chiffré | Fait qu'une mauvaise passphrase, et un robot, ne coûtent rien |
+| Réponse identique pour expiré, consommé et inconnu | Un appelant ne peut pas énumérer ce qui existe |
+| 404, pas 403, depuis un filtre CIDR | Un réseau non autorisé n'apprend rien |
+| Création désactivée par défaut | Une instance exposée n'est pas un relais ouvert dès le premier jour |
+| La signature de release est vérifiée par le updater, avec la clé dans le binaire | Le chemin de mise à jour ne dépend pas de la confiance en un serveur web |
+| Les endpoints de webhook vivent dans `peek.toml`, pas dans l'API | Une URL que l'API pourrait fixer ferait du serveur un relais de requêtes pointé vers votre propre réseau |
+| Un domaine ne résout qu'après preuve par enregistrement DNS | Sinon n'importe qui pointant un nom sur l'instance porterait la marque d'un autre client |
+| Les fonctions à moitié faites refusent au lieu d'approximer | Un repli silencieux casserait la garantie de lecture unique, ou servirait du HTTP simple |
 
-## Reporting a problem
+## Signaler un problème
 
-See [SECURITY.md](../SECURITY.md).
+Voir [SECURITY.md](../SECURITY.md).

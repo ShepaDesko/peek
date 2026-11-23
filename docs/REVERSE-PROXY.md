@@ -1,17 +1,18 @@
-# Exposing Peek behind a load balancer
+# Exposer Peek derrière un répartiteur de charge
 
-The goal of this document is one outcome: **the recipient pages are reachable
-from the internet, and nothing else is**.
+Le but de ce document est un seul résultat : **les pages destinataire sont
+joignables depuis Internet, et rien d'autre ne l'est**.
 
-Peek gives you two independent mechanisms. Use both.
+Peek vous donne deux mécanismes indépendants. Utilisez les deux.
 
-1. **Two listeners.** `public_listen` serves recipient routes only;
-   `internal_listen` serves everything. Publish the first, keep the second on
-   the LAN. A routing mistake cannot expose administration, because the
-   internal-only routes are refused on the public listener regardless of path.
-2. **CIDR gates.** `security.admin_allowed_cidrs` and
-   `security.create_allowed_cidrs` check the **real** client IP and answer 404
-   — not 403 — so a scan learns nothing.
+1. **Deux écoutes.** `public_listen` ne sert que les routes destinataire ;
+   `internal_listen` sert tout. Publiez la première, gardez la seconde sur le
+   LAN. Une erreur de routage ne peut pas exposer l'administration, parce que
+   les routes réservées à l'interne sont refusées sur l'écoute publique quel que
+   soit le chemin.
+2. **Des filtres CIDR.** `security.admin_allowed_cidrs` et
+   `security.create_allowed_cidrs` contrôlent la **vraie** IP cliente et
+   répondent 404 — pas 403 — pour qu'un scan n'apprenne rien.
 
 ```toml
 public_url = "https://secrets.acme.com"
@@ -19,7 +20,7 @@ public_url = "https://secrets.acme.com"
 [server]
 internal_listen = "10.0.0.5:8080"
 public_listen   = "10.0.0.5:8081"
-# Forwarded headers are believed ONLY from these addresses.
+# Les en-têtes transmis ne sont crus QUE depuis ces adresses.
 trusted_proxies = ["10.0.0.10/32", "10.0.0.11/32"]
 
 [security]
@@ -27,29 +28,32 @@ admin_allowed_cidrs  = ["10.0.0.0/8", "192.168.0.0/16"]
 create_allowed_cidrs = ["10.0.0.0/8"]
 ```
 
-## HTTPS is required, not recommended
+## HTTPS est requis, pas recommandé
 
-Browsers expose WebCrypto only in a secure context, so an instance published
-over plain `http://` (other than `localhost`) cannot encrypt or decrypt
-anything. The interface detects it and says so rather than failing with a
-cryptic error, but the fix is always the same: publish `https://`.
+Les navigateurs n'exposent WebCrypto que dans un contexte sécurisé : une
+instance publiée en `http://` (autrement que sur `localhost`) ne peut donc rien
+chiffrer ni déchiffrer. L'interface le détecte et le dit, plutôt que d'échouer
+avec une erreur énigmatique, mais la correction est toujours la même : publier
+en `https://`.
 
-Every example below terminates TLS. If you are evaluating Peek on a laptop,
-`http://127.0.0.1:8080` works because localhost is a secure context.
+Chaque exemple ci-dessous termine le TLS. Si vous évaluez Peek sur un portable,
+`http://127.0.0.1:8080` fonctionne parce que localhost est un contexte
+sécurisé.
 
-## Why `trusted_proxies` matters
+## Pourquoi `trusted_proxies` compte
 
-Rate limits, CIDR gates and the audit trail are all written against the client
-IP. Peek therefore reads `X-Forwarded-For`, `Forwarded`, `X-Forwarded-Proto`
-and `X-Forwarded-Host` **only when the connection comes from a declared
-proxy**. From anywhere else those headers are ignored and the peer address is
-used. Leave the list empty and no header is ever believed.
+Les limites de débit, les filtres CIDR et le journal d'audit sont tous écrits
+contre l'IP cliente. Peek lit donc `X-Forwarded-For`, `Forwarded`,
+`X-Forwarded-Proto` et `X-Forwarded-Host` **seulement quand la connexion vient
+d'un proxy déclaré**. Depuis n'importe où ailleurs, ces en-têtes sont ignorés et
+l'adresse du pair est utilisée. Laissez la liste vide et aucun en-tête n'est
+jamais cru.
 
-Within a trusted chain Peek takes the rightmost address that is not itself a
-trusted proxy: the hops your proxy appended are trustworthy, whatever the
-client prepended is not.
+Au sein d'une chaîne de confiance, Peek prend l'adresse la plus à droite qui
+n'est pas elle-même un proxy de confiance : les sauts que votre proxy a ajoutés
+sont dignes de foi, ce que le client a mis devant ne l'est pas.
 
-Check it from the server:
+Vérifiez-le depuis le serveur :
 
 ```bash
 curl -s https://secrets.acme.com/api/v1/ip | jq
@@ -60,68 +64,71 @@ curl -s https://secrets.acme.com/api/v1/ip | jq
   "scheme": "https", "listener": "public", "trusted_peer": true }
 ```
 
-`client_ip` equal to the proxy address means the proxy is not forwarding the
-header; `trusted_peer: false` means the proxy is not in your list.
+Un `client_ip` égal à l'adresse du proxy veut dire que le proxy ne transmet pas
+l'en-tête ; `trusted_peer: false` veut dire que le proxy n'est pas dans votre
+liste.
 
 ---
 
 ## Kemp LoadMaster
 
-Peek is routinely deployed behind a Kemp, so this is the reference example.
+Peek est couramment déployé derrière un Kemp, c'est donc l'exemple de référence.
 
-### Virtual Service — SSL offload (most common)
+### Service virtuel — déchargement SSL (le cas le plus courant)
 
 1. **Virtual Services → Add New**
-   - Virtual Address: the public VIP
-   - Port: `443`, Protocol: `tcp`
-   - Service Name: `peek-public`
+   - Virtual Address : la VIP publique
+   - Port : `443`, Protocol : `tcp`
+   - Service Name : `peek-public`
 
 2. **SSL Properties**
-   - SSL Acceleration: **enabled**
-   - Reencrypt: off (plain HTTP to Peek) — see the next section to re-encrypt
-   - Certificates: the certificate for `secrets.acme.com`
-   - Supported Ciphers: an intermediate or better profile, TLS 1.2 minimum
+   - SSL Acceleration : **activé**
+   - Reencrypt : désactivé (HTTP en clair vers Peek) — voir la section suivante
+     pour rechiffrer
+   - Certificates : le certificat de `secrets.acme.com`
+   - Supported Ciphers : un profil intermédiaire ou mieux, TLS 1.2 au minimum
 
 3. **Standard Options**
-   - Transparency: **off** (Kemp then connects from its own address, which is
-     what `trusted_proxies` expects)
-   - Add HTTP Headers: **X-Forwarded-For** — this is required
-   - Persistence: **None**. Peek keeps no local session state, so sticky
-     sessions are unnecessary even with several nodes.
-   - Scheduling Method: `round robin` or `least connection`
+   - Transparency : **désactivée** (le Kemp se connecte alors depuis sa propre
+     adresse, ce qu'attend `trusted_proxies`)
+   - Add HTTP Headers : **X-Forwarded-For** — c'est obligatoire
+   - Persistence : **None**. Peek ne garde aucun état de session local, les
+     sessions collantes sont donc inutiles même avec plusieurs nœuds.
+   - Scheduling Method : `round robin` ou `least connection`
 
 4. **Real Servers**
-   - Add each Peek node on the **public** port: `10.0.0.5:8081`
-   - Real Server Check Method: `HTTPS/HTTP Protocol`
-   - URL: `/readyz`, HTTP Method: `GET`, expected status `200`
+   - Ajoutez chaque nœud Peek sur le port **public** : `10.0.0.5:8081`
+   - Real Server Check Method : `HTTPS/HTTP Protocol`
+   - URL : `/readyz`, HTTP Method : `GET`, statut attendu `200`
    - Check Interval 9 s, Timeout 5 s, Retry 2
 
-5. **ESP / content rules (optional, belt and braces)**
-   If you prefer a single listener, publish `internal_listen` and add a content
-   rule that drops `/api/v1/audit`, `/api/v1/instance`, `/api/v1/policy` and
-   `POST /api/v1/secrets`. The two-listener split is simpler and safer: prefer
-   it, and keep the rule as a second lock only.
+5. **ESP / règles de contenu (facultatif, ceinture et bretelles)**
+   Si vous préférez une seule écoute, publiez `internal_listen` et ajoutez une
+   règle de contenu qui jette `/api/v1/audit`, `/api/v1/instance`,
+   `/api/v1/policy` et `POST /api/v1/secrets`. La séparation en deux écoutes est
+   plus simple et plus sûre : préférez-la, et ne gardez la règle qu'en second
+   verrou.
 
-6. **Sub Virtual Service for administration (optional)**
-   Publish `internal_listen` on a VIP that is only reachable from the internal
-   network, with the same certificate.
+6. **Sous-service virtuel pour l'administration (facultatif)**
+   Publiez `internal_listen` sur une VIP qui n'est joignable que depuis le
+   réseau interne, avec le même certificat.
 
-Peek side:
+Côté Peek :
 
 ```toml
 public_url = "https://secrets.acme.com"
 [server]
 internal_listen = "10.0.0.5:8080"
 public_listen   = "10.0.0.5:8081"
-trusted_proxies = ["10.0.0.10/32"]      # the Kemp interface address
+trusted_proxies = ["10.0.0.10/32"]      # l'adresse de l'interface du Kemp
 [tls]
-mode = "none"                            # Kemp terminates TLS
-hsts = false                             # let the Kemp send HSTS, or set true here, not both
+mode = "none"                            # le Kemp termine le TLS
+hsts = false                             # laissez le Kemp envoyer HSTS, ou mettez true ici, pas les deux
 ```
 
-### Re-encryption (TLS all the way)
+### Rechiffrement (TLS de bout en bout)
 
-Enable **Reencrypt** on the Virtual Service, then on Peek:
+Activez **Reencrypt** sur le service virtuel, puis sur Peek :
 
 ```toml
 [tls]
@@ -131,22 +138,23 @@ key_file  = "/etc/peek/tls/privkey.pem"
 hsts      = true
 ```
 
-Point the Real Server check at `https://…/readyz`. An internal CA is fine; the
-Kemp must trust it.
+Pointez le contrôle du Real Server sur `https://…/readyz`. Une autorité de
+certification interne convient ; le Kemp doit lui faire confiance.
 
-### Layer 4 (PROXY protocol)
+### Couche 4 (protocole PROXY)
 
-If you forward TCP rather than HTTP, enable PROXY protocol on the Real Server
-and on Peek:
+Si vous transmettez du TCP plutôt que du HTTP, activez le protocole PROXY sur le
+Real Server et sur Peek :
 
 ```toml
 [server]
 proxy_protocol  = true
-trusted_proxies = ["10.0.0.10/32"]   # required: without it Peek refuses to start
+trusted_proxies = ["10.0.0.10/32"]   # obligatoire : sans ça, Peek refuse de démarrer
 ```
 
-Peek parses a PROXY header **only** from a trusted peer; anyone else gets their
-real address used, so the header cannot be forged.
+Peek n'analyse un en-tête PROXY **que** venant d'un pair de confiance ;
+n'importe qui d'autre voit sa vraie adresse utilisée, l'en-tête ne peut donc pas
+être forgé.
 
 ---
 
@@ -169,7 +177,7 @@ frontend peek_public
     bind :443 ssl crt /etc/haproxy/certs/secrets.acme.com.pem alpn h2,http/1.1
     http-request redirect scheme https unless { ssl_fc }
     http-response set-header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    # Never let a client inject its own chain.
+    # Ne jamais laisser un client injecter sa propre chaîne.
     http-request del-header X-Forwarded-For
     http-request set-header X-Forwarded-Proto https
     default_backend peek_recipients
@@ -178,11 +186,11 @@ backend peek_recipients
     balance roundrobin
     option httpchk GET /readyz
     http-check expect status 200
-    # Recipient listener only: administration is not reachable from here.
+    # Écoute destinataire uniquement : l'administration n'est pas joignable d'ici.
     server peek1 10.0.0.5:8081 check inter 5s fall 3 rise 2
     server peek2 10.0.0.6:8081 check inter 5s fall 3 rise 2
 
-# Internal VIP, reachable from the LAN only.
+# VIP interne, joignable depuis le LAN seulement.
 frontend peek_internal
     bind 10.0.0.2:8443 ssl crt /etc/haproxy/certs/secrets-internal.pem
     http-request del-header X-Forwarded-For
@@ -196,11 +204,11 @@ backend peek_admin
 
 ```toml
 [server]
-trusted_proxies = ["10.0.0.10/32"]   # the HAProxy address
+trusted_proxies = ["10.0.0.10/32"]   # l'adresse de HAProxy
 ```
 
-For layer 4, add `send-proxy-v2` to the `server` lines and set
-`proxy_protocol = true` in `peek.toml`.
+Pour la couche 4, ajoutez `send-proxy-v2` aux lignes `server` et mettez
+`proxy_protocol = true` dans `peek.toml`.
 
 ---
 
@@ -220,7 +228,7 @@ server {
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # Large encrypted uploads.
+    # De gros envois chiffrés.
     client_max_body_size 128m;
     proxy_request_buffering off;
     proxy_read_timeout 120s;
@@ -230,7 +238,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $remote_addr;   # not $proxy_add_x_forwarded_for: do not trust the client's chain
+        proxy_set_header X-Forwarded-For   $remote_addr;   # pas $proxy_add_x_forwarded_for : ne faites pas confiance à la chaîne du client
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host  $host;
     }
@@ -243,15 +251,16 @@ server {
 
 ## F5 BIG-IP
 
-- Virtual Server: `secrets.acme.com:443`, Client SSL profile with the
-  certificate, HTTP profile attached.
-- **X-Forwarded-For: Enabled** on the HTTP profile.
-- Pool: members on the **public** port `10.0.0.5:8081`.
-- Health monitor: HTTP, send string
-  `GET /readyz HTTP/1.1\r\nHost: secrets.acme.com\r\n\r\n`, receive string `200`.
-- SNAT: Auto Map. Peek then sees the SNAT address as the peer, so put that
-  address in `trusted_proxies`.
-- Persistence: none required.
+- Virtual Server : `secrets.acme.com:443`, profil Client SSL avec le
+  certificat, profil HTTP attaché.
+- **X-Forwarded-For : Enabled** sur le profil HTTP.
+- Pool : des membres sur le port **public** `10.0.0.5:8081`.
+- Moniteur de santé : HTTP, chaîne envoyée
+  `GET /readyz HTTP/1.1\r\nHost: secrets.acme.com\r\n\r\n`, chaîne attendue
+  `200`.
+- SNAT : Auto Map. Peek voit alors l'adresse de SNAT comme le pair, mettez donc
+  cette adresse dans `trusted_proxies`.
+- Persistance : aucune n'est nécessaire.
 
 ---
 
@@ -275,12 +284,13 @@ server {
 </VirtualHost>
 ```
 
-`mod_proxy_http` sets `X-Forwarded-For` to the real client address itself;
-unsetting it first stops a client-supplied chain being appended to.
+`mod_proxy_http` met lui-même `X-Forwarded-For` à la vraie adresse du client ;
+le retirer d'abord empêche qu'une chaîne fournie par le client se fasse
+compléter.
 
 ---
 
-## Traefik (file provider)
+## Traefik (fournisseur fichier)
 
 ```yaml
 http:
@@ -302,21 +312,21 @@ http:
           timeout: 3s
 ```
 
-Traefik sets the forwarded headers by default; add its address to
+Traefik pose les en-têtes transmis par défaut ; ajoutez son adresse à
 `trusted_proxies`.
 
 ---
 
-## Direct exposure with your own certificate
+## Exposition directe avec votre propre certificat
 
-No proxy at all:
+Sans aucun proxy :
 
 ```toml
 public_url = "https://secrets.acme.com"
 
 [server]
 internal_listen = "0.0.0.0:443"
-trusted_proxies = []          # nothing in front: never believe a header
+trusted_proxies = []          # rien devant : ne jamais croire un en-tête
 
 [tls]
 mode      = "file"
@@ -325,15 +335,16 @@ key_file  = "/etc/peek/tls/privkey.pem"
 hsts      = true
 ```
 
-Binding port 443 as an unprivileged service needs one capability — uncomment
-these two lines in `/usr/lib/systemd/system/peek.service`:
+Écouter sur le port 443 en tant que service non privilégié demande une
+capacité — décommentez ces deux lignes dans
+`/usr/lib/systemd/system/peek.service` :
 
 ```ini
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 ```
 
-Renew with certbot and reload:
+Renouvelez avec certbot et rechargez :
 
 ```bash
 certbot certonly --standalone -d secrets.acme.com \
@@ -344,29 +355,30 @@ certbot certonly --standalone -d secrets.acme.com \
     systemctl restart peek'
 ```
 
-Or let Peek do it: `tls.mode = "acme"` obtains and renews a Let's Encrypt
-certificate itself, over TLS-ALPN-01, so no port 80 and no certbot hook. It
-needs Peek to be the thing listening on 443 — see
-[`CONFIG.md`](CONFIG.md#acme-when-peek-is-the-only-thing-listening). Behind a
-proxy, the proxy owns the certificate and `tls.mode = "none"` is correct.
+Ou laissez Peek le faire : `tls.mode = "acme"` obtient et renouvelle lui-même un
+certificat Let's Encrypt, par TLS-ALPN-01, donc sans port 80 et sans hook
+certbot. Il faut que Peek soit ce qui écoute sur 443 — voir
+[`CONFIG.md`](CONFIG.md#acme-quand-peek-est-seul-à-écouter). Derrière un proxy,
+le proxy possède le certificat et `tls.mode = "none"` est la bonne réponse.
 
 ---
 
-## Verify, every time
+## Vérifier, chaque fois
 
 ```bash
 sudo peek doctor --external
 ```
 
-It checks that the public URL answers, that the certificate is valid and for
-how long, which client IP Peek resolves through the proxy, and — the one that
-matters — whether `/api/v1/audit` answers through the public URL. A `FAIL` on
-"admin surface" means administration is exposed: fix it before going live.
+Il vérifie que l'URL publique répond, que le certificat est valide et pour
+combien de temps, quelle IP cliente Peek résout à travers le proxy, et — celui
+qui compte — si `/api/v1/audit` répond à travers l'URL publique. Un `FAIL` sur
+« surface d'administration » veut dire que l'administration est exposée :
+corrigez avant la mise en service.
 
-Manual equivalents:
+Les équivalents à la main :
 
 ```bash
-curl -s  https://secrets.acme.com/api/v1/ip | jq        # resolved client IP
-curl -si https://secrets.acme.com/api/v1/audit | head -1 # must be 404
-curl -si https://secrets.acme.com/healthz | head -1      # must be 200
+curl -s  https://secrets.acme.com/api/v1/ip | jq        # l'IP cliente résolue
+curl -si https://secrets.acme.com/api/v1/audit | head -1 # doit être 404
+curl -si https://secrets.acme.com/healthz | head -1      # doit être 200
 ```

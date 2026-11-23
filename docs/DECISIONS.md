@@ -1,333 +1,358 @@
-# Decisions
+# Décisions
 
-The specification (section 14) listed ten questions to ask before starting, and
-said to apply the default and record it if no answer came. No answers were
-given, so every default was applied. They are recorded here with their
-consequences, and each can be revisited.
+Le cahier des charges (section 14) listait dix questions à poser avant de
+commencer, et disait d'appliquer la valeur par défaut et de la consigner si
+aucune réponse ne venait. Aucune réponse n'a été donnée, chaque défaut a donc
+été appliqué. Ils sont consignés ici avec leurs conséquences, et chacun peut
+être rouvert.
 
-## From section 14 of the specification
+## Venant de la section 14 du cahier des charges
 
-| # | Question | Decision | Consequence |
+| # | Question | Décision | Conséquence |
 |---|---|---|---|
-| 1 | Backend language | **Go** | One static binary, no runtime to install, native systemd deployment |
-| 2 | Default database | **SQLite**, PostgreSQL optional | Zero dependency for a single node; PostgreSQL lands with HA in M9 and currently refuses to start |
-| 3 | Repository visibility | **Private**, update URL configurable | Customers cannot pull GitHub releases without a token: set `update_url` to a mirror, or use `peek update --file` |
-| 4 | Licence | **Proprietary** | See `LICENSE`; redistribution needs written permission |
-| 5 | Distributions | **Debian 12/13, Ubuntu 22.04/24.04, Rocky/Alma 9** | `.deb` and `.rpm`, amd64 and arm64, install tested in CI |
-| 6 | SSO providers | **Entra ID + generic OIDC**, LDAP later | The `AuthProvider` interface is planned for M5; nothing is implemented yet |
-| 7 | Maximum file size | **100 MiB** | `policy.max_file_bytes`; file support itself is M7 |
-| 8 | Load balancers to document | **Kemp first, then HAProxy and nginx** | F5, Apache and Traefik are documented too |
-| 9 | Anonymous creation | **Disabled by default** | `security.anonymous_create`; an exposed instance is not an open relay out of the box |
-| 10 | Languages | **French and English** | French is the default; the visitor's choice is remembered |
+| 1 | Langage du serveur | **Go** | Un binaire statique, pas d'environnement d'exécution à installer, déploiement systemd natif |
+| 2 | Base par défaut | **SQLite**, PostgreSQL en option | Zéro dépendance pour un nœud unique ; PostgreSQL est arrivé avec la haute disponibilité en M9 et c'est ce qu'il faut dès qu'il y a plusieurs nœuds |
+| 3 | Visibilité du dépôt | **Privé**, URL de mise à jour configurable | Les clients ne peuvent pas récupérer les releases GitHub sans jeton : pointez `update_url` sur un miroir, ou utilisez `peek update --file` |
+| 4 | Licence | **Propriétaire** | Voir `LICENSE` ; la redistribution demande une autorisation écrite |
+| 5 | Distributions | **Debian 12/13, Ubuntu 22.04/24.04, Rocky/Alma 9** | `.deb` et `.rpm`, amd64 et arm64, installation testée dans la CI |
+| 6 | Fournisseurs SSO | **Entra ID + OIDC générique**, LDAP plus tard | Livré en M8 : code d'autorisation avec PKCE, sans bibliothèque OIDC |
+| 7 | Taille de fichier maximale | **100 Mio** | `policy.max_file_bytes` ; les pièces jointes elles-mêmes sont arrivées en M7 |
+| 8 | Répartiteurs à documenter | **Kemp d'abord, puis HAProxy et nginx** | F5, Apache et Traefik sont documentés aussi |
+| 9 | Création anonyme | **Désactivée par défaut** | `security.anonymous_create` ; une instance exposée n'est pas un relais ouvert à la sortie de la boîte |
+| 10 | Langues | **Français et anglais** | Le français est la langue par défaut ; le choix du visiteur est mémorisé |
 
-## Decisions taken while building
+## Décisions prises en construisant
 
-### The client generates the secret identifier
-
-The browser generates the 128-bit identifier and binds it into the AES-GCM
-additional data. A ciphertext therefore cannot be moved to another identifier,
-and the server rejects a duplicate instead of overwriting. Cost: a (vanishingly
-rare) collision has to be retried by the client.
-
-### The read token is a proof of possession, not a password
-
-The server stores `SHA-256(read token)` and compares in constant time before
-releasing anything. This is what makes "a preview bot spends no read" and "a
-wrong passphrase costs nothing" true at the same time, with one mechanism.
-
-### The receipt token is generated client side
-
-The sender's page is authorised by a random token whose hash alone is stored.
-No account is needed to follow or burn a secret, and the server cannot forge a
-receipt. Both tokens live in the fragment of the receipt URL.
-
-### A tombstone outlives the secret
-
-Deleting a secret writes a small row holding its status and counters — never
-content — so the sender's receipt page can still say "read" or "expired" after
-the data is gone.
-
-### HKDF is implemented by hand in the browser
-
-WebCrypto only exposes extract-then-expand, while the Go reference uses expand
-alone for sub-keys. The browser implements both halves over HMAC-SHA256 so the
-two sides are byte-identical, which the shared vectors check.
-
-### `wasm-unsafe-eval` is in the CSP
-
-Argon2id runs as WebAssembly, and `script-src 'self'` alone blocks WebAssembly
-compilation — found by running the real page in a real browser, not in review.
-`'wasm-unsafe-eval'` permits WebAssembly only; it allows neither `eval()` nor
-inline script, and `'unsafe-inline'` and `'unsafe-eval'` remain absent. A test
-asserts all three facts.
-
-### Fallback colours sit in a CSS layer
-
-The binary serves `/branding.css` unlayered, and the bundled stylesheet keeps
-its defaults in `@layer base`. Unlayered rules win over any layer, so an
-instance brand overrides the defaults without `!important` and without a
-rebuild.
-
-### Unfinished areas refuse loudly
-
-`database.driver = "postgres"` and `tls.mode = "acme"` return an explicit error
-naming the milestone instead of silently falling back. A silent fallback to
-SQLite across several nodes would break the single-read guarantee; a silent
-fallback from ACME would serve plain HTTP on a listener an operator believes is
-encrypted.
-
-### 404 rather than 403 on a network gate
-
-A caller from a disallowed network, or one probing an admin route on the public
-listener, gets the same answer as for a route that does not exist.
-
-### Handlers live in `internal/server`
-
-The specification sketched `internal/api` next to `internal/server`. Splitting
-HTTP handlers from the router they are mounted on would have added a package
-boundary and a shared helper package without separating anything meaningful.
-Business rules are in `internal/secrets`, data access in `internal/store`, and
-`internal/server` owns the HTTP surface.
-
-### Playwright drives the built binary
-
-The end-to-end suite starts the real binary with its embedded interface rather
-than a dev server, so what CI exercises is what ships.
-
-### P-256 for secret requests, not X25519
-
-The specification allowed either. X25519 only reached Safari and Firefox
-recently, and Peek is deployed in managed enterprise browsers that are
-routinely several versions behind the release channel; P-256 ECDH has been in
-every WebCrypto implementation for a decade. A key exchange that works
-everywhere beats a slightly nicer curve that fails for a tenth of the users
-with an error they cannot act on.
-
-A consequence worth knowing: WebCrypto cannot import a P-256 private key from
-the raw scalar alone — a JWK needs `x` and `y`, and support for a PKCS#8 key
-without its public half varies between browsers. So the tracking link carries
-both halves. It costs 65 bytes in a URL and removes a whole class of
-browser-specific failure.
-
-### No AWS SDK for the S3 backend
-
-Peek signs SigV4 itself and speaks the five S3 operations it needs. Two
-reasons, neither of them about the SDK's quality. It would add roughly ten
-megabytes to a binary with a sixty-megabyte budget. And its default credential
-chain probes the instance-metadata endpoint, which is an outbound call Peek
-promises not to make: credentials come from `peek.toml` and nowhere else.
-
-The signing code is about two hundred lines, and the test suite verifies it
-against an independent transcription of the specification, then against a real
-MinIO before each release.
-
-### A download grant, rather than keeping the secret alive
-
-The row of a one-read secret is deleted inside the transaction that consumes
-the last read. Without something else, a 100 MiB attachment would become
-unreachable at the instant it became readable. A successful reveal therefore
-hands out a short-lived grant, stored hashed like every other token, and the
-blobs' expiry is pushed past the end of it. Keeping the secret row alive "just
-for the files" would have been the other option, and it would have meant a
-secret that is readable after it was supposed to be gone.
-
-### Webhook endpoints live in the configuration file, not in the API
-
-Every other product in this space lets a user add a webhook URL in the
-interface. Peek does not, and will not.
-
-An endpoint URL that a caller can set turns the server into a request
-forwarder: it will connect to anything reachable from where it runs, which on
-an on-premise installation is the customer's own network — the metadata
-service, the management interface of the hypervisor, an unauthenticated
-internal API. The usual mitigation is a blocklist of private ranges, and Peek
-is *installed in* those private ranges, so the blocklist would have to forbid
-exactly the hosts a legitimate webhook points at.
-
-So the vector is removed instead of filtered. Endpoints are `[[webhook]]`
-tables in `peek.toml`, which only root can write, and the API offers visibility
-and retries over that list and nothing else. The cost is real: adding an
-endpoint needs a configuration change and a restart. On a product whose whole
-claim is that it is safe to install inside a network, that is the right side of
-the trade.
-
-### A webhook body is an audit entry, and the field list is a test
-
-The payload could have been built per event, carrying whatever that event had
-to hand. Instead every delivery is the same ten fields, taken from the audit
-entry that triggered it.
-
-The audit trail is already built never to contain a secret, a key, a
-passphrase or a URL fragment — that is rule one of the project, enforced
-everywhere it is written. Reusing it means forwarding is safe *by
-construction* rather than by review: there is no path where a future event
-hands the dispatcher a field nobody thought about. A test asserts the exact
-field set, so adding one is a decision somebody has to make on purpose.
-
-### The delivery queue is a database table
-
-The obvious implementation is a goroutine with a channel and a retry loop. It
-fails twice. A restart during a retry window drops the event — and the events
-worth a webhook are the ones an operator is watching for. And a cluster of
-three nodes behind a load balancer sends three copies of everything, because
-each one saw the reveal.
-
-Rows in `webhook_deliveries` fix both. The drain is claimed with the same job
-lock as the purge, so one node at a time sends, which makes delivery
-at-least-once per cluster rather than once per node. The identifier in
-`X-Peek-Delivery` is how a receiver makes its own side idempotent; the
-documentation says so rather than claiming exactly-once, which no HTTP
-notification can honestly offer.
-
-Enqueueing is one small insert on the request path, next to the audit insert
-that is already there. Nothing in a handler waits on an outbound call: a
-receiver that hangs for thirty seconds cannot slow a reveal by a millisecond.
-
-### Single sign-on is two browser routes, not an API dance
-
-`GET /auth/sso` answers a redirect to the provider; `GET /auth/sso/callback`
-comes back and sets the same session cookie a password sign-in would. The
-single-page application is not involved in either.
-
-The alternative — the script starting the flow, reading the code out of the
-URL, posting it to an endpoint — puts an authorization code somewhere
-`document.location` can read it, needs the fragment parsed in JavaScript, and
-usually ends with a token in `localStorage`. None of that buys anything here,
-because Peek serves its own interface from its own origin. Two plain
-navigations and an `HttpOnly` cookie remove the whole category.
-
-The one-time values of an attempt — state, nonce, PKCE verifier and the return
-path — live in a single cookie sealed with the server master key, rather than
-in a table that would need sweeping. That is also why single sign-on refuses
-to start without a master key: a forgeable state cookie is no protection at
-all.
-
-### No OIDC library
-
-`internal/oidc` is about six hundred lines and imports nothing outside the
-standard library. The protocol Peek needs is one flow with one provider: no
-dynamic registration, no implicit or hybrid response types, no introspection,
-no refresh. What the libraries add on top of that is flexibility, and
-flexibility is exactly the property that gets JWT verification wrong — every
-famous failure is a verifier accepting an algorithm the caller did not mean to
-accept.
-
-So the algorithm table is closed and contains no symmetric entry. `alg: none`
-and the HMAC family are not rejected by a check that could be bypassed; they
-are absent, and a token asking for one gets a message explaining that Peek
-verifies asymmetric signatures only. An RSA key under 2048 bits is refused. An
-EC key is rebuilt as an uncompressed point and parsed, so the on-curve check is
-the parser's rather than one more thing to remember.
-
-A token arriving with no `kid` is matched against a single published key, and
-an ambiguous key set is refused rather than tried in turn: iterating over keys
-until one verifies is how a verifier ends up accepting a signature from a key
-that was never meant for tokens.
-
-### `sso.required` is enforced by the server, and names its own escape hatch
-
-Hiding the password form is not requiring single sign-on. `required` therefore
-refuses every local credential — password and passkey alike — in the accounts
-service, which is the one place every local sign-in path goes through.
-
-The consequence is a real one: an instance whose provider is unreachable, or
-whose client secret expired overnight, is an instance nobody can sign in to,
-and the file that would fix it is readable only by root. Products usually
-handle this with an unwritten exception for administrators, which is a
-"required" that is not required and an auditor's finding waiting to happen.
-
-Peek makes it explicit instead. `sso.password_exempt` names the break-glass
-accounts, and `peek doctor` **fails** — not warns — when `required` is set and
-that list is empty.
-
-### The directory link is (issuer, subject), not the e-mail address
-
-Addresses change: people marry, departments rename, somebody fixes a typo.
-Worse, at a provider the same mailbox can be reassigned to a new human. An
-authentication link built on the address follows the mailbox rather than the
-person, which is an account takeover with a paper trail that looks ordinary.
-
-So the link is the issuer and the subject, and the address follows it. The
-issuer is stored beside the subject because a subject is only unique within
-its issuer: repointing an instance at another tenant must not silently match
-the old subjects.
-
-Linking an *existing local* account to a directory identity is the one place
-where the address is used, and it is guarded twice: the account must not
-already be linked to a different subject, and a provider that explicitly marks
-the address unverified is refused. Without that second guard, any provider that
-lets a user type an arbitrary address would be a way into somebody else's
-account.
-
-### A user belongs to one organisation, not several
-
-The specification sketched a `memberships` table. Peek keeps `org_id` on the
-account instead.
-
-"One instance hosts several customers" does not mean one person works for two
-of them. A membership table would put an organisation in every session, every
-API token and every query that today takes it from the account — a lot of
-surface, and a lot of places to forget it — for a case nobody has asked for.
-Somebody who genuinely needs both gets two accounts, which is also the honest
-audit trail: two people's worth of activity under one identity is exactly what
-an auditor does not want to see.
-
-### A domain resolves only after a TXT record proves it
-
-The Host header decides which organisation a request belongs to, and on a
-direct connection that header is whatever the client typed. Anybody who can
-point a DNS name at this instance could otherwise claim a customer's brand,
-and the recipient would see the right logo above the wrong organisation's page
-— which is a convincing phishing page the operator hosted themselves.
-
-So a declared domain resolves to nothing until
-`_peek-challenge.<domain> IN TXT "peek-verification=<token>"` has been seen.
-The label is dedicated rather than the apex, because an apex TXT record is
-shared with SPF, DMARC and a handful of other verification tokens and
-operators delete each other's.
-
-Two smaller decisions inside that one. A domain proved once stays proved: a
-failed re-check records what the resolver saw and leaves `verified_at` alone,
-because taking a customer's brand away for the duration of their registrar's
-bad afternoon is the wrong failure. And an unknown or unverified host gets the
-*instance's* brand rather than a refusal — a recipient holding a link must be
-able to read their secret even when the operator has not finished setting the
-brand up.
-
-### The Host header is cached, and the cache is bounded
-
-Resolving a host is a query, and the header comes from the client, so a flood
-of distinct Host values is a flood of queries. The answers are cached for
-thirty seconds — long enough that a busy domain is one query, short enough
-that adding a domain takes effect while the operator is still looking at the
-screen — and the whole map is dropped when it passes a thousand entries
-rather than evicting cleverly. A cache keyed on attacker-controlled input
-needs a bound more than it needs an eviction policy.
-
-### A token can cross organisations and a cookie cannot, so the check is where both pass
-
-A session cookie is scoped to a host by the browser: one opened on
-acme.example.com is never sent to beta.example.com. An API token is a header,
-and the Host beside it is the caller's choice.
-
-So the comparison — the account's organisation against the one the address
-resolves to — lives in the one middleware both forms of authentication pass
-through, and the refusal is audited. The alternative, comparing them in each
-handler that reads an organisation from the account, is a rule that holds
-until somebody adds the twentieth handler.
-
-A platform administrator is exempt, because acting across organisations is the
-whole of that role.
-
-### `platform_admin` went on the role ladder, which turned three checks into escalations
-
-The role above `admin` was added to the same ordered ladder the others use, so
-that every `requireRole(RoleAdmin)` in the route table admits it without being
-listed. That is the point of a ladder.
-
-It also broke three guards that each named `admin` by hand —
-`!actor.Can(RoleAdmin) && role == RoleAdmin` and two variants. An
-administrator passes all three, so an administrator could have granted the
-role above their own. They are now one function that reads the ladder:
-nobody grants a role they do not themselves hold. A rule about an ordering
-belongs in one place that knows the ordering.
+### Le client engendre l'identifiant du secret
+
+Le navigateur engendre l'identifiant de 128 bits et le lie dans les données
+additionnelles d'AES-GCM. Un chiffré ne peut donc pas être déplacé vers un autre
+identifiant, et le serveur refuse un doublon plutôt que de l'écraser. Le coût :
+une collision (d'une rareté qui tend vers rien) doit être retentée par le
+client.
+
+### Le jeton de lecture est une preuve de possession, pas un mot de passe
+
+Le serveur stocke `SHA-256(jeton de lecture)` et compare en temps constant avant
+de relâcher quoi que ce soit. C'est ce qui rend vrais en même temps « un robot
+d'aperçu ne dépense pas de lecture » et « une mauvaise passphrase ne coûte
+rien », avec un seul mécanisme.
+
+### Le jeton d'accusé est engendré côté client
+
+La page de l'expéditeur est autorisée par un jeton aléatoire dont seule
+l'empreinte est stockée. Aucun compte n'est nécessaire pour suivre ou détruire
+un secret, et le serveur ne peut pas forger un accusé. Les deux jetons vivent
+dans le fragment de l'URL d'accusé.
+
+### Une pierre tombale survit au secret
+
+Supprimer un secret écrit une petite ligne qui porte son état et ses compteurs —
+jamais de contenu — pour que la page d'accusé de l'expéditeur puisse encore dire
+« lu » ou « expiré » après la disparition des données.
+
+### HKDF est implémenté à la main dans le navigateur
+
+WebCrypto n'expose qu'extract-puis-expand, alors que la référence Go utilise
+expand seul pour les sous-clés. Le navigateur implémente les deux moitiés
+au-dessus de HMAC-SHA256 pour que les deux côtés soient identiques octet pour
+octet, ce que vérifient les vecteurs partagés.
+
+### `wasm-unsafe-eval` est dans la CSP
+
+Argon2id tourne en WebAssembly, et `script-src 'self'` seul bloque la
+compilation WebAssembly — découvert en lançant la vraie page dans un vrai
+navigateur, pas en relecture. `'wasm-unsafe-eval'` n'autorise que WebAssembly :
+il ne permet ni `eval()` ni script en ligne, et `'unsafe-inline'` et
+`'unsafe-eval'` restent absents. Un test affirme les trois faits.
+
+### Les couleurs de repli sont dans une couche CSS
+
+Le binaire sert `/branding.css` hors couche, et la feuille de style empaquetée
+garde ses valeurs par défaut dans `@layer base`. Les règles hors couche gagnent
+sur n'importe quelle couche, la marque d'une instance écrase donc les valeurs
+par défaut sans `!important` et sans recompilation.
+
+### Les zones inachevées refusent bruyamment
+
+`database.driver = "postgres"` et `tls.mode = "acme"` retournaient une erreur
+explicite nommant le jalon plutôt que de retomber silencieusement sur autre
+chose ; les deux ont depuis été livrés, en M9 et en M10, et la règle reste. Un
+repli silencieux vers SQLite sur plusieurs nœuds casserait la garantie de
+lecture unique ; un repli silencieux depuis ACME servirait du HTTP en clair sur
+une écoute qu'un exploitant croit chiffrée.
+
+### 404 plutôt que 403 sur un filtre réseau
+
+Un appelant venant d'un réseau non autorisé, ou qui sonde une route
+d'administration sur l'écoute publique, obtient la même réponse que pour une
+route qui n'existe pas.
+
+### Les handlers vivent dans `internal/server`
+
+Le cahier des charges esquissait un `internal/api` à côté d'`internal/server`.
+Séparer les handlers HTTP du routeur sur lequel ils sont montés aurait ajouté une
+frontière de paquet et un paquet d'utilitaires partagés sans rien séparer de
+significatif. Les règles métier sont dans `internal/secrets`, l'accès aux
+données dans `internal/store`, et `internal/server` possède la surface HTTP.
+
+### Playwright pilote le binaire construit
+
+La campagne de bout en bout démarre le vrai binaire avec son interface
+embarquée plutôt qu'un serveur de développement : ce que la CI exerce est ce qui
+est livré.
+
+### P-256 pour les demandes de secret, pas X25519
+
+Le cahier des charges autorisait les deux. X25519 n'est arrivé que récemment
+dans Safari et Firefox, et Peek est déployé dans des navigateurs d'entreprise
+administrés qui ont couramment plusieurs versions de retard sur le canal de
+publication ; l'ECDH P-256 est dans chaque implémentation de WebCrypto depuis
+dix ans. Un échange de clés qui fonctionne partout vaut mieux qu'une courbe un
+peu plus élégante qui échoue pour un dixième des utilisateurs avec une erreur
+sur laquelle ils ne peuvent rien.
+
+Une conséquence qui vaut d'être connue : WebCrypto ne peut pas importer une clé
+privée P-256 depuis le seul scalaire — un JWK a besoin de `x` et `y`, et le
+support d'une clé PKCS#8 sans sa moitié publique varie d'un navigateur à
+l'autre. Le lien de suivi porte donc les deux moitiés. Cela coûte 65 octets dans
+une URL et supprime toute une classe de pannes propres à un navigateur.
+
+### Pas de SDK AWS pour le stockage S3
+
+Peek signe lui-même en SigV4 et parle les cinq opérations S3 dont il a besoin.
+Deux raisons, dont aucune ne concerne la qualité du SDK. Il ajouterait une
+dizaine de mégaoctets à un binaire qui a un budget de soixante. Et sa chaîne
+d'identifiants par défaut sonde le point d'accès de métadonnées d'instance, ce
+qui est un appel sortant que Peek promet de ne pas faire : les identifiants
+viennent de `peek.toml` et de nulle part ailleurs.
+
+Le code de signature fait environ deux cents lignes, et la campagne de tests le
+vérifie contre une transcription indépendante de la spécification, puis contre
+un vrai MinIO avant chaque version.
+
+### Une autorisation de téléchargement, plutôt que de garder le secret en vie
+
+La ligne d'un secret à une lecture est supprimée dans la transaction qui
+consomme la dernière lecture. Sans autre chose, une pièce jointe de 100 Mio
+deviendrait injoignable à l'instant où elle devient lisible. Une révélation
+réussie délivre donc une autorisation de courte durée, stockée hachée comme
+chaque autre jeton, et l'expiration des blobs est poussée au-delà de sa fin.
+Garder la ligne du secret en vie « juste pour les fichiers » était l'autre
+option, et elle aurait voulu dire un secret lisible après le moment où il était
+censé avoir disparu.
+
+### Les points de terminaison des webhooks vivent dans le fichier de configuration, pas dans l'API
+
+Tous les autres produits de ce domaine laissent un utilisateur ajouter une URL
+de webhook dans l'interface. Peek ne le fait pas, et ne le fera pas.
+
+Une URL de point de terminaison qu'un appelant peut fixer transforme le serveur
+en relayeur de requêtes : il se connectera à tout ce qui est joignable depuis où
+il tourne, c'est-à-dire, sur une installation sur site, le réseau du client
+lui-même — le service de métadonnées, l'interface de gestion de l'hyperviseur,
+une API interne sans authentification. La parade habituelle est une liste de
+blocage des plages privées, et Peek est *installé dans* ces plages privées : la
+liste de blocage devrait donc interdire exactement les hôtes vers lesquels un
+webhook légitime pointe.
+
+Le vecteur est donc supprimé plutôt que filtré. Les points de terminaison sont
+des tables `[[webhook]]` dans `peek.toml`, que seul root peut écrire, et l'API
+offre de la visibilité et des relances sur cette liste, et rien d'autre. Le coût
+est réel : ajouter un point de terminaison demande un changement de
+configuration et un redémarrage. Pour un produit dont toute la promesse est
+qu'il est sûr de l'installer dans un réseau, c'est le bon côté de l'arbitrage.
+
+### Un corps de webhook est une entrée d'audit, et la liste des champs est un test
+
+La charge utile aurait pu être construite par événement, en portant ce que cet
+événement avait sous la main. À la place, chaque livraison est les mêmes dix
+champs, pris de l'entrée d'audit qui l'a déclenchée.
+
+Le journal d'audit est déjà construit pour ne jamais contenir un secret, une
+clé, une passphrase ni un fragment d'URL — c'est la règle numéro un du projet,
+appliquée partout où il est écrit. Le réutiliser veut dire que le transfert est
+sûr *par construction* plutôt que par relecture : il n'y a pas de chemin par
+lequel un futur événement tendrait au répartiteur un champ auquel personne n'a
+pensé. Un test affirme le jeu exact de champs, en ajouter un est donc une
+décision que quelqu'un doit prendre exprès.
+
+### La file de livraison est une table de la base
+
+L'implémentation évidente est une goroutine avec un canal et une boucle de
+relance. Elle échoue deux fois. Un redémarrage pendant une fenêtre de relance
+perd l'événement — et les événements qui valent un webhook sont ceux qu'un
+exploitant guette. Et une grappe de trois nœuds derrière un répartiteur envoie
+trois copies de tout, parce que chacun a vu la révélation.
+
+Des lignes dans `webhook_deliveries` corrigent les deux. Le drainage est réclamé
+par le même verrou de tâche que la purge, un nœud à la fois envoie donc, ce qui
+rend la livraison au-moins-une-fois par grappe plutôt qu'une fois par nœud.
+L'identifiant dans `X-Peek-Delivery` est le moyen pour un récepteur de rendre
+son propre côté idempotent ; la documentation le dit, plutôt que de prétendre à
+l'exactement-une-fois, qu'aucune notification HTTP ne peut honnêtement offrir.
+
+La mise en file est un petit insert sur le chemin de la requête, à côté de
+l'insert d'audit qui y est déjà. Rien dans un handler n'attend un appel
+sortant : un récepteur qui reste pendu trente secondes ne peut pas ralentir une
+révélation d'une milliseconde.
+
+### L'authentification unique, c'est deux routes de navigateur, pas une danse d'API
+
+`GET /auth/sso` répond une redirection vers le fournisseur ;
+`GET /auth/sso/callback` revient et pose le même cookie de session qu'une
+connexion par mot de passe. L'application monopage n'est impliquée dans ni l'un
+ni l'autre.
+
+L'autre voie — le script qui démarre le flux, lit le code dans l'URL, le poste à
+un point de terminaison — met un code d'autorisation quelque part où
+`document.location` peut le lire, demande que le fragment soit analysé en
+JavaScript, et finit généralement par un jeton dans `localStorage`. Rien de
+cela n'achète quoi que ce soit ici, puisque Peek sert sa propre interface depuis
+sa propre origine. Deux navigations ordinaires et un cookie `HttpOnly`
+suppriment toute la catégorie.
+
+Les valeurs à usage unique d'une tentative — state, nonce, vérificateur PKCE et
+le chemin de retour — vivent dans un seul cookie scellé avec la clé maîtresse du
+serveur, plutôt que dans une table qu'il faudrait balayer. C'est aussi pour ça
+que l'authentification unique refuse de démarrer sans clé maîtresse : un cookie
+de state forgeable n'est pas une protection du tout.
+
+### Pas de bibliothèque OIDC
+
+`internal/oidc` fait environ six cents lignes et n'importe rien en dehors de la
+bibliothèque standard. Le protocole dont Peek a besoin est un flux avec un
+fournisseur : pas d'enregistrement dynamique, pas de type de réponse implicite
+ni hybride, pas d'introspection, pas de rafraîchissement. Ce que les
+bibliothèques ajoutent par-dessus, c'est de la souplesse, et la souplesse est
+exactement la propriété qui fait se tromper sur la vérification des JWT —
+chaque échec célèbre est un vérificateur qui accepte un algorithme que
+l'appelant n'avait pas l'intention d'accepter.
+
+La table des algorithmes est donc fermée et ne contient aucune entrée
+symétrique. `alg: none` et la famille HMAC ne sont pas rejetés par un contrôle
+qui pourrait être contourné : ils sont absents, et un jeton qui en demande un
+obtient un message expliquant que Peek ne vérifie que des signatures
+asymétriques. Une clé RSA de moins de 2048 bits est refusée. Une clé EC est
+reconstruite en point non compressé puis analysée, de sorte que la vérification
+d'appartenance à la courbe est celle de l'analyseur plutôt qu'une chose de plus
+à ne pas oublier.
+
+Un jeton qui arrive sans `kid` est confronté à une unique clé publiée, et un jeu
+de clés ambigu est refusé plutôt qu'essayé l'une après l'autre : itérer sur les
+clés jusqu'à ce qu'une vérifie, c'est ainsi qu'un vérificateur finit par accepter
+une signature venant d'une clé qui n'a jamais été destinée aux jetons.
+
+### `sso.required` est appliqué par le serveur, et nomme sa propre issue de secours
+
+Masquer le formulaire de mot de passe, ce n'est pas exiger l'authentification
+unique. `required` refuse donc chaque identifiant local — mot de passe comme
+clé d'accès — dans le service des comptes, qui est l'unique endroit par lequel
+passe tout chemin de connexion locale.
+
+La conséquence est réelle : une instance dont le fournisseur est injoignable, ou
+dont le secret client a expiré dans la nuit, est une instance où personne ne
+peut se connecter, et le fichier qui corrigerait cela n'est lisible que par
+root. Les produits traitent généralement ce cas par une exception non écrite
+pour les administrateurs, ce qui est un « obligatoire » qui ne l'est pas et une
+remarque d'auditeur qui attend d'arriver.
+
+Peek le rend explicite à la place. `sso.password_exempt` nomme les comptes de
+secours, et `peek doctor` **échoue** — il n'avertit pas — quand `required` est
+posé et que cette liste est vide.
+
+### Le lien à l'annuaire est (émetteur, sujet), pas l'adresse e-mail
+
+Les adresses changent : les gens se marient, les services sont renommés,
+quelqu'un corrige une faute. Pire, chez un fournisseur, la même boîte peut être
+réattribuée à un autre humain. Un lien d'authentification construit sur
+l'adresse suit la boîte plutôt que la personne, ce qui est une prise de contrôle
+de compte avec une trace qui a l'air ordinaire.
+
+Le lien est donc l'émetteur et le sujet, et l'adresse les suit. L'émetteur est
+stocké à côté du sujet parce qu'un sujet n'est unique qu'au sein de son
+émetteur : repointer une instance vers un autre tenant ne doit pas apparier
+silencieusement les anciens sujets.
+
+Lier un compte local *existant* à une identité d'annuaire est le seul endroit où
+l'adresse est utilisée, et c'est gardé deux fois : le compte ne doit pas être
+déjà lié à un autre sujet, et un fournisseur qui marque explicitement l'adresse
+comme non vérifiée est refusé. Sans cette seconde garde, n'importe quel
+fournisseur qui laisse un utilisateur taper une adresse arbitraire serait une
+entrée dans le compte de quelqu'un d'autre.
+
+### Un utilisateur appartient à une organisation, pas à plusieurs
+
+Le cahier des charges esquissait une table `memberships`. Peek garde `org_id`
+sur le compte à la place.
+
+« Une instance héberge plusieurs clients » ne veut pas dire qu'une personne
+travaille pour deux d'entre eux. Une table d'appartenances mettrait une
+organisation dans chaque session, chaque jeton d'API et chaque requête qui la
+prend aujourd'hui du compte — beaucoup de surface, et beaucoup d'endroits où
+l'oublier — pour un cas que personne n'a demandé. Quelqu'un qui a vraiment
+besoin des deux prend deux comptes, ce qui est aussi la trace d'audit honnête :
+l'activité de deux personnes sous une seule identité est exactement ce qu'un
+auditeur ne veut pas voir.
+
+### Un domaine ne résout qu'après qu'un enregistrement TXT l'a prouvé
+
+L'en-tête Host décide à quelle organisation appartient une requête, et sur une
+connexion directe cet en-tête est ce que le client a tapé. N'importe qui pouvant
+pointer un nom DNS sur cette instance pourrait sinon réclamer la marque d'un
+client, et le destinataire verrait le bon logo au-dessus de la page de la
+mauvaise organisation — c'est-à-dire une page d'hameçonnage convaincante que
+l'exploitant héberge lui-même.
+
+Un domaine déclaré ne résout donc vers rien jusqu'à ce que
+`_peek-challenge.<domaine> IN TXT "peek-verification=<jeton>"` ait été vu. Le
+label est dédié plutôt que l'apex, parce qu'un enregistrement TXT à l'apex est
+partagé avec SPF, DMARC et une poignée d'autres jetons de vérification, et que
+les exploitants s'effacent les uns les autres.
+
+Deux décisions plus petites à l'intérieur de celle-là. Un domaine prouvé une
+fois reste prouvé : une revérification en échec consigne ce que le résolveur a
+vu et laisse `verified_at` tranquille, parce que retirer sa marque à un client
+le temps d'une mauvaise après-midi de son registrar est la mauvaise panne. Et un
+hôte inconnu ou non vérifié obtient la marque de l'*instance* plutôt qu'un
+refus — un destinataire qui détient un lien doit pouvoir lire son secret même
+quand l'exploitant n'a pas fini de monter la marque.
+
+### L'en-tête Host est mis en cache, et le cache est borné
+
+Résoudre un hôte est une requête, et l'en-tête vient du client : un déluge de
+valeurs de Host distinctes est donc un déluge de requêtes. Les réponses sont
+mises en cache trente secondes — assez longtemps pour qu'un domaine chargé soit
+une requête, assez court pour qu'ajouter un domaine prenne effet pendant que
+l'exploitant regarde encore son écran — et la table entière est jetée quand elle
+passe le millier d'entrées, plutôt qu'évincée intelligemment. Un cache indexé
+sur une entrée contrôlée par l'attaquant a davantage besoin d'une borne que
+d'une politique d'éviction.
+
+### Un jeton peut franchir les organisations et un cookie non, le contrôle est donc là où les deux passent
+
+Un cookie de session est cantonné à un hôte par le navigateur : un cookie ouvert
+sur acme.example.com n'est jamais envoyé à beta.example.com. Un jeton d'API est
+un en-tête, et le Host à côté de lui est au choix de l'appelant.
+
+La comparaison — l'organisation du compte contre celle vers laquelle l'adresse
+résout — vit donc dans l'unique intergiciel par lequel passent les deux formes
+d'authentification, et le refus est audité. L'autre voie, les comparer dans
+chaque handler qui lit une organisation depuis le compte, est une règle qui
+tient jusqu'à ce que quelqu'un ajoute le vingtième handler.
+
+Un administrateur de plateforme est exempté, parce qu'agir à travers les
+organisations est tout ce rôle.
+
+### `platform_admin` est allé sur l'échelle des rôles, ce qui a transformé trois contrôles en escalades
+
+Le rôle au-dessus d'`admin` a été ajouté à la même échelle ordonnée que les
+autres utilisent, pour que chaque `requireRole(RoleAdmin)` de la table des
+routes l'admette sans être listé. C'est l'intérêt d'une échelle.
+
+Cela a aussi cassé trois gardes qui nommaient chacune `admin` à la main —
+`!actor.Can(RoleAdmin) && role == RoleAdmin` et deux variantes. Un
+administrateur passe les trois, un administrateur aurait donc pu accorder le
+rôle au-dessus du sien. Elles sont maintenant une seule fonction qui lit
+l'échelle : personne n'accorde un rôle qu'il ne détient pas lui-même. Une règle
+qui porte sur un ordre appartient à un seul endroit qui connaît cet ordre.

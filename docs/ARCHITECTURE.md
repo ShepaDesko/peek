@@ -1,112 +1,130 @@
 # Architecture
 
-## One binary
+## Un seul binaire
 
 ```
-peek (about 13 MB, static, CGO disabled)
-├── HTTP server, routing and hardening middleware
-├── secret lifecycle and policy
-├── SQLite access and embedded migrations
-├── the compiled React interface (go:embed)
-├── background jobs (purge, audit retention)
-└── admin commands (setup, doctor, backup, restore, update…)
+peek (environ 29 Mo, statique, CGO désactivé)
+├── serveur HTTP, routage et intergiciels de durcissement
+├── cycle de vie des secrets et politiques
+├── accès SQLite ou PostgreSQL, migrations embarquées
+├── l'interface React compilée (go:embed)
+├── tâches de fond (purge, rétention d'audit, webhooks)
+└── commandes d'administration (setup, doctor, backup, restore, update…)
 ```
 
-No runtime to install, no asset directory, no Docker. Deployment is a file plus
-a systemd unit.
+Aucun environnement d'exécution à installer, aucun répertoire d'assets, pas de
+Docker. Déployer, c'est un fichier et une unité systemd.
 
-## Packages
+## Paquets
 
-| Package | Responsibility |
+| Paquet | Responsabilité |
 |---|---|
-| `cmd/peek` | Command dispatch, the `serve` loop, logging setup |
-| `cmd/peek-cli` | Terminal client: `push`, `get` — the same crypto as the browser |
-| `internal/config` | Load and validate `peek.toml`; readable durations; redaction |
-| `internal/crypto` | Format v1: derivation, sealing, identifiers, fragments |
-| `internal/store` | Schema, migrations, secret lifecycle, audit trail |
-| `internal/secrets` | Policy enforcement, reveal rules, purge |
-| `internal/server` | Routes, middleware, handlers, listeners, real client IP |
-| `internal/branding` | Theme resolution, palette generation, contrast checks |
-| `internal/webui` | The embedded SPA |
-| `internal/jobs` | Periodic purge and audit trimming |
-| `internal/setup` | The `peek setup` assistant |
-| `internal/doctor` | Diagnostics, including the external checks |
-| `internal/backup` | Hot backups, age encryption, restore |
-| `internal/update` | Release discovery, checksum and signature verification, swap |
-| `web/` | React interface; `web/src/crypto` is the TypeScript reference |
-| `crypto/vectors` | Shared test vectors binding Go and TypeScript together |
+| `cmd/peek` | Répartition des commandes, la boucle `serve`, mise en place des logs |
+| `cmd/peek-cli` | Client en terminal : `push`, `get` — le même chiffrement que le navigateur |
+| `internal/config` | Charge et valide `peek.toml` ; durées lisibles ; expurgation |
+| `internal/crypto` | Format v1 : dérivation, scellement, identifiants, fragments |
+| `internal/store` | Schéma, migrations, cycle de vie des secrets, journal d'audit |
+| `internal/secrets` | Application des politiques, règles de révélation, purge |
+| `internal/requests` | Demandes de secret et dépôts |
+| `internal/server` | Routes, intergiciels, gestionnaires, écouteurs, IP client réelle |
+| `internal/accounts` | Comptes, rôles, sessions, second facteur, jetons d'API |
+| `internal/oidc` | OpenID Connect : découverte, PKCE, vérification des assertions |
+| `internal/orgs` | Résolution d'organisation par domaine, vérification DNS |
+| `internal/storage` | Stockage des blobs : local ou S3 (SigV4 signé à la main) |
+| `internal/webhooks` | File de livraison, signature HMAC, réessais |
+| `internal/branding` | Résolution du thème, génération de palette, contrôle de contraste |
+| `internal/webui` | La SPA embarquée |
+| `internal/jobs` | Purge périodique, rétention d'audit, drainage des webhooks |
+| `internal/setup` | L'assistant `peek setup` |
+| `internal/doctor` | Diagnostics, y compris les vérifications externes |
+| `internal/backup` | Sauvegardes à chaud, chiffrement age, restauration |
+| `internal/update` | Découverte des versions, vérification empreinte et signature, bascule |
+| `web/` | Interface React ; `web/src/crypto` est la référence TypeScript |
+| `crypto/vectors` | Vecteurs de test partagés qui lient Go et TypeScript |
 
-Dependencies point one way: `server` then `secrets` then `store` then `crypto`.
-`config` and `crypto` depend on nothing of ours.
+Les dépendances vont dans un seul sens : `server`, puis `secrets`, puis
+`store`, puis `crypto`. `config` et `crypto` ne dépendent de rien à nous.
 
-## A request, end to end
+## Une requête, de bout en bout
 
-Creating a secret:
+Créer un secret :
 
 ```
-browser                         peek
-  │ generate id, key, salt
-  │ derive enc + read token
-  │ seal payload
-  ├── POST /api/v1/secrets ────► withContext      resolve the real client IP
+navigateur                      peek
+  │ génère id, clé, sel
+  │ dérive enc + jeton de lecture
+  │ scelle la charge utile
+  ├── POST /api/v1/secrets ────► withContext      résout l'IP client réelle
   │                              securityHeaders  CSP, no-referrer, noindex
-  │                              internalOnly     refuse on the public listener
+  │                              internalOnly     refuse sur l'écouteur public
   │                              restrictCIDR     create_allowed_cidrs
-  │                              rateLimit        token bucket per IP
-  │                              handleCreate     decode, validate shapes
-  │                              secrets.Create   policy: TTL, reads, size, KDF floor
-  │                              store.Create     insert, reject a duplicate id
-  │                              audit            secret.created (no content)
+  │                              rateLimit        seau à jetons par IP
+  │                              handleCreate     décode, valide les formes
+  │                              secrets.Create   politique : durée, lectures, taille, plancher KDF
+  │                              store.Create     insère, refuse un id en double
+  │                              audit            secret.created (sans contenu)
   ◄── 201 {id, expires_at} ─────┤
-  │ build the links locally (the key never left)
+  │ construit les liens localement (la clé n'est jamais partie)
 ```
 
-Revealing:
+Révéler :
 
 ```
-GET  /api/v1/secrets/{id}   metadata only, audit secret.page_viewed, no read spent
+GET  /api/v1/secrets/{id}   métadonnées seulement, audit secret.page_viewed, aucune lecture consommée
 POST /api/v1/secrets/{id}/reveal
-     constant-time compare of SHA-256(read token)
-     mismatch -> failure counter, 403 with attempts left, nothing released
-     match    -> transaction -> conditional UPDATE -> row count must be 1
-                 last read   -> delete the row, write the tombstone
-     200 {ciphertext}  -> decrypted in the browser
+     comparaison en temps constant de SHA-256(jeton de lecture)
+     différent -> compteur d'échecs, 403 avec le nombre d'essais restants, rien n'est libéré
+     identique -> transaction -> UPDATE conditionnel -> le nombre de lignes doit valoir 1
+                  dernière lecture -> la ligne est supprimée, la pierre tombale écrite
+     200 {ciphertext}  -> déchiffré dans le navigateur
 ```
 
-## The two listeners
+## Les deux écouteurs
 
-`Server.Handler(role)` builds a router per listener. Routes that belong to the
-sender or the administrator are wrapped in `internalOnly`, which refuses them
-on the public listener whatever the path — so a routing mistake cannot expose
-the admin surface. The CIDR gates are a second, independent lock.
+`Server.Handler(role)` construit un routeur par écouteur. Les routes qui
+appartiennent à l'émetteur ou à l'administrateur sont enveloppées dans
+`internalOnly`, qui les refuse sur l'écouteur public quel que soit le chemin —
+une erreur de routage ne peut donc pas exposer la surface d'administration.
+Les filtres CIDR sont un second verrou, indépendant.
 
-## Data model
+## Modèle de données
 
-`secrets` holds live secrets only. A secret that is read, expired, burned or
-locked is deleted and replaced by a row in `secret_tombstones` (status and
-counters, no content), so the sender's receipt page still works.
-`audit_events` is append-only and never records content, keys or fragments.
+`secrets` ne contient que les secrets vivants. Un secret lu, expiré, brûlé ou
+verrouillé est supprimé et remplacé par une ligne dans `secret_tombstones`
+(statut et compteurs, sans contenu), pour que la page reçu de l'émetteur
+continue de fonctionner. `audit_events` est en ajout seul et n'enregistre
+jamais de contenu, de clé ni de fragment.
 
-## Frontend
+En mode multi-organisation, `org_domains` porte le lien entre un domaine et
+une organisation, et une ligne ne résout que si `verified_at` est renseigné.
 
-React 19, Vite, Tailwind 4, no router dependency (three routes), no UI library,
-no network call except to this same origin. `web/src/crypto` is a standalone
-module with no React dependency — the same code a future SDK would publish.
-The build is copied into `internal/webui/dist` and embedded; only a
-`.gitignore` is committed there, so `go build` works on a fresh checkout
-without Node installed.
+## Interface
 
-## Concurrency
+React 19, Vite, Tailwind 4, aucune dépendance de routage (quelques routes),
+aucune bibliothèque de composants, aucun appel réseau en dehors de cette même
+origine. `web/src/crypto` est un module autonome sans dépendance à React — le
+même code qu'un futur SDK publierait. Le résultat du build est copié dans
+`internal/webui/dist` et embarqué ; seul un `.gitignore` y est commité, donc
+`go build` fonctionne sur un dépôt frais sans Node installé.
 
-SQLite runs in WAL mode with `_txlock=immediate` and a single connection, which
-serialises writers and removes `SQLITE_BUSY` churn at this request volume. The
-single-read guarantee does not rely on that: it comes from the conditional
-`UPDATE` and its row count, which holds on PostgreSQL and across nodes too.
+## Concurrence
 
-## Observability
+SQLite tourne en mode WAL avec `_txlock=immediate` et une seule connexion, ce
+qui sérialise les écrivains et supprime l'agitation des `SQLITE_BUSY` à ce
+volume de requêtes. La garantie de lecture unique ne repose pas là-dessus :
+elle vient de l'`UPDATE` conditionnel et de son nombre de lignes, qui tient
+aussi sur PostgreSQL et entre plusieurs nœuds.
 
-Structured JSON logs on stdout for journald. The access log records the matched
-route pattern — never the URL — because a path contains a secret identifier and
-a fragment must never reach a log at all. `/healthz` is liveness, `/readyz`
-checks the database, and `/api/v1/ip` reports the resolved client IP for
-diagnosing a proxy.
+Pour plusieurs nœuds, la coordination est dans la base et nulle part ailleurs :
+des baux nommés dans `job_locks` pour les tâches périodiques, et un seau à
+jetons dépensé en un seul `upsert` pour que la grappe ait une limite de débit
+et non une par nœud. Voir [HIGH-AVAILABILITY.md](HIGH-AVAILABILITY.md).
+
+## Observabilité
+
+Logs JSON structurés sur la sortie standard, pour journald. Le journal d'accès
+enregistre le motif de route qui a correspondu — jamais l'URL — parce qu'un
+chemin contient un identifiant de secret et qu'un fragment ne doit jamais
+atteindre un log. `/healthz` dit si le processus vit, `/readyz` vérifie la base
+de données, et `/api/v1/ip` rapporte l'IP client résolue pour diagnostiquer un
+proxy.

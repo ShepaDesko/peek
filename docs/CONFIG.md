@@ -1,68 +1,69 @@
 # Configuration
 
-Peek reads one TOML file, `/etc/peek/peek.toml` by default. `peek setup`
-writes it; `PEEK_CONFIG` or `--config` points elsewhere.
+Peek lit un seul fichier TOML, `/etc/peek/peek.toml` par défaut. `peek setup`
+l'écrit ; `PEEK_CONFIG` ou `--config` le fait chercher ailleurs.
 
 ```bash
-peek config check      # validate, and print a summary
-peek config show       # print the effective configuration, secrets redacted
+peek config check      # valider, et afficher un résumé
+peek config show       # afficher la configuration effective, secrets masqués
 ```
 
-An unknown key is an error, not a warning: a typo in a security setting must
-never be ignored. Durations are written as `45s`, `30m`, `12h`, `7d`.
+Un réglage inconnu est une erreur, pas un avertissement : une faute de frappe
+dans un réglage de sécurité ne doit jamais être ignorée. Les durées s'écrivent
+`45s`, `30m`, `12h`, `7d`.
 
-A reference file with every default lives at
+Un fichier de référence avec chaque valeur par défaut se trouve dans
 `/usr/share/doc/peek/peek.toml.example`.
 
-## Top level
+## À la racine
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `public_url` | `http://localhost:8080` | The URL users type. Links, cookies, CSP and redirects derive from it. Must match what the proxy publishes. |
-| `default_language` | `fr` | `fr` or `en`. The visitor's own choice is remembered locally. |
-| `multi_org` | `false` | Several organisations on one instance — see [Multi-organisation mode](#multi-organisation-mode). |
-| `update_check` | `true` | Daily check for a new release. Set `false` on an air-gapped host. |
-| `update_url` | empty | Internal mirror instead of GitHub releases. |
-| `update_channel` | `stable` | `stable` or `beta`. |
-| `master_key_file` | `/etc/peek/master.key` | 32 random bytes, mode 0400. Back it up separately. |
-| `data_dir` | `/var/lib/peek` | Database, encrypted files, brand assets. |
+| `public_url` | `http://localhost:8080` | L'URL que tapent les utilisateurs. Les liens, les cookies, la CSP et les redirections en découlent. Doit correspondre à ce que publie le proxy. |
+| `default_language` | `fr` | `fr` ou `en`. Le choix du visiteur est mémorisé localement. |
+| `multi_org` | `false` | Plusieurs organisations sur une instance — voir [le mode multi-organisation](#mode-multi-organisation). |
+| `update_check` | `true` | Vérification quotidienne d'une nouvelle version. Mettez `false` sur une machine coupée du réseau. |
+| `update_url` | vide | Un miroir interne à la place des releases GitHub. |
+| `update_channel` | `stable` | `stable` ou `beta`. |
+| `master_key_file` | `/etc/peek/master.key` | 32 octets aléatoires, mode 0400. Sauvegardez-la séparément. |
+| `data_dir` | `/var/lib/peek` | Base, fichiers chiffrés, assets de marque. |
 
 ## `[server]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `internal_listen` | `127.0.0.1:8080` | Serves everything: creation, dashboard, administration, API. |
-| `public_listen` | empty | Serves **recipient routes only**. Publish this one through the load balancer. |
-| `trusted_proxies` | `[]` | The only sources whose `X-Forwarded-*` and `Forwarded` headers are believed. Empty means never. |
-| `proxy_protocol` | `false` | PROXY protocol v1/v2 for layer 4 load balancers. Requires `trusted_proxies`, and refuses to start without it. |
+| `internal_listen` | `127.0.0.1:8080` | Sert tout : création, tableau de bord, administration, API. |
+| `public_listen` | vide | Ne sert **que les routes destinataire**. C'est celle-là qu'on publie à travers le répartiteur. |
+| `trusted_proxies` | `[]` | Les seules sources dont les en-têtes `X-Forwarded-*` et `Forwarded` sont crus. Vide veut dire jamais. |
+| `proxy_protocol` | `false` | Protocole PROXY v1/v2 pour les répartiteurs de couche 4. Demande `trusted_proxies`, et refuse de démarrer sans. |
 | `read_timeout` | `30s` | |
-| `write_timeout` | `2m` | Raise it for large encrypted uploads. |
+| `write_timeout` | `2m` | À relever pour de gros envois chiffrés. |
 | `idle_timeout` | `1m30s` | |
-| `shutdown_grace` | `20s` | How long in-flight requests get on shutdown. |
-| `max_body_bytes` | `8388608` | Request body cap. |
+| `shutdown_grace` | `20s` | Le temps laissé aux requêtes en vol à l'arrêt. |
+| `max_body_bytes` | `8388608` | Plafond du corps d'une requête. |
 | `max_header_bytes` | `1048576` | |
 
-See [REVERSE-PROXY.md](REVERSE-PROXY.md) for how these combine.
+Voir [REVERSE-PROXY.md](REVERSE-PROXY.md) pour la façon dont tout cela se
+combine.
 
 ## `[tls]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| Key | Default | What it does |
-|---|---|---|
-| `mode` | `none` | `none` (terminated upstream), `file` (a certificate you supply), `acme` (Let's Encrypt). |
-| `cert_file`, `key_file` | empty | Required for `file`. |
-| `acme_hosts` | `[]` | Required for `acme`. Real hostnames that resolve to this host — not an address, not `localhost`. |
-| `acme_email` | empty | Required for `acme`: the only way the authority can warn you before a certificate stops renewing. |
-| `acme_dir` | `/var/lib/peek/acme` | Holds the account key and every private key issued. `0700`. |
-| `acme_directory_url` | empty | Point at a staging directory to rehearse. Certificates from one are not trusted by browsers. |
-| `hsts` | `false` | Send `Strict-Transport-Security`. Leave off when the proxy already sends it. |
+| `mode` | `none` | `none` (terminé en amont), `file` (un certificat que vous fournissez), `acme` (Let's Encrypt). |
+| `cert_file`, `key_file` | vide | Obligatoires pour `file`. |
+| `acme_hosts` | `[]` | Obligatoire pour `acme`. De vrais noms d'hôtes qui résolvent vers cette machine — pas une adresse, pas `localhost`. |
+| `acme_email` | vide | Obligatoire pour `acme` : le seul moyen pour l'autorité de vous avertir avant qu'un certificat cesse de se renouveler. |
+| `acme_dir` | `/var/lib/peek/acme` | Contient la clé de compte et chaque clé privée émise. `0700`. |
+| `acme_directory_url` | vide | Pointez sur un annuaire de recette pour répéter. Les certificats qui en viennent ne sont pas de confiance pour les navigateurs. |
+| `hsts` | `false` | Envoyer `Strict-Transport-Security`. Laissez désactivé quand le proxy l'envoie déjà. |
 | `hsts_max_age` | `31536000` | |
 
-`mode = "none"` is right behind Kemp, F5, HAProxy or nginx: the proxy holds
-the certificate and Peek serves plain HTTP on the loopback.
+`mode = "none"` est la bonne réponse derrière un Kemp, un F5, HAProxy ou nginx :
+le proxy détient le certificat et Peek sert du HTTP en clair sur la boucle
+locale.
 
-### ACME, when Peek is the only thing listening
+### ACME, quand Peek est seul à écouter
 
 ```toml
 [tls]
@@ -71,61 +72,62 @@ acme_hosts = ["secrets.acme.com"]
 acme_email = "ops@acme.com"
 ```
 
-The challenge is **TLS-ALPN-01**, answered on the TLS listener that is already
-there. Port 80 is not needed and nothing extra is published — which is the
-whole reason for choosing it over HTTP-01.
+Le défi est **TLS-ALPN-01**, répondu sur l'écoute TLS qui est déjà là. Le port
+80 n'est pas nécessaire et rien de plus n'est publié — c'est toute la raison de
+le préférer à HTTP-01.
 
-What that requires:
+Ce que cela demande :
 
-- the listener reachable from the internet on **443**. Set
-  `server.internal_listen` or `server.public_listen` to `:443` and give the
-  unit `AmbientCapabilities=CAP_NET_BIND_SERVICE` (both lines are in the
-  packaged unit, commented);
-- each name in `acme_hosts` resolving to this host. `peek doctor` resolves
-  them and says so, without making a single ACME call — those are
-  rate-limited per account and per domain, and a diagnostic you run in a loop
-  must not be able to exhaust a weekly quota.
+- l'écoute joignable depuis Internet sur le **443**. Mettez
+  `server.internal_listen` ou `server.public_listen` à `:443` et donnez à
+  l'unité `AmbientCapabilities=CAP_NET_BIND_SERVICE` (les deux lignes sont dans
+  l'unité du paquet, en commentaire) ;
+- chaque nom d'`acme_hosts` qui résout vers cette machine. `peek doctor` les
+  résout et le dit, sans faire un seul appel ACME — ceux-là sont limités par
+  compte et par domaine, et un diagnostic qu'on lance en boucle ne doit pas
+  pouvoir épuiser un quota hebdomadaire.
 
-The first connection to each host obtains the certificate and takes a few
-seconds. Renewal is automatic and needs no restart.
+La première connexion à chaque hôte obtient le certificat et prend quelques
+secondes. Le renouvellement est automatique et ne demande aucun redémarrage.
 
-Rehearse against staging first:
+Répétez d'abord contre la recette :
 
 ```toml
 acme_directory_url = "https://acme-staging-v02.api.letsencrypt.org/directory"
 ```
 
-`peek doctor` warns while that is set, because a staging certificate is not
-trusted by any browser.
+`peek doctor` avertit tant que c'est en place, parce qu'un certificat de recette
+n'est de confiance pour aucun navigateur.
 
 ## `[database]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `driver` | `sqlite` | `sqlite`, or `postgres` for several nodes — see [HIGH-AVAILABILITY.md](HIGH-AVAILABILITY.md). |
-| `dsn` | `/var/lib/peek/peek.db` | File path, or a PostgreSQL DSN. |
+| `driver` | `sqlite` | `sqlite`, ou `postgres` pour plusieurs nœuds — voir [HIGH-AVAILABILITY.md](HIGH-AVAILABILITY.md). |
+| `dsn` | `/var/lib/peek/peek.db` | Un chemin de fichier, ou un DSN PostgreSQL. |
 
-SQLite runs in WAL mode. For several nodes you need PostgreSQL: do not point
-two instances at one SQLite file on NFS.
+SQLite tourne en mode WAL. Pour plusieurs nœuds il faut PostgreSQL : ne pointez
+pas deux instances sur un seul fichier SQLite posé sur du NFS.
 
 ## `[storage]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `backend` | `local` | `local`, or `s3`. |
-| `path` | `/var/lib/peek/files` | Encrypted blobs, local backend. May be a shared mount in HA. |
-| `s3_bucket` | — | Required for `s3`. |
-| `s3_region` | `us-east-1` | Signing region. Most S3-compatible appliances accept anything consistent. |
-| `s3_endpoint` | — | Full URL of the endpoint. Empty means AWS. |
-| `s3_prefix` | — | Key prefix inside the bucket, letters, digits, `-`, `_`, `.` and `/`. |
-| `s3_path_style` | implied | Bucket in the path rather than in the host name. Set automatically when `s3_endpoint` is given, because appliances rarely have a wildcard certificate. |
-| `s3_access_key` / `s3_secret_key` | — | Credentials. The secret is redacted in `peek config show`. |
+| `backend` | `local` | `local`, ou `s3`. |
+| `path` | `/var/lib/peek/files` | Les blobs chiffrés, en stockage local. Peut être un montage partagé en haute disponibilité. |
+| `s3_bucket` | — | Obligatoire pour `s3`. |
+| `s3_region` | `us-east-1` | La région de signature. La plupart des appliances compatibles S3 acceptent n'importe quoi de cohérent. |
+| `s3_endpoint` | — | L'URL complète du point d'accès. Vide veut dire AWS. |
+| `s3_prefix` | — | Préfixe de clé dans le bucket : lettres, chiffres, `-`, `_`, `.` et `/`. |
+| `s3_path_style` | implicite | Le bucket dans le chemin plutôt que dans le nom d'hôte. Posé automatiquement quand `s3_endpoint` est donné, parce que les appliances ont rarement un certificat joker. |
+| `s3_access_key` / `s3_secret_key` | — | Les identifiants. Le secret est masqué dans `peek config show`. |
 
-Peek signs S3 requests itself (SigV4) and uses `PUT`, `GET`, `HEAD`, `DELETE`
-and `ListObjectsV2` — nothing else. There is no AWS SDK in the binary, which
-also means **no credential chain**: the keys come from this file and nowhere
-else, and nothing ever probes an instance-metadata endpoint. The reasoning is
-in [DECISIONS.md](DECISIONS.md).
+Peek signe lui-même les requêtes S3 (SigV4) et utilise `PUT`, `GET`, `HEAD`,
+`DELETE` et `ListObjectsV2` — rien d'autre. Il n'y a pas de SDK AWS dans le
+binaire, ce qui veut dire aussi **pas de chaîne d'identifiants** : les clés
+viennent de ce fichier et de nulle part ailleurs, et rien ne sonde jamais un
+point d'accès de métadonnées d'instance. Le raisonnement est dans
+[DECISIONS.md](DECISIONS.md).
 
 ```toml
 [storage]
@@ -137,191 +139,195 @@ s3_access_key = "…"
 s3_secret_key = "…"
 ```
 
-Whatever the backend, a blob is already encrypted when it arrives: the bucket
-holds opaque streams and their lengths, and the keys are in payloads the server
-cannot read.
+Quel que soit le stockage, un blob est déjà chiffré quand il arrive : le bucket
+contient des flux opaques et leurs longueurs, et les clés sont dans des charges
+utiles que le serveur ne peut pas lire.
 
 ## `[security]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `admin_allowed_cidrs` | `[]` | Restricts administration, audit and policy routes to these networks. Answers 404 elsewhere. |
-| `create_allowed_cidrs` | `[]` | Restricts secret creation. |
-| `anonymous_create` | `false` | Allow creating without an account. Accounts arrive in M5; until then this is the switch that enables creation at all. |
-| `max_passphrase_attempts` | `5` | Wrong attempts before the secret is destroyed. |
-| `anonymize_ips` | `false` | Keep only a /24 (IPv4) or /48 (IPv6) prefix in logs and audit entries. |
-| `audit_retention` | `365d` | `0` keeps the audit trail forever. |
+| `admin_allowed_cidrs` | `[]` | Restreint les routes d'administration, d'audit et de politique à ces réseaux. Répond 404 ailleurs. |
+| `create_allowed_cidrs` | `[]` | Restreint la création de secrets. |
+| `anonymous_create` | `false` | Autoriser la création sans compte. Les destinataires n'ont de toute façon jamais besoin d'un compte. |
+| `max_passphrase_attempts` | `5` | Essais ratés avant que le secret ne soit détruit. |
+| `anonymize_ips` | `false` | Ne garder qu'un préfixe /24 (IPv4) ou /48 (IPv6) dans les journaux et les entrées d'audit. |
+| `audit_retention` | `365d` | `0` garde le journal d'audit pour toujours. |
 
-### Rate limits
+### Les limites de débit
 
-Four token buckets, each per real client IP: `rate_create`, `rate_read`,
-`rate_login`, `rate_api`.
+Quatre seaux à jetons, chacun par IP cliente réelle : `rate_create`,
+`rate_read`, `rate_login`, `rate_api`.
 
 ```toml
 [security.rate_read]
-burst  = 30      # immediate allowance; 0 disables the limit
-rate   = 300     # sustained refill...
-window = "1h"    # ...per this window
+burst  = 30      # l'allocation immédiate ; 0 désactive la limite
+rate   = 300     # le rechargement soutenu…
+window = "1h"    # …par cette fenêtre
 ```
 
-In-memory on a single node, which is the default deployment; shared through the
-database in M9.
+En mémoire sur un nœud unique, qui est le déploiement par défaut ; partagées à
+travers la base dès que `database.driver = "postgres"`, donc une limite pour la
+grappe et non une par nœud.
 
 ## `[policy]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `max_ttl` / `default_ttl` | `30d` / `1d` | Expiry ceiling and default. |
-| `max_views` / `default_views` | `100` / `1` | Reads ceiling and default. |
-| `require_passphrase` | `false` | Refuse creation without a passphrase. |
-| `force_retrieval_step` | `false` | Force the click-to-reveal step. |
-| `allowed_kinds` | `["text","url","file"]` | Kinds this instance accepts. |
-| `max_file_bytes` | `104857600` | 100 MiB of plaintext per file. The accepted upload is a little larger: the chunked format adds a 17-byte header and 16 bytes per mebibyte. |
-| `max_secret_bytes` | `1048576` | Ciphertext cap for a text secret. |
-| `max_recipients` | `10` | Links per multi-recipient bundle. |
-| `max_files_per_secret` | `10` | Attachments per bundle. |
-| `upload_window` | `2h` | How long an uploaded blob waits for a secret to claim it. A sender who closes the tab leaves nothing behind for longer than this. |
-| `download_window` | `30m` | How long a recipient keeps access to the attachments after revealing. The secret row is already gone by then; this is what lets a large download finish. |
-| `max_deposits` | `1` | Answers a secret request may accept. |
+| `max_ttl` / `default_ttl` | `30d` / `1d` | Plafond et valeur par défaut d'expiration. |
+| `max_views` / `default_views` | `100` / `1` | Plafond et valeur par défaut de lectures. |
+| `require_passphrase` | `false` | Refuser une création sans passphrase. |
+| `force_retrieval_step` | `false` | Forcer l'étape du clic pour révéler. |
+| `allowed_kinds` | `["text","url","file"]` | Les types que cette instance accepte. |
+| `max_file_bytes` | `104857600` | 100 Mio de clair par fichier. L'envoi accepté est un peu plus gros : le format par morceaux ajoute un en-tête de 17 octets et 16 octets par mébioctet. |
+| `max_secret_bytes` | `1048576` | Plafond du chiffré pour un secret texte. |
+| `max_recipients` | `10` | Liens par lot multi-destinataires. |
+| `max_files_per_secret` | `10` | Pièces jointes par lot. |
+| `upload_window` | `2h` | Le temps qu'un blob envoyé attend qu'un secret le réclame. Un expéditeur qui ferme l'onglet ne laisse rien derrière lui plus longtemps que ça. |
+| `download_window` | `30m` | Le temps pendant lequel un destinataire garde accès aux pièces jointes après avoir révélé. La ligne du secret a déjà disparu à ce moment-là ; c'est ce qui permet à un gros téléchargement de finir. |
+| `max_deposits` | `1` | Les réponses qu'une demande de secret peut accepter. |
 
-Raising `download_window` keeps blobs on disk longer after they have been read;
-lowering it can cut off a slow download of a large file. Thirty minutes is
-roughly a 100 MiB file over a poor connection, with room to spare.
+Relever `download_window` garde les blobs plus longtemps sur le disque après
+lecture ; l'abaisser peut couper le téléchargement lent d'un gros fichier.
+Trente minutes, c'est à peu près un fichier de 100 Mio sur une mauvaise
+connexion, avec de la marge.
 
 ## `[mail]`
 
-Leave `host` empty to disable every e-mail feature.
+Laissez `host` vide pour désactiver toutes les fonctions d'e-mail.
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `host`, `port` | empty, `587` | SMTP server. |
-| `username`, `password` | empty | Omit both for an anonymous internal relay. |
-| `encryption` | `starttls` | `none`, `starttls` or `tls`. |
-| `from_name`, `from_address` | `Peek`, empty | Sender identity. |
-| `skip_tls_verify` | `false` | For an internal relay with a private CA. Prefer trusting the CA. |
-| `allowed_recipient_domains` | `[]` | Restrict who a link may be e-mailed to. |
+| `host`, `port` | vide, `587` | Le serveur SMTP. |
+| `username`, `password` | vide | Omettez les deux pour un relais interne anonyme. |
+| `encryption` | `starttls` | `none`, `starttls` ou `tls`. |
+| `from_name`, `from_address` | `Peek`, vide | L'identité de l'expéditeur. |
+| `skip_tls_verify` | `false` | Pour un relais interne avec une autorité privée. Préférez faire confiance à l'autorité. |
+| `allowed_recipient_domains` | `[]` | Restreindre à qui un lien peut être envoyé par e-mail. |
 
-`peek doctor` connects, negotiates STARTTLS and authenticates, without sending
-anything.
+`peek doctor` se connecte, négocie STARTTLS et s'authentifie, sans rien envoyer.
 
 ## `[log]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
 | `level` | `info` | `debug`, `info`, `warn`, `error`. |
-| `format` | `json` | `json` or `text`. |
-| `file` | empty | Empty means stdout, captured by journald. Set a path for logrotate. |
+| `format` | `json` | `json` ou `text`. |
+| `file` | vide | Vide veut dire la sortie standard, captée par journald. Mettez un chemin pour logrotate. |
 
-Secrets, keys, passphrases, URL fragments and request bodies are never logged,
-at any level. The access log records the matched route pattern, not the URL.
+Les secrets, les clés, les passphrases, les fragments d'URL et les corps de
+requête ne sont jamais journalisés, à aucun niveau. Le journal d'accès consigne
+le motif de route apparié, pas l'URL.
 
 ## `[branding]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `service_name` | `Peek` | Shown everywhere, including the tab title. |
-| `primary_color`, `accent_color` | `#4f46e5`, `#0ea5e9` | A full palette is generated, with a WCAG AA contrast check that warns rather than silently correcting. |
+| `service_name` | `Peek` | Affiché partout, y compris dans le titre de l'onglet. |
+| `primary_color`, `accent_color` | `#4f46e5`, `#0ea5e9` | Une palette complète est engendrée, avec un contrôle de contraste WCAG AA qui avertit plutôt que de corriger en silence. |
 | `hide_powered_by` | `false` | |
-| `support_url`, `legal_url`, `privacy_url` | empty | Footer links. |
+| `support_url`, `legal_url`, `privacy_url` | vide | Les liens du pied de page. |
 
-See [BRANDING.md](BRANDING.md).
+Voir [BRANDING.md](BRANDING.md).
 
 ## `[backup]`
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `enabled` | `true` | Used by the systemd timer. |
+| `enabled` | `true` | Utilisé par le minuteur systemd. |
 | `dir` | `/var/backups/peek` | |
-| `keep` | `7` | Archives kept. An archive holds the ciphertext of active secrets: keep this small. |
-| `passphrase` | empty | Set one: the archive is then encrypted with age. |
+| `keep` | `7` | Les archives gardées. Une archive contient le chiffré des secrets actifs : gardez ce nombre petit. |
+| `passphrase` | vide | Mettez-en une : l'archive est alors chiffrée avec age. |
 | `interval` | `1d` | |
 
-## Multi-organisation mode
+## Mode multi-organisation
 
 ```toml
 multi_org = true
 ```
 
-Off by default, and off is the right answer for almost every installation:
-one instance, one customer, `public_url` in this file and nothing else to
-think about.
+Désactivé par défaut, et désactivé est la bonne réponse pour presque toutes les
+installations : une instance, un client, `public_url` dans ce fichier et rien
+d'autre à quoi penser.
 
-Turn it on and one installation hosts several organisations. Each gets its own
-brand, users, policies, secrets and audit trail, and the **Host header** says
-which one a request belongs to.
+Activez-le et une installation héberge plusieurs organisations. Chacune a sa
+marque, ses utilisateurs, ses politiques, ses secrets et son journal d'audit, et
+c'est l'**en-tête Host** qui dit à laquelle appartient une requête.
 
-That header is attacker-controlled on a direct connection, so two things make
-it safe to act on:
+Cet en-tête est contrôlé par l'attaquant sur une connexion directe, deux choses
+le rendent donc sûr à exploiter :
 
-- it is read from `X-Forwarded-Host` only when the peer is in
-  `server.trusted_proxies`, and from the connection otherwise — the same rule
-  the real-client-IP code follows;
-- a domain resolves to nothing until a **DNS TXT record** has proved it.
-  Without the proof, anyone able to point a name at this instance could wear
-  another customer's brand, and a recipient would see the right logo above the
-  wrong organisation's page.
+- il est lu depuis `X-Forwarded-Host` seulement quand le pair est dans
+  `server.trusted_proxies`, et depuis la connexion sinon — la même règle que
+  suit le code de l'IP cliente réelle ;
+- un domaine ne résout vers rien jusqu'à ce qu'un **enregistrement DNS TXT**
+  l'ait prouvé. Sans cette preuve, n'importe qui pouvant pointer un nom sur
+  cette instance pourrait porter la marque d'un autre client, et un destinataire
+  verrait le bon logo au-dessus de la page de la mauvaise organisation.
 
-### Setting one up
+### En monter une
 
 ```bash
-sudo peek org create acme --name "ACME Ltd"
+sudo peek org create acme --name "ACME SARL"
 sudo peek org domain-add secrets.acme.com --slug acme
-# publish the TXT record it prints, then:
+# publiez l'enregistrement TXT qu'il affiche, puis :
 sudo peek org domain-verify secrets.acme.com
 ```
 
-The record is
-`_peek-challenge.secrets.acme.com. IN TXT "peek-verification=<token>"`. A
-dedicated label rather than the apex, because an apex TXT record is shared
-with SPF, DMARC and half a dozen other verification tokens, and operators
-delete each other's.
+L'enregistrement est
+`_peek-challenge.secrets.acme.com. IN TXT "peek-verification=<jeton>"`. Un label
+dédié plutôt que l'apex, parce qu'un enregistrement TXT à l'apex est partagé
+avec SPF, DMARC et une demi-douzaine d'autres jetons de vérification, et que les
+exploitants s'effacent les uns les autres.
 
-The verification lookup is **the only outbound DNS query Peek makes**, and it
-happens because somebody asked for it. Nothing is resolved on a recipient's
-request path, so an air-gapped instance never reaches it.
+La résolution de vérification est **la seule requête DNS sortante que fait
+Peek**, et elle a lieu parce que quelqu'un l'a demandée. Rien n'est résolu sur
+le chemin de requête d'un destinataire, une instance coupée du réseau n'y arrive
+donc jamais.
 
-A domain proved once stays proved: a later failed re-check records what the
-resolver saw and leaves `verified_at` alone. Taking a customer's brand away
-because their registrar was slow would be the wrong failure.
+Un domaine prouvé une fois reste prouvé : une revérification en échec consigne
+plus tard ce que le résolveur a vu et laisse `verified_at` tranquille. Retirer sa
+marque à un client parce que son registrar était lent serait la mauvaise panne.
 
-### What changes
+### Ce qui change
 
-| | Single-tenant | Multi-organisation |
+| | Mono-client | Multi-organisation |
 |---|---|---|
-| Brand | `public_url`, one brand | resolved per verified domain |
-| Links | built on `public_url` | built on that organisation's primary domain |
-| E-mails | the instance brand | the organisation's brand |
-| Accounts | one pool | one pool per organisation, `(org_id, email)` unique |
-| Roles | `admin` at the top | `platform_admin` above it |
-| Interface | the notion is hidden | an Organisations tab, for `platform_admin` only |
+| Marque | `public_url`, une marque | résolue par domaine vérifié |
+| Liens | construits sur `public_url` | construits sur le domaine principal de l'organisation |
+| E-mails | la marque de l'instance | la marque de l'organisation |
+| Comptes | un seul vivier | un vivier par organisation, `(org_id, email)` unique |
+| Rôles | `admin` au sommet | `platform_admin` au-dessus |
+| Interface | la notion est masquée | un onglet Organisations, pour `platform_admin` seulement |
 
-The first domain an organisation verifies also becomes its **primary** one —
-the origin its links are built on — so the address in a link, the certificate
-serving it and the brand on the page all agree. Change it with
-`peek org domain-primary`.
+Le premier domaine qu'une organisation vérifie devient aussi son domaine
+**principal** — l'origine sur laquelle ses liens sont construits — pour que
+l'adresse dans un lien, le certificat qui la sert et la marque sur la page
+s'accordent. Changez-le avec `peek org domain-primary`.
 
-A **suspended** organisation keeps every row and stops resolving: a customer
-who has not paid is not a customer whose secrets are deleted.
+Une organisation **suspendue** garde chaque ligne et cesse de résoudre : un
+client qui n'a pas payé n'est pas un client dont on supprime les secrets.
 
-### The platform role
+### Le rôle de plateforme
 
-`platform_admin` sits above `admin` and is the only role that may create an
-organisation or touch a domain. On a hosted instance the person who onboards a
-customer is not the person who administers that customer, and an administrator
-of one organisation must not be able to see the others exist.
+`platform_admin` est au-dessus d'`admin` et c'est le seul rôle qui puisse créer
+une organisation ou toucher à un domaine. Sur une instance hébergée, la personne
+qui accueille un client n'est pas celle qui administre ce client, et un
+administrateur d'une organisation ne doit pas pouvoir voir que les autres
+existent.
 
 ```bash
 sudo peek admin set-role --email ops@example.com --role platform_admin
 ```
 
-No role can grant a role above its own, which is checked once in the accounts
-service rather than per call site.
+Aucun rôle ne peut accorder un rôle au-dessus du sien, ce qui est vérifié une
+fois dans le service des comptes plutôt qu'à chaque point d'appel.
 
 ## `[sso]`
 
-OpenID Connect single sign-on. One provider per instance: an instance belongs
-to one organisation with one directory, and two providers would mean two
-sources of truth for who somebody is.
+L'authentification unique OpenID Connect. Un fournisseur par instance : une
+instance appartient à une organisation avec un annuaire, et deux fournisseurs
+voudraient dire deux sources de vérité sur qui est quelqu'un.
 
 ```toml
 [sso]
@@ -335,140 +341,147 @@ scopes        = ["openid", "profile", "email"]
 provision     = true
 default_role  = "member"
 groups_claim  = "groups"
-admin_groups  = ["3f6c…"]      # Entra sends object ids, not names
+admin_groups  = ["3f6c…"]      # Entra envoie des identifiants d'objet, pas des noms
 manager_groups = ["a91b…"]
 sync_role_on_login = true
 ```
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
 | `enabled` | `false` | |
-| `provider` | `generic` | `entra`, `google`, `keycloak`, `authentik`, `adfs` or `generic`. It only picks the button label and shapes the error messages; the protocol is the same. |
-| `display_name` | from `provider` | What the sign-in button says. |
-| `issuer` | required | Must be `https`, and must equal the `iss` claim of every token exactly. |
-| `client_id`, `client_secret` | required | Peek authenticates to the token endpoint as a confidential client. |
-| `scopes` | `["openid","profile","email"]` | Add whatever your provider needs asked for to send groups. |
-| `discovery` | `true` | Reads `<issuer>/.well-known/openid-configuration`. |
-| `authorize_url`, `token_url`, `jwks_url`, `userinfo_url` | empty | Required when `discovery = false`. |
-| `ca_file` | empty | Pin the provider's authority, for an internal Keycloak or ADFS. |
-| `required` | `false` | Refuses **every** local credential, password and passkey alike. Not merely hides the form. |
-| `password_exempt` | `[]` | The addresses that may still sign in locally when `required` is set. |
-| `provision` | `true` | Create an account on first sign-in. Off means only existing accounts may sign in. |
-| `default_role` | `member` | For a user whose groups match nothing. |
-| `allowed_domains` | `[]` | Bare domains, e.g. `["acme.com"]`. Empty means any domain the provider vouches for. |
-| `groups_claim` | `groups` | `roles` for an Entra app-role registration. |
-| `admin_groups`, `manager_groups`, `auditor_groups`, `member_groups` | `[]` | A user in several gets the **strongest** role. |
-| `require_group` | `false` | Refuse anyone whose groups match none of the maps. |
-| `sync_role_on_login` | `true` | Re-apply the mapping at every sign-in, so a change in the directory takes effect without touching Peek. Off means the role is set at creation and local edits stick. |
+| `provider` | `generic` | `entra`, `google`, `keycloak`, `authentik`, `adfs` ou `generic`. Cela ne choisit que le libellé du bouton et la forme des messages d'erreur ; le protocole est le même. |
+| `display_name` | d'après `provider` | Ce que dit le bouton de connexion. |
+| `issuer` | obligatoire | Doit être en `https`, et doit être exactement égal à la revendication `iss` de chaque jeton. |
+| `client_id`, `client_secret` | obligatoires | Peek s'authentifie auprès du point d'accès de jetons en client confidentiel. |
+| `scopes` | `["openid","profile","email"]` | Ajoutez ce que votre fournisseur demande qu'on demande pour envoyer les groupes. |
+| `discovery` | `true` | Lit `<issuer>/.well-known/openid-configuration`. |
+| `authorize_url`, `token_url`, `jwks_url`, `userinfo_url` | vide | Obligatoires quand `discovery = false`. |
+| `ca_file` | vide | Épingler l'autorité du fournisseur, pour un Keycloak ou un ADFS interne. |
+| `required` | `false` | Refuse **chaque** identifiant local, mot de passe comme clé d'accès. Ne se contente pas de masquer le formulaire. |
+| `password_exempt` | `[]` | Les adresses qui peuvent encore se connecter localement quand `required` est posé. |
+| `provision` | `true` | Créer un compte à la première connexion. Désactivé veut dire que seuls les comptes existants peuvent se connecter. |
+| `default_role` | `member` | Pour un utilisateur dont les groupes ne correspondent à rien. |
+| `allowed_domains` | `[]` | Des domaines nus, par exemple `["acme.com"]`. Vide veut dire n'importe quel domaine dont le fournisseur se porte garant. |
+| `groups_claim` | `groups` | `roles` pour un enregistrement d'application Entra à rôles. |
+| `admin_groups`, `manager_groups`, `auditor_groups`, `member_groups` | `[]` | Un utilisateur dans plusieurs obtient le rôle le **plus fort**. |
+| `require_group` | `false` | Refuser quiconque dont les groupes ne correspondent à aucune des tables. |
+| `sync_role_on_login` | `true` | Réappliquer la correspondance à chaque connexion, pour qu'un changement dans l'annuaire prenne effet sans toucher à Peek. Désactivé veut dire que le rôle est posé à la création et que les modifications locales tiennent. |
 
-### Register this redirect URI
+### L'URI de redirection à enregistrer
 
 ```
 <public_url>/auth/sso/callback
 ```
 
-Character for character. It is fixed — a configurable callback path is a
-configurable open redirect waiting to be mistyped — and `peek doctor` prints
-the exact value to paste into the application at the provider.
+Caractère pour caractère. Elle est fixe — un chemin de rappel configurable est
+une redirection ouverte configurable qui attend d'être mal tapée — et
+`peek doctor` affiche la valeur exacte à coller dans l'application chez le
+fournisseur.
 
-### `required`, and why the escape hatch is explicit
+### `required`, et pourquoi l'issue de secours est explicite
 
-`sso.required` refuses local credentials on the server, not in the interface.
-That means an instance whose provider is unreachable — an outage, an expired
-client secret, a network change — is an instance nobody can sign in to, with
-the configuration file that would fix it readable only by root.
+`sso.required` refuse les identifiants locaux sur le serveur, pas dans
+l'interface. Cela veut dire qu'une instance dont le fournisseur est injoignable
+— une panne, un secret client expiré, un changement réseau — est une instance où
+personne ne peut se connecter, avec le fichier de configuration qui corrigerait
+cela lisible par root seulement.
 
-So the escape hatch is named rather than implied. There is no hidden exception
-for administrators: put one or two break-glass accounts in
-`sso.password_exempt`, give them a second factor, and audit them.
-`peek doctor` **fails** when `required` is set and the list is empty.
+L'issue de secours est donc nommée plutôt que sous-entendue. Il n'y a pas
+d'exception cachée pour les administrateurs : mettez un ou deux comptes de
+secours dans `sso.password_exempt`, donnez-leur un second facteur, et auditez-les.
+`peek doctor` **échoue** quand `required` est posé et que la liste est vide.
 
-### Accounts, and what links them
+### Les comptes, et ce qui les lie
 
-An account is linked to a directory identity by `(issuer, subject)`, never by
-the e-mail address. An address is a label that changes; a subject is the
-directory's own identifier and does not. So a renamed mailbox follows the
-person, and a reassigned one does not become a way into their account.
+Un compte est lié à une identité d'annuaire par `(émetteur, sujet)`, jamais par
+l'adresse e-mail. Une adresse est une étiquette qui change ; un sujet est
+l'identifiant propre de l'annuaire et ne change pas. Une boîte renommée suit donc
+la personne, et une boîte réattribuée ne devient pas une entrée dans son compte.
 
-On a first sign-in, in this order:
+À une première connexion, dans cet ordre :
 
-1. the e-mail domain is checked against `allowed_domains`;
-2. an account with that `(issuer, subject)` is looked for;
-3. then an account with that address — linking it requires that account to be
-   unlinked, and the provider not to have marked the address unverified;
-4. and only then, if `provision` is on, a new account is created with no
-   password hash at all.
+1. le domaine de l'e-mail est contrôlé contre `allowed_domains` ;
+2. un compte avec ce couple `(émetteur, sujet)` est cherché ;
+3. puis un compte avec cette adresse — le lier exige que ce compte ne soit pas
+   déjà lié, et que le fournisseur n'ait pas marqué l'adresse comme non
+   vérifiée ;
+4. et alors seulement, si `provision` est actif, un nouveau compte est créé, sans
+   aucune empreinte de mot de passe.
 
-An administrator can detach an identity from an account
-(`DELETE /api/v1/users/{id}/sso`), which is the way out of a subject linked to
-the wrong account.
+Un administrateur peut détacher une identité d'un compte
+(`DELETE /api/v1/users/{id}/sso`), ce qui est la sortie d'un sujet lié au mauvais
+compte.
 
-### Entra ID: the group overflow
+### Entra ID : le débordement de groupes
 
-Past roughly two hundred groups, Entra replaces the group list in the token
-with a pointer to Microsoft Graph. Peek will not call Graph — that is a second
-outbound dependency and a second credential — so it **refuses the sign-in and
-says so** rather than seeing no groups and handing out `default_role`, which
-would quietly demote an administrator.
+Passé environ deux cents groupes, Entra remplace la liste des groupes dans le
+jeton par un pointeur vers Microsoft Graph. Peek n'appellera pas Graph — ce
+serait une seconde dépendance sortante et un second identifiant — il **refuse
+donc la connexion et le dit**, plutôt que de ne voir aucun groupe et de
+distribuer `default_role`, ce qui rétrograderait silencieusement un
+administrateur.
 
-Use app roles instead (`groups_claim = "roles"`), or set a group filter in the
-application registration so only the relevant groups are sent.
+Utilisez plutôt des rôles d'application (`groups_claim = "roles"`), ou posez un
+filtre de groupes dans l'enregistrement de l'application pour que seuls les
+groupes pertinents soient envoyés.
 
 ## `[[webhook]]`
 
-Repeated. Each table declares one outbound endpoint.
+Répétable. Chaque table déclare un point de terminaison sortant.
 
 ```toml
 [[webhook]]
 name    = "siem"
 url     = "https://hooks.example.com/peek"
-secret  = "a long random string, 16 characters minimum"
+secret  = "une longue chaîne aléatoire, 16 caractères au minimum"
 events  = ["secret.revealed", "secret.expired", "secret.burned", "request.deposited"]
 
 [[webhook]]
 name     = "chat"
 url      = "http://mattermost.internal/hooks/xxxx"
-secret   = "another long random string"
+secret   = "une autre longue chaîne aléatoire"
 events   = ["*"]
 ca_file  = "/etc/ssl/certs/internal-ca.pem"
 ```
 
-| Key | Default | What it does |
+| Réglage | Défaut | Ce qu'il fait |
 |---|---|---|
-| `name` | required | How the queue, the logs and `peek webhook` refer to it. Change the URL and the queued events survive. |
-| `url` | required | `http` or `https`. |
-| `secret` | required, 16 characters minimum | The HMAC-SHA256 key the receiver verifies. An unsigned webhook is a notification anybody who can reach the receiver can forge. |
-| `events` | the four below | Audit event names, or `["*"]` for the whole trail. |
-| `max_attempts` | `6` | Counts the first try. |
-| `timeout` | `10s` | Per attempt. |
-| `disabled` | `false` | Keeps the declaration while silencing it. |
-| `skip_tls_verify` | `false` | A real downgrade: the signature proves who sent the body, not who read it. Prefer `ca_file`. |
-| `ca_file` | empty | Pin the receiver's authority. The right answer on an internal network. |
+| `name` | obligatoire | Comment la file, les journaux et `peek webhook` le désignent. Changez l'URL et les événements en file survivent. |
+| `url` | obligatoire | `http` ou `https`. |
+| `secret` | obligatoire, 16 caractères au minimum | La clé HMAC-SHA256 que le récepteur vérifie. Un webhook non signé est une notification que quiconque peut joindre le récepteur peut forger. |
+| `events` | les quatre ci-dessous | Des noms d'événements d'audit, ou `["*"]` pour tout le journal. |
+| `max_attempts` | `6` | Compte le premier essai. |
+| `timeout` | `10s` | Par tentative. |
+| `disabled` | `false` | Garde la déclaration en la faisant taire. |
+| `skip_tls_verify` | `false` | Un vrai affaiblissement : la signature prouve qui a envoyé le corps, pas qui l'a lu. Préférez `ca_file`. |
+| `ca_file` | vide | Épingler l'autorité du récepteur. La bonne réponse sur un réseau interne. |
 
-The default subscription is the sender-facing lifecycle:
+L'abonnement par défaut est le cycle de vie côté expéditeur :
 `secret.revealed`, `secret.expired`, `secret.burned`, `request.deposited`.
 
-There is no API call that creates an endpoint, and there never will be: a URL
-a caller could set would make Peek fetch on their behalf, from inside the
-network they cannot reach. Endpoints live in this file.
+Il n'y a pas d'appel d'API qui crée un point de terminaison, et il n'y en aura
+jamais : une URL qu'un appelant pourrait fixer ferait récupérer Peek pour son
+compte, depuis l'intérieur d'un réseau qu'il ne peut pas joindre. Les points de
+terminaison vivent dans ce fichier.
 
-The body of a delivery is an audit entry. That trail is built never to contain
-a secret, a key, a passphrase or a URL fragment, so forwarding it is safe by
-construction — but it does carry identifiers and sometimes an e-mail address.
-Point a webhook somewhere you would be happy to see the audit trail.
+Le corps d'une livraison est une entrée d'audit. Ce journal est construit pour ne
+jamais contenir un secret, une clé, une passphrase ni un fragment d'URL, le
+transmettre est donc sûr par construction — mais il porte bien des identifiants
+et parfois une adresse e-mail. Pointez un webhook vers un endroit où vous seriez
+content de voir le journal d'audit.
 
-`docs/API.md` has the signature scheme and a receiver in twenty lines.
-`peek webhook list|test|queue|retry` inspects it from the host, and
-`peek doctor` warns when the queue stops draining.
+`docs/API.md` donne le schéma de signature et un récepteur en vingt lignes.
+`peek webhook list|test|queue|retry` l'inspecte depuis la machine, et
+`peek doctor` avertit quand la file cesse de se vider.
 
-## Environment overrides
+## Les surcharges par l'environnement
 
-For packaging and tests, not for secrets: `PEEK_CONFIG`, `PEEK_PUBLIC_URL`,
-`PEEK_INTERNAL_LISTEN`, `PEEK_PUBLIC_LISTEN`, `PEEK_DB_DSN`, `PEEK_DATA_DIR`,
-`PEEK_LOG_LEVEL`. `PEEK_UPDATE_TOKEN` is read by `peek update` for an
-authenticated release mirror.
+Pour l'empaquetage et les tests, pas pour des secrets : `PEEK_CONFIG`,
+`PEEK_PUBLIC_URL`, `PEEK_INTERNAL_LISTEN`, `PEEK_PUBLIC_LISTEN`, `PEEK_DB_DSN`,
+`PEEK_DATA_DIR`, `PEEK_LOG_LEVEL`. `PEEK_UPDATE_TOKEN` est lu par `peek update`
+pour un miroir de releases authentifié.
 
-## Applying a change
+## Appliquer un changement
 
 ```bash
 sudo nano /etc/peek/peek.toml

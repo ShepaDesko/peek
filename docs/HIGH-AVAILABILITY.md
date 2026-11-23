@@ -1,56 +1,62 @@
-# Running several nodes
+# Faire tourner plusieurs nœuds
 
-Peek on one node needs nothing from this page. SQLite, one process, one
-systemd unit: that is the right answer for almost every installation, and it
-handles more traffic than most organisations will ever send it.
+Peek sur un seul nœud n'a besoin de rien de cette page. SQLite, un processus,
+une unité systemd : c'est la bonne réponse pour presque toutes les
+installations, et elle encaisse plus de trafic que la plupart des
+organisations n'en enverront jamais.
 
-Several nodes are for availability, not for throughput. The point is that a
-node can be rebooted, patched or lost without the service going with it.
+Plusieurs nœuds, c'est pour la disponibilité, pas pour le débit. Le but, c'est
+qu'un nœud puisse être redémarré, mis à jour ou perdu sans que le service
+parte avec lui.
 
-Three things have to be shared, and nothing else does.
+Trois choses doivent être partagées, et rien d'autre.
 
-| | What | Why |
+| | Quoi | Pourquoi |
 |---|---|---|
-| Database | PostgreSQL 14 or newer | Every node reads and writes the same rows. The single-read guarantee comes from there. |
-| File storage | S3-compatible, or NFS | A blob uploaded to one node is downloaded from another. |
-| Master key | the same `master.key` on every node | It decrypts what is in the shared database: TOTP seeds, notification addresses. |
+| Base de données | PostgreSQL 14 ou plus récent | Chaque nœud lit et écrit les mêmes lignes. La garantie de lecture unique vient de là. |
+| Stockage des fichiers | compatible S3, ou NFS | Un blob envoyé sur un nœud est téléchargé depuis un autre. |
+| Clé maîtresse | la même `master.key` sur chaque nœud | Elle déchiffre ce qui est dans la base partagée : seconds facteurs, adresses de notification. |
 
-There is **no Redis, no message broker and no external scheduler**. Peek
-coordinates through the database it already has.
-
----
-
-## What the cluster does for itself
-
-**One reader per secret.** On one node the guarantee comes from a conditional
-`UPDATE` and its row count. On a cluster it comes from the same statement, in
-PostgreSQL, which is why that is how it was written rather than as a read
-followed by a write. Forty simultaneous reveals of a one-view secret through a
-load balancer across two nodes: one gets the ciphertext, thirty-nine get the
-answer a link that never existed would get.
-
-**One rate limit, not one per node.** The token bucket lives in the database
-and is spent in a single upsert. Two nodes with `burst = 30` give the client
-thirty requests, not sixty. Two consequences worth knowing:
-
-- raising a limit in `peek.toml` does not top an exhausted bucket back up. It
-  refills at the new rate, from where it is. A bucket emptied by a load test
-  stays empty for a while.
-- a database that cannot be reached fails *open* and logs it. A limiter that
-  takes the service down with it is worse than no limiter.
-
-**One periodic job, not one per node.** The purge, the audit trim and the
-webhook drain are each claimed with a lease in `job_locks`. A node that dies
-mid-job delays the next run by one tick; it does not block the others. One
-webhook delivery leaves the cluster per event, not one per node.
-
-**Any node, any session.** A session is a row, so a cookie issued by one node
-is accepted by the next. Sticky sessions are not needed, and configuring them
-hides a cluster that is not really one — do not.
+Il n'y a **ni Redis, ni bus de messages, ni ordonnanceur externe**. Peek se
+coordonne à travers la base de données qu'il a déjà.
 
 ---
 
-## The recipe
+## Ce que la grappe fait d'elle-même
+
+**Un lecteur par secret.** Sur un nœud, la garantie vient d'un `UPDATE`
+conditionnel et de son nombre de lignes. Sur une grappe, elle vient de la même
+instruction, dans PostgreSQL — et c'est pour ça qu'elle a été écrite comme ça
+plutôt qu'en lecture suivie d'écriture. Quarante lectures simultanées d'un
+secret à vue unique à travers un répartiteur sur deux nœuds : une obtient le
+chiffré, trente-neuf obtiennent la réponse que donnerait un lien n'ayant
+jamais existé.
+
+**Une limite de débit, pas une par nœud.** Le seau à jetons vit dans la base et
+se dépense en un seul `upsert`. Deux nœuds avec `burst = 30` donnent trente
+requêtes au client, pas soixante. Deux conséquences à connaître :
+
+- relever une limite dans `peek.toml` ne recharge pas un seau déjà vide. Il se
+  remplit au nouveau rythme, depuis là où il est. Un seau vidé par un test de
+  charge reste vide un moment ;
+- une base injoignable fait échouer la limitation **en ouvert**, et le
+  journalise. Un limiteur qui emporte le service avec lui est pire que pas de
+  limiteur.
+
+**Une tâche périodique, pas une par nœud.** La purge, la rétention d'audit et
+le drainage des webhooks sont chacun réclamés par un bail dans `job_locks`. Un
+nœud qui meurt au milieu d'une tâche retarde la suivante d'un tic au plus ; il
+ne bloque pas les autres. Une livraison de webhook quitte la grappe par
+événement, pas une par nœud.
+
+**N'importe quel nœud, n'importe quelle session.** Une session est une ligne :
+un cookie émis par un nœud est accepté par le suivant. Les sessions collantes
+sont inutiles, et les configurer masque une grappe qui n'en est pas vraiment
+une — ne le faites pas.
+
+---
+
+## La recette
 
 ### 1. PostgreSQL
 
@@ -59,9 +65,9 @@ CREATE ROLE peek LOGIN PASSWORD '…';
 CREATE DATABASE peek OWNER peek;
 ```
 
-Nothing else. Every node runs the migrations at start, and they are safe to
-run concurrently: the first one in applies them, the others find nothing
-pending.
+Rien d'autre. Chaque nœud applique les migrations au démarrage, et elles
+supportent d'être lancées en parallèle : le premier arrivé les applique, les
+autres ne trouvent rien à faire.
 
 ```toml
 [database]
@@ -69,12 +75,12 @@ driver = "postgres"
 dsn    = "postgres://peek:…@db.internal:5432/peek?sslmode=verify-full"
 ```
 
-Use `sslmode=verify-full` on anything but a loopback connection. The database
-holds every ciphertext.
+Utilisez `sslmode=verify-full` pour tout ce qui n'est pas une connexion locale.
+La base contient chaque chiffré.
 
-### 2. Shared file storage
+### 2. Un stockage de fichiers partagé
 
-S3-compatible is the easier of the two:
+Le compatible S3 est le plus simple des deux :
 
 ```toml
 [storage]
@@ -86,30 +92,30 @@ s3_access_key = "…"
 s3_secret_key = "…"
 ```
 
-Verified against MinIO and Garage. NFS works too — point `storage.path` at
-the mount — but a stale NFS handle during a 100 MiB download is a worse
-failure mode than an S3 timeout.
+Vérifié contre MinIO et Garage. NFS fonctionne aussi — pointez
+`storage.path` sur le montage — mais un descripteur NFS périmé au milieu d'un
+téléchargement de 100 Mio est un échec plus désagréable qu'un délai S3.
 
-### 3. The same master key everywhere
+### 3. La même clé maîtresse partout
 
 ```bash
-# on the first node
+# sur le premier nœud
 sudo peek key rotate --init
 sudo install -m 0640 -o root -g peek /etc/peek/master.key /mnt/transfer/master.key
-# on every other node
+# sur chacun des autres
 sudo install -m 0640 -o root -g peek /mnt/transfer/master.key /etc/peek/master.key
 ```
 
-Copy it, do not generate a second one. A node with a different key cannot read
-the second factors or notification addresses the others wrote, and the
-features that need it refuse with a clear message rather than failing
-strangely.
+Copiez-la, n'en engendrez pas une seconde. Un nœud avec une clé différente ne
+peut pas lire les seconds facteurs ni les adresses de notification que les
+autres ont écrits, et les fonctions qui en ont besoin refusent avec un message
+clair plutôt que d'échouer bizarrement.
 
-### 4. The load balancer
+### 4. Le répartiteur
 
-Round robin, no session affinity, health check on `/readyz`. `/readyz` answers
-`503` while the database is unreachable, which is exactly when the node should
-be taken out of rotation.
+Tourniquet, pas d'affinité de session, vérification de santé sur `/readyz`.
+`/readyz` répond `503` tant que la base est injoignable, c'est-à-dire
+exactement quand le nœud doit sortir de la rotation.
 
 ```nginx
 upstream peek_recipients {
@@ -124,82 +130,87 @@ upstream peek_internal {
 }
 ```
 
-The rest — headers, TLS, body size — is in
-[`REVERSE-PROXY.md`](REVERSE-PROXY.md). Two points matter more with several
-nodes:
+Le reste — en-têtes, TLS, taille de corps — est dans
+[`REVERSE-PROXY.md`](REVERSE-PROXY.md). Deux points comptent davantage avec
+plusieurs nœuds :
 
-- `server.trusted_proxies` must list the load balancer's addresses, or every
-  node will log the balancer's IP as the client's and every rate limit will
-  apply to the balancer rather than to the caller;
-- publish `public_listen` to the outside and keep `internal_listen` on the
-  LAN, per node. The split is per process, so it has to be configured on each.
+- `server.trusted_proxies` doit lister les adresses du répartiteur, sinon
+  chaque nœud journalise l'IP du répartiteur comme celle du client et chaque
+  limite de débit s'applique au répartiteur au lieu de l'appelant ;
+- publiez `public_listen` vers l'extérieur et gardez `internal_listen` sur le
+  LAN, **par nœud**. La séparation est par processus : elle doit être
+  configurée sur chacun.
 
-### 5. The unit
+### 5. L'unité
 
-Use the packaged unit (`/usr/lib/systemd/system/peek.service`) unchanged. It
-scores 1.5 OK under `systemd-analyze security`; a hand-written one for a
-second instance usually does not, and a weaker unit on one node is a weaker
-cluster.
+Utilisez l'unité du paquet (`/usr/lib/systemd/system/peek.service`) telle
+quelle. Elle obtient 1.5 OK à `systemd-analyze security` ; une unité écrite à
+la main pour une seconde instance fait généralement moins bien, et une unité
+plus faible sur un nœud, c'est une grappe plus faible.
 
-To run two instances on one host — for a test, not for availability — copy the
-packaged unit to a template and change only `ExecStart` and `ReadWritePaths`.
+Pour faire tourner deux instances sur une machine — pour un test, pas pour la
+disponibilité — copiez l'unité du paquet dans un gabarit et ne changez que
+`ExecStart` et `ReadWritePaths`.
 
 ---
 
-## Verifying it
+## Vérifier
 
 ```bash
-# every node sees the same schema
+# chaque nœud voit le même schéma
 sudo peek migrate status
 
-# every node answers
+# chaque nœud répond
 curl -fsS https://node1.internal:8080/readyz
 curl -fsS https://node2.internal:8080/readyz
 
-# the single-read guarantee, through the load balancer
-#   create a one-view secret, then reveal it from forty clients at once:
-#   exactly one must get the ciphertext, the rest must get 404.
+# la garantie de lecture unique, à travers le répartiteur
+#   créez un secret à vue unique, puis lisez-le depuis quarante clients à la
+#   fois : exactement un doit obtenir le chiffré, les autres un 404.
 ```
 
-The repository's own acceptance run, on two nodes against PostgreSQL 17
-behind nginx:
+La campagne d'acceptation du dépôt, sur deux nœuds contre PostgreSQL 17
+derrière nginx :
 
-- 40 simultaneous reveals × 8 rounds → 1 reader each time, 39 × `404`
-- a secret created on node 1, revealed on node 2, and gone on node 1
-- a 512 KiB attachment uploaded to node 1, served by node 2 with the grant
-  node 2 issued
-- a session issued by node 1, accepted by node 2
-- one `secret.revealed` webhook delivery for one event, with both nodes
-  watching
-- `burst = 30` shared: 30 requests allowed and 10 refused out of 40
-- 5–7 MB resident per node at rest
-
----
-
-## Multi-organisation mode on a cluster
-
-Nothing extra to configure. The Host-to-organisation answer is cached per node
-for thirty seconds, so adding or verifying a domain takes effect immediately
-on the node that did it and within thirty seconds everywhere else. That window
-is the only thing a cluster changes about
-[multi-organisation mode](CONFIG.md#multi-organisation-mode).
+- 40 lectures simultanées × 8 tours → 1 lecteur chaque fois, 39 × `404`
+- un secret créé sur le nœud 1, lu sur le nœud 2, et disparu sur le nœud 1
+- une pièce jointe de 512 Kio envoyée au nœud 1, servie par le nœud 2 avec
+  l'autorisation que le nœud 2 a émise
+- une session émise par le nœud 1, acceptée par le nœud 2
+- une livraison de webhook `secret.revealed` pour un événement, avec les deux
+  nœuds qui regardent
+- `burst = 30` partagé : 30 requêtes passent et 10 sont refusées sur 40
+- 5 à 7 Mo résidents par nœud au repos
 
 ---
 
-## What is not solved here
+## Le mode multi-organisation sur une grappe
 
-**The database is a single point of failure.** Peek does not replicate
-PostgreSQL for you; use whatever your organisation already runs — Patroni, a
-managed service, streaming replication with a VIP. A node that loses the
-database answers `503` on `/readyz` and refuses work rather than serving
-something wrong.
+Rien de plus à configurer. La réponse « quel Host appartient à quelle
+organisation » est mise en cache par nœud pendant trente secondes : ajouter ou
+vérifier un domaine prend effet immédiatement sur le nœud qui l'a fait, et
+dans les trente secondes partout ailleurs. Cette fenêtre est la seule chose
+qu'une grappe change au
+[mode multi-organisation](CONFIG.md#mode-multi-organisation).
 
-**There is no cross-site story.** Two data centres sharing one PostgreSQL over
-a WAN will work and will be slow, because every reveal is a write. If you need
-that, run two instances and give each its own domain.
+---
 
-**Rolling upgrades are safe in one direction.** A new binary applies pending
-migrations at start, and the migrations are additive: an older node keeps
-working against the newer schema. So upgrade one node at a time, oldest first,
-and do not roll *back* a node past a migration that has been applied — see
+## Ce qui n'est pas résolu ici
+
+**La base de données est un point unique de défaillance.** Peek ne réplique
+pas PostgreSQL pour vous ; utilisez ce que votre organisation fait déjà tourner
+— Patroni, un service managé, de la réplication en flux avec une VIP. Un nœud
+qui perd la base répond `503` sur `/readyz` et refuse de travailler plutôt que
+de servir quelque chose de faux.
+
+**Il n'y a pas d'histoire multi-site.** Deux centres de données partageant un
+PostgreSQL à travers un WAN fonctionneront, et seront lents, parce que chaque
+lecture de secret est une écriture. Si vous avez besoin de ça, faites tourner
+deux instances et donnez à chacune son domaine.
+
+**Les mises à jour nœud par nœud ne sont sûres que dans un sens.** Un nouveau
+binaire applique les migrations en attente au démarrage, et les migrations sont
+additives : un nœud plus ancien continue de fonctionner contre le schéma plus
+récent. Mettez donc à jour un nœud à la fois, le plus ancien d'abord, et ne
+**redescendez** pas un nœud en dessous d'une migration déjà appliquée — voir
 [`UPGRADE.md`](UPGRADE.md).

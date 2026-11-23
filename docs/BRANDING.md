@@ -1,15 +1,16 @@
-# White-labelling
+# Marque blanche
 
-Peek is meant to be installed at a customer and look like **their** service,
-not like a product they bought.
+Peek est fait pour être installé chez un client et ressembler à **son**
+service, pas à un produit qu'il a acheté.
 
-There are two ways in. `peek.toml` holds the fallback identity, used on a
-fresh install and before anything has been saved. Everything else lives in the
-database, per organisation, and is edited in **Administration →
-Personnalisation** with a live preview of the home page, the recipient page
-and an e-mail. The database wins where both are set.
+Il y a deux entrées. `peek.toml` porte l'identité de repli, utilisée sur une
+installation neuve et avant que quoi que ce soit n'ait été enregistré. Tout le
+reste vit dans la base, par organisation, et s'édite dans
+**Administration → Personnalisation**, avec un aperçu en direct de l'accueil,
+de la page destinataire et d'un e-mail. Là où les deux sont renseignés, la base
+gagne.
 
-## What `peek.toml` holds
+## Ce que porte `peek.toml`
 
 ```toml
 [branding]
@@ -28,12 +29,13 @@ default_language = "fr"
 sudo peek config check && sudo systemctl restart peek
 ```
 
-The name appears in the header, the tab title and the footer. The two colours
-generate a full palette, which the interface consumes as CSS custom properties.
+Le nom apparaît dans l'en-tête, le titre de l'onglet et le pied de page. Les
+deux couleurs engendrent une palette complète, que l'interface consomme sous
+forme de propriétés CSS personnalisées.
 
-## The generated palette
+## La palette engendrée
 
-From `primary_color` and `accent_color`, Peek derives:
+À partir de `primary_color` et `accent_color`, Peek dérive :
 
 ```
 --peek-primary          --peek-accent
@@ -43,10 +45,12 @@ From `primary_color` and `accent_color`, Peek derives:
 --peek-primary-ring
 ```
 
-`--peek-on-primary` is chosen by measuring the **WCAG 2.2 contrast ratio** of
-white and near-black against your primary, and picking the better one. If
-neither reaches 4.5:1, the theme carries a warning rather than quietly
-rendering unreadable text:
+## Le contrôle de contraste
+
+`--peek-on-primary` est choisi en mesurant le **rapport de contraste WCAG 2.2**
+du blanc et du quasi-noir contre votre couleur primaire, et en gardant le
+meilleur des deux. Si aucun n'atteint 4,5:1, le thème porte un avertissement
+plutôt que de rendre silencieusement un texte illisible :
 
 ```bash
 curl -s https://secrets.acme.com/api/v1/branding | jq .warnings
@@ -56,83 +60,67 @@ curl -s https://secrets.acme.com/api/v1/branding | jq .warnings
 ["contrast between the primary colour and white text is 3.12:1, below the 4.5:1 required by WCAG 2.2 AA; pick a darker primary"]
 ```
 
-Accessibility is a stated requirement of the product, so a brand that fails it
-is reported, not hidden.
+L'accessibilité est une exigence affichée du produit : une marque qui y échoue
+est signalée, pas masquée. C'est aussi la raison pour laquelle
+`--peek-on-primary` est une variable et non du blanc écrit en dur — une marque
+ne peut pas rendre l'interface inaccessible par accident.
 
-## How it reaches the browser
+## Comment cela arrive au navigateur
 
 ```http
-GET /api/v1/branding   → the theme as JSON (ETag, revalidated)
-GET /branding.css      → the same theme as CSS custom properties
+GET /api/v1/branding   → le thème en JSON (ETag, revalidé)
+GET /branding.css      → le même thème en propriétés CSS personnalisées
 ```
 
-`index.html` loads `/branding.css` before the bundle. The bundled stylesheet
-keeps its own defaults inside `@layer base`, and CSS cascade layers rank
-unlayered rules above every layer — so the instance brand always wins, with no
-`!important` and no rebuild. Change a colour, restart, reload: it is applied.
+`index.html` charge `/branding.css` avant le bundle. La feuille de style du
+bundle garde ses propres valeurs par défaut dans `@layer base`, et les couches
+de cascade CSS placent les règles hors couche au-dessus de toutes les
+couches — la marque de l'instance gagne donc toujours, sans `!important` et
+sans recompilation. Changez une couleur, redémarrez, rechargez : c'est
+appliqué.
 
-Dark mode follows the system preference and can be toggled by the visitor; the
-choice is remembered in that browser only.
+Le mode sombre suit la préférence système et le visiteur peut le basculer ; son
+choix n'est mémorisé que dans son navigateur.
 
-## Moving a brand between instances
+## Ce que l'éditeur ajoute
 
-```bash
-peek branding export acme.peekbrand     # or to stdout
-peek branding import acme.peekbrand
-```
+- Un aperçu en direct de l'accueil, de la page destinataire et d'un e-mail,
+  qui se met à jour à la frappe.
+- Des logos clair et sombre (SVG assaini côté serveur, PNG, WebP), un favicon
+  et une image Open Graph.
+- Rayon des coins, style des boutons, et une police choisie dans une liste
+  **embarquée dans le binaire** — jamais une police web récupérée sur
+  Internet, parce que ce serait un tiers qui regarde chaque destinataire
+  ouvrir un secret.
+- Chaque texte modifiable par langue activée : titres, aides, message par
+  défaut au destinataire, page du secret expiré, pied de page.
+- CSS personnalisé, réservé à l'administrateur, assaini, borné en taille, sans
+  `@import` et sans `url()` externe.
+- Modèles d'e-mail brandés, HTML et texte, avec variables, aperçu et bouton
+  « envoyer un test ».
 
-The file is JSON: format version, export date, and the theme. Prepare a brand
-once on a staging instance and deploy it at the customer, or keep it in the
-customer's configuration repository. Import validates the result and prints any
-contrast warning before you restart.
-
-## Domain
-
-Single-tenant, which is the default: `public_url` is the brand's domain. All
-links, cookies and redirects derive from it.
-
-[Multi-organisation mode](CONFIG.md#multi-organisation-mode) resolves the
-brand from the `Host` header, taken only from a trusted proxy or a direct
-connection, and only for a domain a DNS TXT record has proved. Each
-organisation has its own brand, and an e-mail sent on behalf of one carries
-that one.
-
-## What the editor adds
-
-- A live preview of the home page, the recipient page and an e-mail, updating
-  as you type.
-- Light and dark logos (SVG sanitised server side, PNG, WebP), a favicon and
-  an Open Graph image.
-- Corner radius, button style, and a font chosen from a list **embedded in the
-  binary** — never a web font fetched from the internet, because that is a
-  third party watching every recipient open a secret.
-- Every text editable per enabled language: titles, help, the default
-  recipient message, the expired-secret page, the footer.
-- Custom CSS, administrator only, sanitised, size-limited, with no `@import`
-  and no external `url()`.
-- Branded e-mail templates, HTML and text, with variables, a preview and a
-  "send a test" button.
-
-## Moving a brand between instances
+## Déplacer une marque d'une instance à l'autre
 
 ```bash
-# prepare it once
+# la préparer une fois
 sudo peek branding export > acme.peekbrand
 
-# and at the customer
+# et chez le client
 sudo peek branding import acme.peekbrand
 ```
 
-The file carries the colours, the texts and the assets. It does not carry
-users, secrets or keys.
+Le fichier est du JSON : version de format, date d'export, et le thème. Il
+porte les couleurs, les textes et les assets. Il ne porte ni utilisateurs, ni
+secrets, ni clés. L'import valide le résultat et affiche tout avertissement de
+contraste avant que vous ne redémarriez.
 
-## The contrast check
+## Domaine
 
-The palette is generated from one primary colour, and the text drawn on it is
-whichever of white or near-black actually reaches 4.5:1 — WCAG 2.2 AA for
-normal text. When neither does, the editor says so instead of quietly shipping
-a button nobody can read.
+En mono-client, qui est le cas par défaut : `public_url` est le domaine de la
+marque. Tous les liens, les cookies et les redirections en découlent.
 
-That check is the reason a brand cannot make the interface inaccessible by
-accident, and it is also why `--peek-on-primary` exists as a variable rather
-than being hard-coded to white.
+Le [mode multi-organisation](CONFIG.md#mode-multi-organisation) résout la
+marque depuis l'en-tête `Host`, pris uniquement d'un proxy de confiance ou
+d'une connexion directe, et seulement pour un domaine qu'un enregistrement DNS
+TXT a prouvé. Chaque organisation a sa marque, et un e-mail envoyé pour le
+compte de l'une porte celle-là.
