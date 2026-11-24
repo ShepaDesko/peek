@@ -117,10 +117,13 @@ export default function Dashboard({ t, lang }: Props) {
         </Card>
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="peek-table">
+          {/* The roles are written out because the stylesheet turns the rows
+              into blocks on a phone, and that takes the table semantics with
+              it unless they are declared. */}
+          <table className="peek-table" role="table">
             <caption className="sr-only">{t("dashboard.title")}</caption>
-            <thead>
-              <tr>
+            <thead role="rowgroup">
+              <tr role="row">
                 <th scope="col">{t("dashboard.col.secret")}</th>
                 <th scope="col">{t("receipt.status")}</th>
                 <th scope="col">{t("receipt.views")}</th>
@@ -130,26 +133,34 @@ export default function Dashboard({ t, lang }: Props) {
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {items.map((item) => (
-                <tr key={item.id}>
-                  <td>
+                <tr key={item.id} role="row">
+                  <td role="cell" data-label={t("dashboard.col.secret")}>
                     <span className="font-mono text-xs">{item.id}</span>
                     <span className="peek-muted ml-2 text-xs">
                       {item.kind} · {formatBytes(item.size_bytes)}
                       {item.has_passphrase ? ` · ${t("dashboard.passphrase")}` : ""}
                     </span>
                   </td>
-                  <td style={{ color: STATUS_TONE[item.status] ?? "var(--peek-muted)" }}>
+                  <td
+                    role="cell"
+                    data-label={t("receipt.status")}
+                    style={{ color: STATUS_TONE[item.status] ?? "var(--peek-muted)" }}
+                  >
                     {t(`receipt.status.${item.status}` as Parameters<Translate>[0])}
                   </td>
-                  <td className="peek-num">
+                  <td role="cell" data-label={t("receipt.views")} className="peek-num">
                     {item.views_used} / {item.views_max}
                   </td>
-                  <td className="peek-muted whitespace-nowrap">
+                  <td
+                    role="cell"
+                    data-label={t("receipt.created")}
+                    className="peek-muted whitespace-nowrap"
+                  >
                     {formatWhen(item.created_at, lang)}
                   </td>
-                  <td className="text-right">
+                  <td role="cell" className="peek-cell-actions">
                     {item.status === "active" ? (
                       <button
                         type="button"

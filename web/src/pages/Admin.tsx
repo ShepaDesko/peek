@@ -250,10 +250,13 @@ function UsersTab({
       </Card>
 
       <Card className="overflow-x-auto p-0">
-        <table className="peek-table">
+        {/* The roles are written out because the stylesheet turns the rows
+            into blocks on a phone, and that takes the table semantics with it
+            unless they are declared. */}
+        <table className="peek-table" role="table">
           <caption className="sr-only">{t("admin.tab.users")}</caption>
-          <thead>
-            <tr>
+          <thead role="rowgroup">
+            <tr role="row">
               <th scope="col">{t("login.email")}</th>
               <th scope="col">{t("admin.users.role")}</th>
               <th scope="col">{t("admin.users.status")}</th>
@@ -264,18 +267,18 @@ function UsersTab({
               </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {users.map((user) => {
               const self = user.id === me.user?.id;
               return (
-                <tr key={user.id}>
-                  <td>
+                <tr key={user.id} role="row">
+                  <td role="cell" data-label={t("login.email")}>
                     {user.email}
                     {self ? (
                       <span className="peek-muted ml-2 text-xs">{t("admin.users.you")}</span>
                     ) : null}
                   </td>
-                  <td>
+                  <td role="cell" data-label={t("admin.users.role")}>
                     <select
                       className="peek-input peek-select w-auto py-1 text-xs"
                       value={user.role}
@@ -290,18 +293,24 @@ function UsersTab({
                       ))}
                     </select>
                   </td>
-                  <td>
+                  <td role="cell" data-label={t("admin.users.status")}>
                     <span className="peek-chip">
                       {t(`status.${user.status}` as Parameters<Translate>[0])}
                     </span>
                   </td>
-                  <td>{user.has_totp ? t("app.yes") : t("app.no")}</td>
-                  <td className="peek-muted whitespace-nowrap">
+                  <td role="cell" data-label={t("account.totp.short")}>
+                    {user.has_totp ? t("app.yes") : t("app.no")}
+                  </td>
+                  <td
+                    role="cell"
+                    data-label={t("account.lastLogin")}
+                    className="peek-muted whitespace-nowrap"
+                  >
                     {formatWhen(user.last_login_at, lang)}
                   </td>
-                  <td className="text-right">
+                  <td role="cell" className="peek-cell-actions">
                     {self ? null : (
-                      <div className="flex justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-2 max-sm:justify-start">
                         <button
                           type="button"
                           className="peek-btn peek-btn-ghost px-3 py-1 text-xs"
@@ -409,25 +418,47 @@ function AuditTab({
         <p className="peek-muted text-sm">{t("admin.audit.empty")}</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="peek-table">
+          {/* Same reason as the users table: the roles survive the phone
+              layout, the display change would not. */}
+          <table className="peek-table" role="table">
             <caption className="sr-only">{t("admin.tab.audit")}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{t("admin.audit.when")}</th>
-                <th scope="col">{t("admin.audit.event")}</th>
-                <th scope="col">{t("admin.audit.secret")}</th>
-                <th scope="col">{t("admin.audit.ip")}</th>
-                <th scope="col">{t("admin.audit.detail")}</th>
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col">{t("admin.audit.when")}</th>
+                <th scope="col">{t("admin.audit.event")}</th>
+                <th scope="col">{t("admin.audit.secret")}</th>
+                <th scope="col">{t("admin.audit.ip")}</th>
+                <th scope="col">{t("admin.audit.detail")}</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {events.map((e) => (
-                <tr key={e.id}>
-                  <td className="peek-muted whitespace-nowrap">{formatWhen(e.at, lang)}</td>
-                  <td className="font-mono text-xs">{e.event}</td>
-                  <td className="font-mono text-xs">{e.secret_id ?? "—"}</td>
-                  <td className="peek-muted text-xs">{e.ip ?? "—"}</td>
-                  <td className="peek-muted text-xs">
+                <tr key={e.id} role="row">
+                  <td
+                    role="cell"
+                    data-label={t("admin.audit.when")}
+                    className="peek-muted whitespace-nowrap"
+                  >
+                    {formatWhen(e.at, lang)}
+                  </td>
+                  <td role="cell" data-label={t("admin.audit.event")} className="font-mono text-xs">
+                    {e.event}
+                  </td>
+                  <td
+                    role="cell"
+                    data-label={t("admin.audit.secret")}
+                    className="font-mono text-xs"
+                  >
+                    {e.secret_id ?? "—"}
+                  </td>
+                  <td role="cell" data-label={t("admin.audit.ip")} className="peek-muted text-xs">
+                    {e.ip ?? "—"}
+                  </td>
+                  <td
+                    role="cell"
+                    data-label={t("admin.audit.detail")}
+                    className="peek-muted text-xs"
+                  >
                     {e.detail
                       ? Object.entries(e.detail)
                           .map(([k, v]) => `${k}=${v}`)

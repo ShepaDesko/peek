@@ -65,7 +65,8 @@ Dans `web/src/styles.css`, en `@layer components` :
 | `.peek-glow` | La lueur de marque derrière le panneau, décorative, `aria-hidden` |
 | `.peek-rows` | L'état en lignes `dt`/`dd` avec filets ; `dd.peek-figure` pour le nombre |
 | `.peek-btn-lg` | L'action unique d'une page : pleine largeur, 3,4 rem |
-| `.peek-table` | La table des surfaces denses : en-tête en capitales discrètes, filets identiques à `.peek-rows` |
+| `.peek-table` | La table des surfaces denses : en-tête en capitales discrètes, filets identiques à `.peek-rows`, lignes empilées sous 640 px |
+| `.peek-cell-actions` | La cellule qui porte les boutons d'une ligne. **Pas** `text-right` : une utilitaire vit dans une couche postérieure et gagnerait contre la mise en page téléphone |
 | `.peek-num` | Une colonne de chiffres, en chasse tabulaire |
 | `.peek-select` | Le chevron du `<select>`, à la place de celui du système |
 | `.peek-file` | Le bouton d'un `<input type="file">`, via `::file-selector-button` |
@@ -82,7 +83,7 @@ dans un `<dl className="peek-rows">`, avec `figure` pour le nombre qu'on
 cherche et `mono` pour une valeur technique. Les quatre marques — cadenas
 ouvert, cadenas fermé, clé, copie — y sont aussi, en SVG en ligne.
 
-## Les règles qui se cassent si on les oublie
+## Les huit règles qui se cassent si on les oublie
 
 1. **L'état se lit en chiffres, pas en pastilles.** Qui cherche combien de
    lectures il reste doit tomber sur un nombre aligné à droite.
@@ -103,7 +104,15 @@ ouvert, cadenas fermé, clé, copie — y sont aussi, en SVG en ligne.
    texte de marque `var(--peek-primary-ink)` — les deux se dérivent de la
    surface réellement peinte. `TestNoPaleTokenUsedAsABackground`, dans
    `internal/branding`, refuse la rechute, feuille engendrée comprise.
-7. **Les contrôles natifs se rhabillent, ils ne se remplacent pas.** Un
+7. **Une table garde ses rôles écrits en toutes lettres.** Sous 640 px,
+   `.peek-table` repasse ses lignes et ses cellules en `display: block` pour
+   les empiler, et ce changement emporte la sémantique de table dans tous les
+   moteurs. D'où `role="table"`, `rowgroup`, `row`, `cell` dans le JSX, et le
+   nom de colonne répété sur chaque cellule en `data-label` — c'est lui que la
+   feuille dessine au-dessus de la valeur, puisqu'il n'y a plus d'en-tête à
+   remonter. L'en-tête, lui, est rogné et non supprimé : un lecteur d'écran
+   l'annonce toujours.
+8. **Les contrôles natifs se rhabillent, ils ne se remplacent pas.** Un
    `<select>` garde son chevron, un champ fichier garde son bouton système :
    `.peek-select` et `.peek-file` les reprennent sans toucher à l'élément
    lui-même, pour que le clavier, l'étiquette et le lecteur d'écran restent
@@ -129,13 +138,18 @@ ouvert, cadenas fermé, clé, copie — y sont aussi, en SVG en ligne.
 - [x] Les pages de connexion, d'invitation et de demande de secret.
 - [x] Le tableau de bord et l'administration : `.peek-table` partout, les
       pastilles d'état remplacées par la valeur elle-même.
+- [x] Les trois tables denses sur téléphone : sous 640 px, chaque ligne
+      devient un bloc et chaque cellule porte le nom de sa colonne. Un test
+      Playwright en 375 px vérifie que ni la page ni la carte ne défilent
+      latéralement, que le nom de colonne est bien dessiné, et que la table
+      est toujours une table pour un lecteur d'écran.
 
 ## Ce qui reste
 
-- [ ] Les tables denses, sur téléphone. Le reste a été regardé à 375 px — la
-      création, l'accusé, la page destinataire tiennent sans débordement — mais
-      le tableau de bord et l'administration défilent latéralement dans un
-      `overflow-x-auto` : ça marche, ce n'est pas un choix.
+- [ ] Le reste du produit sur téléphone. Ont été regardées à 375 px : la
+      création, l'accusé, la page destinataire, le dépôt, le tableau de bord et
+      l'onglet Utilisateurs. Les formulaires longs — Personnalisation,
+      Instance, Mon compte — n'ont été vus qu'en large.
 - [ ] La page de personnalisation (`/admin`, onglet Personnalisation) est la
       plus dense du produit et mériterait d'être découpée.
 - [ ] Un thème clair audité au survol dans l'aperçu en direct de la

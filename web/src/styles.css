@@ -475,6 +475,80 @@ body {
     border-bottom: 0;
   }
 
+  /* The cell that holds the row's buttons. A class rather than text-right,
+     because a utility lives in a later layer and would win over the phone
+     layout below whatever its specificity. */
+  .peek-table td.peek-cell-actions {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /*
+   * The same table on a phone.
+   *
+   * Five columns cannot be read at 375 px, and a table that scrolls sideways
+   * hides the column somebody came for. Each row becomes a block and each
+   * cell a line with its column name above it — the shape of .peek-rows,
+   * which is already how the rest of the product shows state.
+   *
+   * Changing the display of a table takes its semantics with it in every
+   * engine, so the elements carry their roles explicitly in the markup. The
+   * header row is clipped rather than removed, so a screen reader still
+   * announces the column names.
+   */
+  @media (max-width: 39.99rem) {
+    .peek-table,
+    .peek-table tbody,
+    .peek-table tbody tr,
+    .peek-table tbody td {
+      display: block;
+    }
+
+    .peek-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .peek-table tbody tr {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--peek-border);
+    }
+
+    .peek-table tbody tr:last-child {
+      border-bottom: 0;
+    }
+
+    .peek-table tbody td {
+      padding: 0.3rem 0;
+      border-bottom: 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .peek-table td.peek-cell-actions {
+      padding-top: 0.7rem;
+      text-align: left;
+    }
+
+    /* The column name, taken from the cell itself: a phone has no header row
+       to look back up to. A cell without one — the buttons — shows only its
+       content. */
+    .peek-table tbody td[data-label]::before {
+      content: attr(data-label);
+      display: block;
+      color: var(--peek-muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+  }
+
   .peek-num {
     font-variant-numeric: tabular-nums;
   }

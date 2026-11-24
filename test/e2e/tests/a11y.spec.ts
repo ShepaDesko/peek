@@ -199,6 +199,61 @@ test("the signed-in pages have no accessibility violations", async ({ page }) =>
   }
 });
 
+test("the dense tables fit a phone", async ({ page }) => {
+  // A table that scrolls sideways hides the column somebody came for, so on a
+  // phone the rows are stacked and each cell carries its column name. Two
+  // things can go wrong and neither shows in a screenshot: the page keeps
+  // scrolling sideways anyway, and the change of display takes the table
+  // semantics with it — which is what the explicit roles are for, and what
+  // axe is here to check.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await signIn(page);
+
+  // A row of its own, so the test does not depend on what ran before it.
+  await page.goto("/");
+  await page.getByLabel("Secret", { exact: true }).fill(SECRET);
+  await page.getByRole("button", { name: "Créer le lien" }).click();
+  await expect(page.getByRole("heading", { name: "Votre lien est prêt" })).toBeVisible();
+
+  const sideways = () =>
+    page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+
+  for (const [path, heading] of [
+    ["/dashboard", "Mes secrets"],
+    ["/admin", "Administration"],
+  ]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible();
+    const table = page.locator("table.peek-table").first();
+    await expect(table).toBeVisible();
+
+    // Still a table to a screen reader, rows and cells included.
+    await expect(table).toHaveAttribute("role", "table");
+    await expect(table.locator('[role="row"]').first()).toBeVisible();
+
+    // Neither the page nor the card the table sits in: a card that scrolls
+    // sideways is the failure this layout exists to remove, and it is
+    // invisible from outside the card.
+    const clipped = await table.evaluate((el) => {
+      const box = el.parentElement as HTMLElement;
+      return box.scrollWidth - box.clientWidth;
+    });
+    expect(clipped, `${path}: the table still scrolls inside its card`).toBeLessThanOrEqual(1);
+    expect(await sideways(), `${path} scrolls sideways on a phone`).toBeLessThanOrEqual(1);
+
+    // And the column name is drawn next to the value, since there is no
+    // header row left to look up to.
+    const label = await table
+      .locator("tbody td[data-label]")
+      .first()
+      .evaluate((el) => getComputedStyle(el, "::before").content);
+    expect(label, `no column name on ${path}`).not.toBe("none");
+    await audit(page, `${path} on a phone`);
+  }
+});
+
 test("hovering a selected control keeps it readable", async ({ page }) => {
   // The segmented controls — tabs, dashboard filters, the kind switcher —
   // carry their selected state as a class so that hover has a rule for both
