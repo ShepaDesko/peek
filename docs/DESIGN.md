@@ -143,6 +143,12 @@ ouvert, cadenas fermé, clé, copie — y sont aussi, en SVG en ligne.
       Playwright en 375 px vérifie que ni la page ni la carte ne défilent
       latéralement, que le nom de colonne est bien dessiné, et que la table
       est toujours une table pour un lecteur d'écran.
+- [x] La palette éditable depuis la page de personnalisation : les huit jetons,
+      chacun montrant la valeur dérivée tant que personne ne la fixe, et un
+      bouton pour tout laisser dériver à nouveau. L'aperçu suit le jeton
+      `on-primary` au lieu de supposer du blanc, et porte le sceau comme la
+      vraie page. Un test Playwright fixe un jeton, le retrouve dans
+      `/branding.css`, puis le relâche.
 - [x] Le produit entier regardé à 375 px : création, accusé, destinataire,
       dépôt, demande, suivi, tableau de bord et les quatre onglets de
       l'administration. Ce qui cassait : les lignes « champ + bouton Copier »,
@@ -151,15 +157,13 @@ ouvert, cadenas fermé, clé, copie — y sont aussi, en SVG en ligne.
 
 ## Ce qui reste
 
-- [ ] **L'éditeur de personnalisation n'expose pas les jetons de palette.** Le
-      serveur accepte un `colors` par jeton, `peek.toml` a `[branding.colors]`
-      et la colonne existe en base, mais la page ne propose que primaire,
-      accent et fond : un administrateur qui n'édite pas le fichier ne peut
-      pas régler `on-primary` ou `primary-hover`. À finir.
 - [ ] La page de personnalisation (`/admin`, onglet Personnalisation) est la
       plus dense du produit et mériterait d'être découpée.
 - [ ] Un thème clair audité au survol dans l'aperçu en direct de la
       personnalisation, où la palette du client est appliquée pour de bon.
+- [ ] Les avertissements de contraste que renvoie le serveur sont en anglais,
+      dans une interface française. Les traduire demande de les transformer en
+      codes avec des paramètres, côté Go comme côté React.
 
 ## Les maquettes
 

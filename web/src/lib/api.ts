@@ -767,6 +767,8 @@ export interface BrandingPayload {
   privacy_url: string;
   contact_email: string;
   texts: Record<string, Record<string, string>>;
+  /** Palette tokens pinned by hand. A token left out stays derived. */
+  colors: Record<string, string>;
   custom_css: string;
 }
 
@@ -775,8 +777,10 @@ export interface BrandingAdminState {
   saved: boolean;
   custom_css: string;
   texts: Record<string, Record<string, string>>;
+  colors: Record<string, string>;
   assets: { kind: string; content_type: string; size_bytes: number; url: string }[];
   options: {
+    palette_tokens: string[];
     fonts: { id: string; label: string; stack: string }[];
     radii: { id: string; label: string; value: string }[];
     button_styles: { id: string; label: string }[];

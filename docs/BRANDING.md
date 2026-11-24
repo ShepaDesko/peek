@@ -81,8 +81,10 @@ primary-hover  = "#1b3fa8"
 primary-active = "#16358d"
 ```
 
-…ou par organisation dans **Administration → Personnalisation**, qui écrit la
-même chose en base. Les deux se superposent jeton par jeton — le fichier est le
+…ou par organisation dans **Administration → Personnalisation**, section
+« Palette détaillée », qui écrit la même chose en base. Chaque champ y montre
+la valeur dérivée tant que personne ne l'a fixée, et se vide pour la laisser
+redevenir dérivée. Les deux se superposent jeton par jeton — le fichier est le
 repli, la base gagne là où elle a un avis — donc une organisation peut en
 épingler un seul sans avoir à redonner ceux que `peek.toml` a déjà posés.
 

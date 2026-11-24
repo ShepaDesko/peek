@@ -59,6 +59,7 @@ export default function Branding({ t, lang, onChanged }: Props) {
         privacy_url: res.theme.privacy_url,
         contact_email: res.theme.contact_email ?? "",
         texts: res.texts ?? {},
+        colors: res.colors ?? {},
         custom_css: res.custom_css ?? "",
       });
       setError(null);
@@ -81,6 +82,28 @@ export default function Branding({ t, lang, onChanged }: Props) {
       const texts = { ...current.texts };
       texts[language] = { ...(texts[language] ?? {}), [key]: value };
       return { ...current, texts };
+    });
+  }
+
+  /**
+   * Pins one palette token, or lets it go back to being derived.
+   *
+   * An empty field is the difference between the two: the token is removed
+   * from the map rather than stored as "", so the server derives it from the
+   * primary and the accent again, and a brand that only changes its primary
+   * keeps following it everywhere.
+   */
+  function updateColor(token: string, value: string) {
+    setDraft((current) => {
+      if (!current) return current;
+      const colors = { ...current.colors };
+      const clean = value.trim();
+      if (clean === "") {
+        delete colors[token];
+      } else {
+        colors[token] = clean;
+      }
+      return { ...current, colors };
     });
   }
 
@@ -274,6 +297,41 @@ export default function Branding({ t, lang, onChanged }: Props) {
         </Card>
 
         <Card className="space-y-4">
+          <div className="space-y-1">
+            <h2 className="font-semibold">{t("branding.palette")}</h2>
+            <p className="peek-muted text-sm leading-relaxed">{t("branding.palette.hint")}</p>
+          </div>
+
+          {/* Each field shows the derived colour until somebody pins it, so
+              the page says what it is about to change rather than starting
+              from white. The token name is written under the label because it
+              is the same one peek.toml uses in [branding.colors]. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {state.options.palette_tokens.map((token) => (
+              <ColorField
+                key={token}
+                id={`palette-${token}`}
+                label={t(`branding.token.${token}` as Parameters<Translate>[0])}
+                hint={token}
+                value={draft.colors[token] ?? ""}
+                derived={preview?.palette[token]}
+                onChange={(v) => updateColor(token, v)}
+                allowEmpty
+              />
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="peek-btn peek-btn-ghost w-fit"
+            onClick={() => update({ colors: {} })}
+            disabled={Object.keys(draft.colors).length === 0}
+          >
+            {t("branding.palette.clear")}
+          </button>
+        </Card>
+
+        <Card className="space-y-4">
           <h2 className="font-semibold">{t("branding.images")}</h2>
           <p className="peek-muted text-sm leading-relaxed">{t("branding.images.hint")}</p>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -434,13 +492,21 @@ function Preview({
   const primary = draft.primary_color || "#4f46e5";
   const outline = draft.button_style === "outline";
   const logo = state.assets.find((a) => a.kind === "logo_light")?.url;
+  // on-primary is picked by the server for contrast against the primary, so
+  // the preview follows a pinned value when there is one and the last
+  // resolved one otherwise. Hard-coding white here made the preview lie as
+  // soon as the palette became editable.
+  const onPrimary = draft.colors["on-primary"] || state.theme.palette["on-primary"] || "#ffffff";
+  // The outline preset writes its label in the brand colour pulled towards
+  // the text colour, which is what the generated stylesheet does.
+  const ink = `color-mix(in srgb, ${primary} 65%, var(--peek-text))`;
 
   return (
     <aside className="lg:sticky lg:top-6 lg:h-fit">
       <Card className="space-y-3">
         <h2 className="font-semibold">{t("branding.preview")}</h2>
         <div
-          className="space-y-3 border p-4"
+          className="overflow-hidden border"
           style={{
             borderColor: "var(--peek-border)",
             borderRadius: radius,
@@ -448,40 +514,54 @@ function Preview({
             background: draft.background_color || "var(--peek-surface)",
           }}
         >
-          <div className="flex items-center gap-2">
-            {logo ? (
-              <img src={logo} alt="" className="h-6 w-auto" />
-            ) : (
-              <span
-                aria-hidden="true"
-                className="inline-block size-5"
-                style={{ background: primary, borderRadius: radius }}
-              />
-            )}
-            <span className="text-sm font-semibold">{draft.service_name || "Peek"}</span>
-          </div>
-
-          <p className="text-sm font-medium">
-            {draft.texts["fr"]?.["home.title"] || t("reveal.title")}
-          </p>
-          <p className="peek-muted text-xs leading-relaxed">{t("reveal.warning")}</p>
-
-          <button
-            type="button"
-            className="w-full px-3 py-2 text-sm font-semibold"
+          {/* The seal, as the recipient's panel wears it: an administrator
+              judging a brand should see the page that exists. */}
+          <div
+            aria-hidden="true"
             style={{
-              borderRadius: radius,
-              border: `1px solid ${primary}`,
-              background: outline ? "transparent" : primary,
-              color: outline ? primary : "#ffffff",
+              height: "9px",
+              backgroundRepeat: "no-repeat",
+              backgroundImage: `repeating-linear-gradient(to right, color-mix(in srgb, ${primary} 55%, transparent) 0 7px, transparent 7px 14px), linear-gradient(${primary}, ${primary})`,
+              backgroundSize: "100% 3px, 100% 6px",
+              backgroundPosition: "0 6px, 0 0",
             }}
-          >
-            {t("reveal.button")}
-          </button>
+          />
+          <div className="space-y-3 p-4">
+            <div className="flex items-center gap-2">
+              {logo ? (
+                <img src={logo} alt="" className="h-6 w-auto" />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="inline-block size-5"
+                  style={{ background: primary, borderRadius: radius }}
+                />
+              )}
+              <span className="text-sm font-semibold">{draft.service_name || "Peek"}</span>
+            </div>
 
-          <p className="peek-muted text-[11px]">
-            {draft.hide_powered_by ? " " : t("app.poweredBy")}
-          </p>
+            <p className="text-sm font-medium">
+              {draft.texts["fr"]?.["home.title"] || t("reveal.title")}
+            </p>
+            <p className="peek-muted text-xs leading-relaxed">{t("reveal.warning")}</p>
+
+            <button
+              type="button"
+              className="w-full px-3 py-2 text-sm font-semibold"
+              style={{
+                borderRadius: radius,
+                border: `1px solid ${primary}`,
+                background: outline ? "transparent" : primary,
+                color: outline ? ink : onPrimary,
+              }}
+            >
+              {t("reveal.button")}
+            </button>
+
+            <p className="peek-muted text-[11px]">
+              {draft.hide_powered_by ? " " : t("app.poweredBy")}
+            </p>
+          </div>
         </div>
         <p className="peek-muted text-xs leading-relaxed">{t("branding.preview.hint")}</p>
       </Card>
@@ -492,25 +572,31 @@ function Preview({
 function ColorField({
   id,
   label,
+  hint,
   value,
+  derived,
   onChange,
   allowEmpty,
 }: {
   id: string;
   label: string;
+  hint?: string;
   value: string;
+  /** What the server computes when this one is left alone. */
+  derived?: string;
   onChange: (value: string) => void;
   allowEmpty?: boolean;
 }) {
+  const shown = value || derived || "";
   return (
-    <Field label={label} htmlFor={id}>
+    <Field label={label} hint={hint} htmlFor={id}>
       <div className="flex items-center gap-2">
         <input
           id={id}
           type="color"
           className="h-9 w-10 cursor-pointer rounded-lg border"
           style={{ borderColor: "var(--peek-border)" }}
-          value={value || "#ffffff"}
+          value={shown || "#ffffff"}
           onChange={(e) => onChange(e.target.value)}
           aria-label={label}
         />
@@ -518,7 +604,7 @@ function ColorField({
           className="peek-input font-mono text-xs"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={allowEmpty ? "—" : "#000000"}
+          placeholder={derived || (allowEmpty ? "—" : "#000000")}
           aria-label={`${label} (hex)`}
         />
       </div>
