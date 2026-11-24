@@ -151,6 +151,12 @@ nfpms:
       preremove: packaging/deb/prerm.sh
       postremove: packaging/deb/postrm.sh
     overrides:
+      deb:
+        # The scriptlet prefers Debian's own account tools. They live in a
+        # package that is not essential, so it is declared rather than hoped
+        # for — and the scriptlet falls back to shadow-utils all the same.
+        dependencies:
+          - adduser
       rpm:
         scripts:
           postinstall: packaging/rpm/postinstall.sh

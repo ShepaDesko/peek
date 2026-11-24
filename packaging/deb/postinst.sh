@@ -1,5 +1,16 @@
 #!/bin/sh
 # Debian/Ubuntu post-installation. Idempotent: it runs on install and upgrade.
+#
+# adduser and addgroup come from the `adduser` package, which this .deb now
+# depends on — but it is not essential, and a minimal image (debootstrap
+# --variant=minbase, the bare ubuntu container) does not have it. Found
+# exactly there: `addgroup: not found`, exit 127 under `set -e`, so no service
+# account, no directories, and a package left half configured. The same shape
+# as the RPM scriptlet that used to call Debian's addgroup on RHEL.
+#
+# So: Debian's tools when they are there, shadow-utils otherwise. useradd and
+# groupadd come from `passwd`, which is essential, so the fallback cannot
+# itself be missing.
 set -e
 
 PEEK_USER=peek
@@ -7,12 +18,28 @@ PEEK_HOME=/var/lib/peek
 
 create_user() {
     if ! getent group "$PEEK_USER" >/dev/null; then
-        addgroup --system "$PEEK_USER"
+        if command -v addgroup >/dev/null 2>&1; then
+            addgroup --system "$PEEK_USER"
+        else
+            groupadd --system "$PEEK_USER"
+        fi
     fi
     if ! getent passwd "$PEEK_USER" >/dev/null; then
-        adduser --system --ingroup "$PEEK_USER" --home "$PEEK_HOME" \
-            --no-create-home --shell /usr/sbin/nologin \
-            --gecos "Peek service account" "$PEEK_USER"
+        if command -v adduser >/dev/null 2>&1; then
+            adduser --system --ingroup "$PEEK_USER" --home "$PEEK_HOME" \
+                --no-create-home --shell /usr/sbin/nologin \
+                --gecos "Peek service account" "$PEEK_USER"
+        else
+            # The short options are the ones every shadow-utils release has,
+            # for the same reason the RPM script uses them.
+            useradd --system \
+                -g "$PEEK_USER" \
+                -d "$PEEK_HOME" \
+                -M \
+                -s /usr/sbin/nologin \
+                -c "Peek service account" \
+                "$PEEK_USER"
+        fi
     fi
 }
 
