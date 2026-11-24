@@ -376,3 +376,84 @@ func TestDuplicateIDRejected(t *testing.T) {
 		}
 	})
 }
+
+// What `peek key rotate` needs before it decides whether rotating is safe.
+//
+// The command used to tell the operator that "nothing stored today needs
+// re-encryption". That was written before the master key had anything to
+// protect; it seals second factors and notification addresses now, so the
+// sentence had become an invitation to lock every user out of their own
+// second factor. The count is what replaced it.
+func TestSealedCounts(t *testing.T) {
+	run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+
+		empty, err := s.SealedCounts(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if empty.Total != 0 {
+			t.Fatalf("a fresh instance reports %+v, want nothing sealed", empty)
+		}
+
+		user, err := s.CreateUser(ctx, store.User{Email: "admin@acme.test", Role: "admin", Status: "active"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A user without a second factor is not sealed data.
+		if got, err := s.SealedCounts(ctx); err != nil || got.Total != 0 {
+			t.Fatalf("an account with no second factor counts as %+v (err %v)", got, err)
+		}
+
+		if err := s.SetTOTPSecret(ctx, user.ID, []byte("sealed-totp-seed")); err != nil {
+			t.Fatal(err)
+		}
+		create(t, s, 1, time.Hour)
+		createNotified(t, s)
+
+		got, err := s.SealedCounts(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.TOTP != 1 {
+			t.Errorf("TOTP = %d, want 1", got.TOTP)
+		}
+		if got.Notify != 1 {
+			t.Errorf("Notify = %d, want 1 (the secret without an address must not count)", got.Notify)
+		}
+		if got.Total != 2 {
+			t.Errorf("Total = %d, want 2", got.Total)
+		}
+	})
+}
+
+// createNotified is create() with a notification address, which is the other
+// thing the master key seals.
+func createNotified(t *testing.T, s *store.Store) {
+	t.Helper()
+	id, err := pcrypto.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kdf, err := pcrypto.DefaultKDFParams()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Create(context.Background(), store.NewSecret{
+		ID:                id,
+		OrgID:             "default",
+		Kind:              "text",
+		Ciphertext:        []byte("x"),
+		SizeBytes:         1,
+		ReadTokenHash:     []byte("read-token-hash-placeholder-0001"),
+		ReceiptTokenHash:  []byte("receipt-token-hash-placeholder01"),
+		KDF:               kdf,
+		ViewsMax:          1,
+		MaxFailedAttempts: 5,
+		ExpiresAt:         time.Now().Add(time.Hour),
+		NotifyEmailEnc:    []byte("sealed-address"),
+		NotifyOnView:      true,
+	}); err != nil {
+		t.Fatalf("create with a notification address: %v", err)
+	}
+}

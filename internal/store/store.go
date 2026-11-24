@@ -137,3 +137,36 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// Sealed counts the rows encrypted with the master key.
+//
+// `peek key rotate` needs it: re-encryption is not implemented, so rotating
+// the key on a populated instance makes every one of these unreadable. The
+// command has to be able to say how many, rather than warn in the abstract or
+// — as it used to — claim there is nothing to lose.
+type Sealed struct {
+	TOTP   int // accounts with a second factor enrolled
+	Notify int // live secrets and requests carrying a notification address
+	Total  int
+}
+
+// SealedCounts reports what is encrypted with the current master key.
+func (s *Store) SealedCounts(ctx context.Context) (Sealed, error) {
+	var out Sealed
+	queries := []struct {
+		into  *int
+		query string
+	}{
+		{&out.TOTP, `SELECT COUNT(*) FROM users WHERE totp_secret_enc IS NOT NULL`},
+		{&out.Notify, `SELECT
+			(SELECT COUNT(*) FROM secrets WHERE notify_email_enc IS NOT NULL)
+			+ (SELECT COUNT(*) FROM secret_requests WHERE notify_email_enc IS NOT NULL)`},
+	}
+	for _, q := range queries {
+		if err := s.db.QueryRowContext(ctx, s.rebind(q.query)).Scan(q.into); err != nil {
+			return Sealed{}, err
+		}
+	}
+	out.Total = out.TOTP + out.Notify
+	return out, nil
+}

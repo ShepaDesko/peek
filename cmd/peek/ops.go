@@ -18,6 +18,7 @@ import (
 	"github.com/ShepaDesko/peek/internal/config"
 	"github.com/ShepaDesko/peek/internal/doctor"
 	"github.com/ShepaDesko/peek/internal/setup"
+	"github.com/ShepaDesko/peek/internal/store"
 	"github.com/ShepaDesko/peek/internal/update"
 )
 
@@ -499,13 +500,14 @@ func restartService() error {
 // peek key rotate
 // ---------------------------------------------------------------------------
 
-func runKey(_ context.Context, args []string) error {
+func runKey(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] != "rotate" {
-		return fail("usage: peek key rotate [--config PATH] [--init]")
+		return fail("usage: peek key rotate [--config PATH] [--init] [--force]")
 	}
 	fs := flag.NewFlagSet("key rotate", flag.ContinueOnError)
 	configPath := fs.String("config", defaultConfigPath(), "path to peek.toml")
 	initOnly := fs.Bool("init", false, "only create the key if it is missing")
+	force := fs.Bool("force", false, "rotate even though data sealed with the current key will become unreadable")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -524,14 +526,35 @@ func runKey(_ context.Context, args []string) error {
 		return nil
 	}
 
+	// Rotating is destructive on a populated instance: re-encryption is not
+	// implemented, so everything sealed with the old key stops being
+	// readable. The command used to say the opposite — "nothing stored today
+	// needs re-encryption" — which was written before the master key had
+	// anything to protect and was never revisited. It protects second factors
+	// and notification addresses now, so an operator doing ordinary key
+	// hygiene would have locked their users out of their own second factor on
+	// the word of this command.
+	if exists && !*initOnly {
+		sealed, err := sealedCounts(ctx, cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "note: cannot read the database to see what is sealed (%v)\n", err)
+		} else if sealed.Total > 0 && !*force {
+			return fail("rotating would make unreadable: %d second factor(s) and %d notification address(es).\n"+
+				"Re-encryption with the new key is not implemented, so those users would have to enrol again\n"+
+				"and those notifications would stop. Pass --force if that is what you want.", sealed.TOTP, sealed.Notify)
+		} else if sealed.Total > 0 {
+			fmt.Printf("rotating anyway: %d second factor(s) and %d notification address(es) become unreadable\n",
+				sealed.TOTP, sealed.Notify)
+		}
+	}
+
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		return err
 	}
 	if exists {
-		// Keep the old key: anything encrypted with it would be unreadable
-		// otherwise, and re-encryption of stored metadata lands with the
-		// features that use it (SSO and SMTP secrets, milestone M5).
+		// Keep the old key: anything sealed with it is unreadable without it,
+		// and there is no re-encryption pass to run.
 		aside := fmt.Sprintf("%s.%s.old", cfg.MasterKeyFile, time.Now().UTC().Format("20060102T150405Z"))
 		data, err := os.ReadFile(cfg.MasterKeyFile)
 		if err != nil {
@@ -553,10 +576,24 @@ func runKey(_ context.Context, args []string) error {
 		return err
 	}
 	fmt.Printf("wrote a new 256-bit master key to %s\n", cfg.MasterKeyFile)
-	fmt.Println("nothing stored today needs re-encryption: secret payloads are encrypted in the browser,")
-	fmt.Println("and server-side encrypted metadata (SMTP and SSO secrets) arrives in milestone M5.")
+	fmt.Println("secret payloads are unaffected: those are encrypted in the browser, and this key never saw them.")
+	fmt.Println("what this key does protect, and what the old file above is still needed for: enrolled second")
+	fmt.Println("factors and the notification addresses stored with secrets and requests.")
 	fmt.Println("back this file up separately from the database, and restart the service.")
 	return nil
+}
+
+// sealedCounts opens the database only to ask how much is encrypted with the
+// master key. A database that cannot be opened is not a reason to refuse a
+// rotation — an instance may have none yet — so the caller reports and
+// carries on.
+func sealedCounts(ctx context.Context, cfg config.Config) (store.Sealed, error) {
+	db, err := store.Open(ctx, cfg.Database)
+	if err != nil {
+		return store.Sealed{}, err
+	}
+	defer func() { _ = db.Close() }()
+	return db.SealedCounts(ctx)
 }
 
 // ---------------------------------------------------------------------------
