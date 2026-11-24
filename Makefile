@@ -43,8 +43,12 @@ deps: ## Install Go and frontend dependencies
 .PHONY: web-build
 web-build: ## Build the SPA and stage it for embedding
 	cd web && $(NPM) run build
-	rm -rf $(EMBED_DIST)
-	mkdir -p $(EMBED_DIST)
+	# Empty the directory without removing it: .gitignore is the one file in
+	# there that is committed, and `rm -rf` on the directory takes it with
+	# everything else. Leaving stale bundles behind is the other failure —
+	# the file names are content-hashed, so a second copy does not overwrite
+	# the first, it joins it, and the size budget then measures both.
+	find $(EMBED_DIST) -mindepth 1 -not -name .gitignore -delete
 	cp -r $(WEB_DIST)/. $(EMBED_DIST)/
 
 .PHONY: build
