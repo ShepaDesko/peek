@@ -329,15 +329,18 @@ jobs:
           mkdir -p /tmp/inst
           export PEEK_CONFIG=/tmp/inst/peek.toml
 
-          # 1.0.2 and earlier put the master key at /etc/peek/master.key
-          # whatever --config said, so the previous binary cannot configure an
-          # instance under /tmp as an ordinary user: it writes the file it was
-          # asked for and then dies on "mkdir /etc/peek: permission denied".
-          # That is fixed from 1.1.0 on. Until 1.1.0 is the previous tag this
-          # line keeps the job doing its own work — the upgrade and the
-          # rollback — rather than re-finding a bug that is already fixed.
-          # Remove it once `git tag --sort=-v:refname | head -1` is v1.1.0.
+          # 1.0.2 and earlier keep the master key at /etc/peek/master.key and
+          # the backups at /var/backups/peek whatever --config and --data-dir
+          # say, so the previous binary cannot configure an instance under
+          # /tmp as an ordinary user: it writes the file it was asked for and
+          # then dies on "mkdir: permission denied". That is fixed from 1.1.0
+          # on, where a configuration outside /etc/peek roots everything
+          # beside itself. Until 1.1.0 is the previous tag these two lines
+          # keep the job doing its own work — the upgrade and the rollback —
+          # rather than re-finding a bug that is already fixed.
+          # Remove them once `git tag --sort=-v:refname | head -1` is v1.1.0.
           sudo install -d -o "$USER" -m 0750 /etc/peek
+          sudo install -d -o "$USER" -m 0750 /var/backups/peek
 
           /tmp/peek-old setup --non-interactive --force \
             --config /tmp/inst/peek.toml \
