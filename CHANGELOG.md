@@ -6,7 +6,81 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+The interface was redesigned. Peek did its job before this and looked like a
+form; it now looks like one product, and the look belongs to the customer
+rather than to us: everything here holds in blue, in orange and in green,
+because the identity is in the structure and not in a palette. The art
+direction is written down in `docs/DESIGN.md` so it does not have to be
+decided again.
+
+Two defects found the way they should be: by running the release checks
+rather than by reading the code.
+
+### Changed
+
+- **The dark theme is now the default.** An instance that has never been told
+  otherwise paints dark, instead of following the visitor's system. A visitor
+  who picks a theme still wins, and an instance that wants the old look sets
+  `branding.default_theme = "light"` — or `"system"` for the previous
+  behaviour. This is visible to everybody on upgrade, so it is first in this
+  list.
+- The recipient page and the deposit page are their own kind of page: no
+  navigation, the customer's mark above a sealed panel centred in the window.
+  A stranger who was sent a link meets one object and one action.
+- The state of a secret reads in figures on a rule, not in pills: whoever
+  wants to know how many reads are left lands on a number.
+- The dashboard and the administration share one table, and on a phone its
+  rows stack with each cell carrying its column name, rather than scrolling
+  sideways and hiding the column somebody came for.
+- `<select>` and the file input are dressed rather than replaced: the control
+  stays native, so the keyboard, the label and the screen reader stay the
+  platform's.
+
+### Added
+
+- **The palette is editable from the page.** Administration →
+  Personnalisation now has the eight tokens, each showing the value Peek
+  derives until somebody pins it, and emptying a field lets it derive again.
+  The server and `peek.toml` already took `[branding.colors]`; the page did
+  not, so a brand book's exact hover shade needed file access.
+- `docs/DESIGN.md`: the art direction, the components, and the rules that
+  break when they are forgotten.
+
+### Fixed
+
+- **`peek setup --config <path>` failed for anyone but root.** It wrote the
+  configuration where it was asked, then created the master key at the
+  packaged path `/etc/peek/master.key` — which no flag reached — and died on
+  `mkdir /etc/peek: permission denied`, leaving a configuration behind that
+  named a key which did not exist. A configuration outside `/etc/peek` now
+  describes a self-contained instance: its key, its data and its backups sit
+  beside the file that names them. An instance installed from a package is
+  untouched.
+- **The Debian post-installation script could abort on a minimal image.** It
+  called `addgroup`, which comes from the `adduser` package: present on a
+  normal Debian or Ubuntu, absent from a container or a `--variant=minbase`
+  install. Under `set -e` that meant no service account, no directories, and a
+  half-configured package. The `.deb` now declares the dependency, and the
+  script falls back to `groupadd`/`useradd` from the essential `passwd`
+  package. The same shape as the RPM scriptlet fixed earlier.
+- A hovered ghost button was unreadable on the dark theme, and so were the
+  selected segmented control and the outline button preset. All three took
+  `--peek-primary-soft` as a background — a token the server computes at 88%
+  white whatever the theme, because it exists for the light one. Tinted
+  backgrounds and brand-coloured text are now derived from the surface that is
+  actually painted. Eighteen accessibility audits passed while this was broken
+  because a checker does not hover; one that does was added.
+- On a phone, a link next to its copy button kept a quarter of its width, at
+  the six places that pattern appears. The field now takes the line and the
+  button goes under it.
+
+### Security
+
+- The recipient cannot tell who sent them a secret, and that is now asserted
+  rather than merely true: a test compares the whole field list of both public
+  endpoints, headers included, so a field added without thinking fails it.
+  `docs/THREAT-MODEL.md` states the guarantee and its one leak — a sender who
+  names themselves in the free-text message.
 
 ## [1.0.2] - 2026-11-23
 
