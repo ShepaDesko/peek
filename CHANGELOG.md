@@ -6,6 +6,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.1.0] - 2026-11-24
+
 The interface was redesigned. Peek did its job before this and looked like a
 form; it now looks like one product, and the look belongs to the customer
 rather than to us: everything here holds in blue, in orange and in green,
@@ -73,6 +77,10 @@ rather than by reading the code.
 - On a phone, a link next to its copy button kept a quarter of its width, at
   the six places that pattern appears. The field now takes the line and the
   button goes under it.
+- Three things the product said that were no longer true: `peek setup`
+  announced that the PostgreSQL driver would refuse to start (it works), that
+  accounts were still to come (they are here), and `peek doctor` promised a
+  test message from a branch nothing could reach.
 
 ### Security
 
@@ -81,6 +89,13 @@ rather than by reading the code.
   endpoints, headers included, so a field added without thinking fails it.
   `docs/THREAT-MODEL.md` states the guarantee and its one leak — a sender who
   names themselves in the free-text message.
+- **`peek key rotate` no longer destroys what it cannot re-encrypt.** It
+  printed "nothing stored today needs re-encryption", written when the master
+  key protected nothing. It seals enrolled second factors and notification
+  addresses now, and there is no re-encryption pass, so an administrator doing
+  ordinary key hygiene locked every user out of their own second factor. The
+  command counts what is sealed, refuses while naming the numbers, and takes
+  `--force` from whoever means it.
 
 ## [1.0.2] - 2026-11-23
 
