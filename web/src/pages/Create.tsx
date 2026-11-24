@@ -405,9 +405,30 @@ export default function Create({ t, policy, policyError }: Props) {
   return (
     <form onSubmit={submit} className="space-y-5">
       <Card className="space-y-5">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("create.title")}</h1>
-          <p className="peek-muted text-sm leading-relaxed">{t("create.subtitle")}</p>
+        <header className="space-y-2">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("create.title")}</h1>
+          {/* The one sentence that says what the product is. It was a grey
+              caption under the title, which is where a reader's eye goes
+              last; the key marks it as a guarantee rather than a subtitle. */}
+          <p className="peek-muted flex items-start gap-2 text-sm leading-relaxed">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+              className="mt-1 shrink-0"
+            >
+              <circle cx="8.5" cy="12" r="3.6" stroke="currentColor" strokeWidth="1.7" />
+              <path
+                d="M12.1 12H20M17 12v3.1M14.6 12v2.2"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              />
+            </svg>
+            {t("create.subtitle")}
+          </p>
         </header>
 
         <div
@@ -774,9 +795,12 @@ export default function Create({ t, policy, policyError }: Props) {
           </Banner>
         ) : null}
 
+        {/* The page's one action, at the size of one. Everything above it is
+            a setting with a sensible default; this is the only control a
+            sender has to find. */}
         <button
           type="submit"
-          className="peek-btn peek-btn-primary w-full sm:w-auto"
+          className="peek-btn peek-btn-primary peek-btn-lg sm:w-auto sm:min-w-64 sm:px-8"
           disabled={busy || uploading || !cryptoReady}
         >
           {busy ? <Spinner label={t("create.submitting")} /> : t("create.submit")}
