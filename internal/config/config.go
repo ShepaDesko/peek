@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -432,6 +433,25 @@ type Branding struct {
 	SupportURL    string `toml:"support_url"`
 	LegalURL      string `toml:"legal_url"`
 	PrivacyURL    string `toml:"privacy_url"`
+	// Colors pins individual palette tokens, token name to hex colour, for a
+	// brand book that specifies its shades. Anything left out is derived from
+	// the primary and the accent, which is what almost every instance wants:
+	//
+	//   [branding.colors]
+	//   primary-hover = "#1b3fa8"
+	//
+	// The contrast of the result is still measured and still warns, so this
+	// cannot be used to ship text nobody can read.
+	Colors map[string]string `toml:"colors"`
+}
+
+// PaletteTokens are the colour names [branding.colors] accepts. It repeats the
+// list in internal/branding on purpose: config may not import branding, which
+// imports config, and a short duplicated list is cheaper than a third package.
+// The test TestPaletteTokensMatchBranding fails if the two drift apart.
+var PaletteTokens = []string{
+	"primary", "primary-hover", "primary-active", "primary-soft", "primary-ring",
+	"on-primary", "accent", "accent-soft",
 }
 
 // Webhook is one outbound notification endpoint.
@@ -856,6 +876,7 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	c.validateBrandingColors(add)
 	c.validateSSO(add)
 	c.validateWebhooks(add)
 
@@ -867,6 +888,62 @@ func (c *Config) Validate() error {
 
 // validateSSO refuses the combinations that would either not work or quietly
 // weaken the sign-in surface.
+// validateBrandingColors refuses an unknown token or an unusable colour.
+//
+// The generated palette only warns about these, because a brand edited in the
+// interface must never be able to stop the server. A configuration file is the
+// opposite case: it is read once at startup by somebody who can fix it, and a
+// silently ignored colour there is a support call three weeks later.
+func (c *Config) validateBrandingColors(add func(string, ...any)) {
+	for _, key := range sortedMapKeys(c.Branding.Colors) {
+		value := strings.TrimSpace(c.Branding.Colors[key])
+		known := false
+		for _, t := range PaletteTokens {
+			if t == key {
+				known = true
+				break
+			}
+		}
+		if !known {
+			add("branding.colors: %q is not a palette token; the tokens are %s",
+				key, strings.Join(PaletteTokens, ", "))
+			continue
+		}
+		if !isHexColor(value) {
+			add("branding.colors.%s: %q is not a hex colour such as #1d4ed8", key, value)
+		}
+	}
+}
+
+// isHexColor accepts #rgb and #rrggbb, the two forms the palette parser reads.
+func isHexColor(v string) bool {
+	if len(v) != 4 && len(v) != 7 {
+		return false
+	}
+	if v[0] != '#' {
+		return false
+	}
+	for _, r := range v[1:] {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// sortedMapKeys keeps the error order stable, so `peek config check` prints
+// the same thing twice in a row.
+func sortedMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func (c *Config) validateSSO(add func(string, ...any)) {
 	if !c.SSO.Enabled {
 		return

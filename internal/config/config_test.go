@@ -256,3 +256,43 @@ func TestRedactDSNHidesThePassword(t *testing.T) {
 		}
 	}
 }
+
+// A colour in peek.toml is checked at startup rather than warned about at
+// render time: the file is read once by somebody who can fix it, and a
+// silently ignored colour is a support call three weeks later.
+func TestValidateChecksBrandingColors(t *testing.T) {
+	cases := []struct {
+		name   string
+		colors map[string]string
+		want   string
+	}{
+		{"an unknown token", map[string]string{"primary-hoover": "#1b3fa8"}, "not a palette token"},
+		{"a colour name", map[string]string{"accent": "rebeccapurple"}, "not a hex colour"},
+		{"a missing hash", map[string]string{"accent": "0e9488"}, "not a hex colour"},
+		{"too few digits", map[string]string{"accent": "#0e94"}, "not a hex colour"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Branding.Colors = tc.colors
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("the configuration was accepted")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q should contain %q", err, tc.want)
+			}
+		})
+	}
+
+	// And the shapes that are fine stay fine, three-digit hex included.
+	cfg := config.Default()
+	cfg.Branding.Colors = map[string]string{
+		"primary-hover": "#1b3fa8",
+		"on-primary":    "#FFF",
+		"accent-soft":   "#e6f4f1",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a valid palette was refused: %v", err)
+	}
+}

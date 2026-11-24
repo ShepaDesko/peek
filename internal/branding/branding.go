@@ -45,13 +45,35 @@ func FromConfig(cfg *config.Config) Theme {
 		PrivacyURL:    b.PrivacyURL,
 		Language:      orDefault(cfg.DefaultLanguage, "fr"),
 	}
-	t.Palette, t.Warnings = BuildPalette(t.PrimaryColor, t.AccentColor)
+	t.Palette, t.Warnings = BuildPalette(t.PrimaryColor, t.AccentColor, cfg.Branding.Colors)
 	return t
+}
+
+// PaletteKeys are the tokens a brand may override, in the order an editor
+// should show them. A key outside this list is refused rather than ignored:
+// a typo in a colour name must not silently leave the derived value in place.
+var PaletteKeys = []string{
+	"primary", "primary-hover", "primary-active", "primary-soft", "primary-ring",
+	"on-primary", "accent", "accent-soft",
+}
+
+// ValidPaletteKey reports whether a token may be overridden.
+func ValidPaletteKey(key string) bool {
+	for _, k := range PaletteKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // BuildPalette generates the full set of CSS variables from two colours and
 // reports any AA contrast failure it had to work around.
-func BuildPalette(primary, accent string) (map[string]string, []string) {
+//
+// `overrides` replaces derived tokens, token name to hex colour. It is a
+// request, not a licence: the contrast of the final pair is measured after the
+// overrides are applied, so pinning an unreadable on-primary still warns.
+func BuildPalette(primary, accent string, overrides map[string]string) (map[string]string, []string) {
 	var warnings []string
 	p, err := parseHex(primary)
 	if err != nil {
@@ -74,26 +96,70 @@ func BuildPalette(primary, accent string) (map[string]string, []string) {
 		"accent-soft":    a.mix(rgb{255, 255, 255}, 0.88).hex(),
 	}
 
-	// Text on the primary surface: pick whichever of white or near-black
-	// actually passes AA for normal text (4.5:1), and say so when neither does.
+	// Text on the primary surface: whichever of white or near-black reads
+	// better against it. The contrast is not judged here but after the
+	// overrides below, so a pinned colour is measured on the same terms.
 	white, _ := parseHex("#ffffff")
 	ink, _ := parseHex("#0b1020")
-	onWhite := contrast(p, white)
-	onInk := contrast(p, ink)
-	if onWhite >= onInk {
-		palette["on-primary"] = white.hex()
-		if onWhite < 4.5 {
-			warnings = append(warnings, fmt.Sprintf(
-				"contrast between the primary colour and white text is %.2f:1, below the 4.5:1 required by WCAG 2.2 AA; pick a darker primary", onWhite))
-		}
-	} else {
+	darkText := contrast(p, ink) > contrast(p, white)
+	if darkText {
 		palette["on-primary"] = ink.hex()
-		if onInk < 4.5 {
+	} else {
+		palette["on-primary"] = white.hex()
+	}
+
+	warnings = append(warnings, applyOverrides(palette, overrides)...)
+
+	// Whatever the palette ended up as, derived or pinned, the text on the
+	// primary surface has to be readable. Measuring after the overrides is
+	// what keeps an override a request rather than a way around AA.
+	finalPrimary, errPrimary := parseHex(palette["primary"])
+	finalOn, errOn := parseHex(palette["on-primary"])
+	if errPrimary == nil && errOn == nil {
+		if ratio := contrast(finalPrimary, finalOn); ratio < 4.5 {
+			advice := "pick a darker primary"
+			if darkText {
+				advice = "pick a lighter primary"
+			}
+			if _, pinned := overrides["on-primary"]; pinned {
+				advice = "pick another text colour, or let Peek choose it"
+			}
 			warnings = append(warnings, fmt.Sprintf(
-				"contrast between the primary colour and dark text is %.2f:1, below the 4.5:1 required by WCAG 2.2 AA; pick a lighter primary", onInk))
+				"contrast between the primary colour and the text on it is %.2f:1, below the 4.5:1 required by WCAG 2.2 AA; %s", ratio, advice))
 		}
 	}
 	return palette, warnings
+}
+
+// applyOverrides layers pinned colours over the derived palette.
+//
+// An unknown token or an unusable value is reported and skipped, never
+// silently dropped: a brand that asked for a colour and did not get it must
+// find out from the warnings rather than from a screenshot.
+func applyOverrides(palette map[string]string, overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return nil
+	}
+	var warnings []string
+	for _, key := range sortedKeys(overrides) {
+		value := strings.TrimSpace(overrides[key])
+		if value == "" {
+			continue
+		}
+		if !ValidPaletteKey(key) {
+			warnings = append(warnings, fmt.Sprintf(
+				"%q is not a palette token and was ignored; the tokens are %s", key, strings.Join(PaletteKeys, ", ")))
+			continue
+		}
+		c, err := parseHex(value)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf(
+				"colour %q for %s is not a valid hex colour and was ignored", value, key))
+			continue
+		}
+		palette[key] = c.hex()
+	}
+	return warnings
 }
 
 // CSS renders the theme as a stylesheet of custom properties. Serving it as a

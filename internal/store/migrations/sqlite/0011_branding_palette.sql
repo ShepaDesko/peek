@@ -1,0 +1,19 @@
+-- Per-token colour overrides for a brand.
+--
+-- Until now a brand gave two colours and Peek derived the other eight by
+-- mixing: hover is 12% black, soft is 88% white, and so on. That is the right
+-- default, and it stays the default — it means a customer can hand over two
+-- hex codes and get a coherent, contrast-checked palette without thinking.
+--
+-- But a real brand book specifies its shades, and a derived hover that is
+-- three percent off the one in the book is exactly the kind of thing the
+-- customer who commissioned the book notices. Before this column the only way
+-- out was the administrator's custom CSS, which means fighting the generated
+-- stylesheet with a second one.
+--
+-- So: a JSON object, token name to hex colour, layered over the derived
+-- palette. An empty object means "derive everything", which is what every
+-- existing row gets. Peek still measures the contrast of the result and still
+-- warns when it fails, because an override is a request, not a licence to
+-- render unreadable text.
+ALTER TABLE branding ADD COLUMN palette TEXT NOT NULL DEFAULT '{}';

@@ -137,6 +137,60 @@ var TextKeys = []string{
 type Texts map[string]map[string]string
 
 // ParseTexts reads the stored JSON, keeping only known keys and languages.
+// ParsePalette reads stored colour overrides, token to hex colour.
+//
+// Unusable JSON, an unknown token or a value that is not a colour yield
+// nothing for that entry rather than an error: a brand whose overrides went
+// bad must still render, and BuildPalette reports what it could not use.
+func ParsePalette(raw string) map[string]string {
+	out := map[string]string{}
+	if strings.TrimSpace(raw) == "" {
+		return out
+	}
+	var decoded map[string]string
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return out
+	}
+	for key, value := range decoded {
+		value = strings.TrimSpace(value)
+		if value == "" || !ValidPaletteKey(key) {
+			continue
+		}
+		if _, err := parseHex(value); err != nil {
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+// MarshalPalette renders colour overrides for storage, refusing what it cannot
+// store rather than dropping it silently: this one is called from the editor,
+// where somebody is waiting to be told their colour was wrong.
+func MarshalPalette(colors map[string]string) (string, error) {
+	cleaned := map[string]string{}
+	for _, key := range sortedKeys(colors) {
+		value := strings.TrimSpace(colors[key])
+		if value == "" {
+			continue
+		}
+		if !ValidPaletteKey(key) {
+			return "", fmt.Errorf("%q is not a palette token; the tokens are %s",
+				key, strings.Join(PaletteKeys, ", "))
+		}
+		c, err := parseHex(value)
+		if err != nil {
+			return "", fmt.Errorf("%s: %q is not a hex colour such as #1d4ed8", key, value)
+		}
+		cleaned[key] = c.hex()
+	}
+	raw, err := json.Marshal(cleaned)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 func ParseTexts(raw string, languages []string) Texts {
 	out := Texts{}
 	if strings.TrimSpace(raw) == "" {
@@ -224,7 +278,10 @@ type Resolved struct {
 	ContactEmail  string            `json:"contact_email,omitempty"`
 	Language      string            `json:"language"`
 	Palette       map[string]string `json:"palette"`
-	Texts         Texts             `json:"texts,omitempty"`
+	// Colors is the subset of Palette an administrator pinned by hand, so the
+	// editor can show which tokens are overridden and which are derived.
+	Colors map[string]string `json:"colors,omitempty"`
+	Texts  Texts             `json:"texts,omitempty"`
 	// Assets maps a kind to the URL that serves it, already cache-busted.
 	Assets map[string]string `json:"assets,omitempty"`
 	// CustomCSS is served through /branding.css, never inlined.
@@ -272,7 +329,24 @@ func Resolve(cfg *config.Config, stored *store.Branding, assets []store.Branding
 
 	r.FontStack = FontStack(r.Font)
 	r.RadiusValue = RadiusValue(r.Radius)
-	r.Palette, r.Warnings = BuildPalette(r.PrimaryColor, r.AccentColor)
+
+	// Pinned colours layer the same way everything else does: the file is the
+	// fallback, the database wins where it has an opinion. Merging per token
+	// rather than per record means an organisation can pin one shade without
+	// having to restate the ones peek.toml already pinned.
+	colors := map[string]string{}
+	for key, value := range cfg.Branding.Colors {
+		colors[key] = value
+	}
+	if stored != nil {
+		for key, value := range ParsePalette(stored.Palette) {
+			colors[key] = value
+		}
+	}
+	if len(colors) > 0 {
+		r.Colors = colors
+	}
+	r.Palette, r.Warnings = BuildPalette(r.PrimaryColor, r.AccentColor, colors)
 	if r.Background != "" {
 		if _, err := parseHex(r.Background); err != nil {
 			r.Warnings = append(r.Warnings, fmt.Sprintf("background colour %q is not a valid hex colour and was ignored", r.Background))

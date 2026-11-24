@@ -50,7 +50,11 @@ type Branding struct {
 	PrivacyURL      string
 	ContactEmail    string
 	// Texts is JSON: language → key → value.
-	Texts     string
+	Texts string
+	// Palette is JSON: token → hex colour. It pins individual colours over
+	// the ones derived from PrimaryColor and AccentColor; an empty object
+	// means everything is derived, which is the usual case.
+	Palette   string
 	CustomCSS string
 	Version   int
 	UpdatedAt time.Time
@@ -70,7 +74,7 @@ type BrandingAsset struct {
 
 const brandingColumns = `org_id, service_name, primary_color, accent_color, background_color,
 	corner_radius, font, button_style, hide_powered_by, support_url, legal_url, privacy_url,
-	contact_email, texts, custom_css, version, updated_at, updated_by`
+	contact_email, texts, palette, custom_css, version, updated_at, updated_by`
 
 // Branding returns the stored brand, or ErrNotFound when none was saved yet.
 func (s *Store) Branding(ctx context.Context, orgID string) (Branding, error) {
@@ -84,7 +88,7 @@ func (s *Store) Branding(ctx context.Context, orgID string) (Branding, error) {
 		orDefaultOrg(orgID)).Scan(
 		&b.OrgID, &b.ServiceName, &b.PrimaryColor, &b.AccentColor, &b.BackgroundColor,
 		&b.CornerRadius, &b.Font, &b.ButtonStyle, &hide, &b.SupportURL, &b.LegalURL, &b.PrivacyURL,
-		&b.ContactEmail, &b.Texts, &b.CustomCSS, &b.Version, &updated, &updatedBy)
+		&b.ContactEmail, &b.Texts, &b.Palette, &b.CustomCSS, &b.Version, &updated, &updatedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Branding{}, ErrNotFound
 	}
@@ -108,6 +112,9 @@ func (s *Store) SaveBranding(ctx context.Context, b Branding) (Branding, error) 
 	if b.Texts == "" {
 		b.Texts = "{}"
 	}
+	if b.Palette == "" {
+		b.Palette = "{}"
+	}
 	now := s.Now()
 	b.UpdatedAt = now
 
@@ -125,21 +132,21 @@ func (s *Store) SaveBranding(ctx context.Context, b Branding) (Branding, error) 
 		_, err = tx.ExecContext(ctx, s.rebind(`INSERT INTO branding
 			(org_id, service_name, primary_color, accent_color, background_color, corner_radius,
 			 font, button_style, hide_powered_by, support_url, legal_url, privacy_url,
-			 contact_email, texts, custom_css, version, updated_at, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 contact_email, texts, palette, custom_css, version, updated_at, updated_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (org_id) DO UPDATE SET
 				service_name = ?, primary_color = ?, accent_color = ?, background_color = ?,
 				corner_radius = ?, font = ?, button_style = ?, hide_powered_by = ?,
 				support_url = ?, legal_url = ?, privacy_url = ?, contact_email = ?,
-				texts = ?, custom_css = ?, version = ?, updated_at = ?, updated_by = ?`),
+				texts = ?, palette = ?, custom_css = ?, version = ?, updated_at = ?, updated_by = ?`),
 			b.OrgID, b.ServiceName, b.PrimaryColor, b.AccentColor, b.BackgroundColor, b.CornerRadius,
 			b.Font, b.ButtonStyle, boolToInt(b.HidePoweredBy), b.SupportURL, b.LegalURL, b.PrivacyURL,
-			b.ContactEmail, b.Texts, b.CustomCSS, b.Version, unix(now), nullString(b.UpdatedBy),
+			b.ContactEmail, b.Texts, b.Palette, b.CustomCSS, b.Version, unix(now), nullString(b.UpdatedBy),
 
 			b.ServiceName, b.PrimaryColor, b.AccentColor, b.BackgroundColor,
 			b.CornerRadius, b.Font, b.ButtonStyle, boolToInt(b.HidePoweredBy),
 			b.SupportURL, b.LegalURL, b.PrivacyURL, b.ContactEmail,
-			b.Texts, b.CustomCSS, b.Version, unix(now), nullString(b.UpdatedBy))
+			b.Texts, b.Palette, b.CustomCSS, b.Version, unix(now), nullString(b.UpdatedBy))
 		return err
 	})
 	if err != nil {

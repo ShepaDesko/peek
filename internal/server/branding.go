@@ -132,7 +132,10 @@ type brandingRequest struct {
 	PrivacyURL      string                       `json:"privacy_url"`
 	ContactEmail    string                       `json:"contact_email"`
 	Texts           map[string]map[string]string `json:"texts"`
-	CustomCSS       string                       `json:"custom_css"`
+	// Colors pins individual palette tokens. Anything left out stays derived
+	// from the primary and the accent.
+	Colors    map[string]string `json:"colors"`
+	CustomCSS string            `json:"custom_css"`
 }
 
 // handleBrandingOptions tells the customisation page what it may offer: the
@@ -159,8 +162,10 @@ func (s *Server) handleBrandingOptions(w http.ResponseWriter, r *http.Request) {
 		"saved":      saved,
 		"custom_css": stored.CustomCSS,
 		"texts":      branding.ParseTexts(stored.Texts, languages),
+		"colors":     branding.ParsePalette(stored.Palette),
 		"assets":     assetInfo,
 		"options": map[string]any{
+			"palette_tokens":  branding.PaletteKeys,
 			"fonts":           branding.Fonts,
 			"radii":           branding.Radii,
 			"button_styles":   branding.ButtonStyles,
@@ -192,6 +197,11 @@ func (s *Server) handleSaveBranding(w http.ResponseWriter, r *http.Request) {
 		writeFieldError(w, http.StatusUnprocessableEntity, "bad_texts", err.Error(), "texts")
 		return
 	}
+	palette, err := branding.MarshalPalette(req.Colors)
+	if err != nil {
+		writeFieldError(w, http.StatusUnprocessableEntity, "bad_colors", err.Error(), "colors")
+		return
+	}
 	for field, value := range map[string]string{
 		"support_url": req.SupportURL,
 		"legal_url":   req.LegalURL,
@@ -218,6 +228,7 @@ func (s *Server) handleSaveBranding(w http.ResponseWriter, r *http.Request) {
 		PrivacyURL:      strings.TrimSpace(req.PrivacyURL),
 		ContactEmail:    strings.TrimSpace(req.ContactEmail),
 		Texts:           texts,
+		Palette:         palette,
 		CustomCSS:       css,
 		UpdatedBy:       p.User.ID,
 	})

@@ -11,7 +11,7 @@ import (
 
 func TestPaletteAndContrast(t *testing.T) {
 	// A dark primary passes with white text.
-	palette, warnings := branding.BuildPalette("#1d4ed8", "#0e9488")
+	palette, warnings := branding.BuildPalette("#1d4ed8", "#0e9488", nil)
 	if palette["primary"] != "#1d4ed8" {
 		t.Fatalf("primary = %q", palette["primary"])
 	}
@@ -23,13 +23,13 @@ func TestPaletteAndContrast(t *testing.T) {
 	}
 
 	// A pale primary gets dark text instead of silently unreadable white.
-	palette, _ = branding.BuildPalette("#fef08a", "#0ea5e9")
+	palette, _ = branding.BuildPalette("#fef08a", "#0ea5e9", nil)
 	if palette["on-primary"] == "#ffffff" {
 		t.Fatal("white text was chosen on a pale primary")
 	}
 
 	// A mid-tone that passes neither way is reported rather than hidden.
-	_, warnings = branding.BuildPalette("#797979", "#0ea5e9")
+	_, warnings = branding.BuildPalette("#797979", "#0ea5e9", nil)
 	if len(warnings) == 0 {
 		t.Fatal("a primary that fails AA both ways produced no warning")
 	}
@@ -38,7 +38,7 @@ func TestPaletteAndContrast(t *testing.T) {
 	}
 
 	// Nonsense falls back and says so.
-	_, warnings = branding.BuildPalette("not-a-colour", "#0ea5e9")
+	_, warnings = branding.BuildPalette("not-a-colour", "#0ea5e9", nil)
 	if len(warnings) == 0 {
 		t.Fatal("an invalid colour produced no warning")
 	}
@@ -237,5 +237,103 @@ func TestTextsRoundTrip(t *testing.T) {
 	}
 	if runes := []rune(branding.ParseTexts(raw, []string{"fr"})["fr"]["home.title"]); len(runes) != 500 {
 		t.Fatalf("clamped to %d runes, want 500", len(runes))
+	}
+}
+
+func TestPaletteOverrides(t *testing.T) {
+	// A pinned token replaces the derived one; everything else still derives.
+	palette, warnings := branding.BuildPalette("#1d4ed8", "#0e9488", map[string]string{
+		"primary-hover": "#1b3fa8",
+	})
+	if palette["primary-hover"] != "#1b3fa8" {
+		t.Fatalf("primary-hover = %q, the override did not apply", palette["primary-hover"])
+	}
+	if palette["primary"] != "#1d4ed8" || palette["primary-active"] == "" {
+		t.Fatalf("pinning one token disturbed the others: %v", palette)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+
+	// An unknown token is reported, not silently dropped.
+	_, warnings = branding.BuildPalette("#1d4ed8", "#0e9488", map[string]string{
+		"primary-hoover": "#1b3fa8",
+	})
+	if len(warnings) == 0 || !strings.Contains(strings.Join(warnings, " "), "primary-hoover") {
+		t.Fatalf("an unknown token produced no useful warning: %v", warnings)
+	}
+
+	// So is a value that is not a colour.
+	_, warnings = branding.BuildPalette("#1d4ed8", "#0e9488", map[string]string{
+		"accent": "rebeccapurple",
+	})
+	if len(warnings) == 0 || !strings.Contains(strings.Join(warnings, " "), "hex") {
+		t.Fatalf("an unusable colour produced no useful warning: %v", warnings)
+	}
+}
+
+// Pinning on-primary must not become a way around AA: the contrast is measured
+// after the overrides, on whatever the palette actually ended up as.
+func TestPinnedTextStillMeasured(t *testing.T) {
+	_, warnings := branding.BuildPalette("#1d4ed8", "#0e9488", map[string]string{
+		"on-primary": "#6b7fd0",
+	})
+	joined := strings.Join(warnings, " ")
+	if len(warnings) == 0 || !strings.Contains(joined, "4.5:1") {
+		t.Fatalf("an unreadable pinned text colour produced no warning: %v", warnings)
+	}
+	if !strings.Contains(joined, "another text colour") {
+		t.Fatalf("the advice should address the pinned colour, not the primary: %v", warnings)
+	}
+
+	// And pinning a primary the automatic text colour cannot carry warns too.
+	_, warnings = branding.BuildPalette("#1d4ed8", "#0e9488", map[string]string{
+		"primary": "#797979",
+	})
+	if len(warnings) == 0 {
+		t.Fatal("a pinned primary that fails AA produced no warning")
+	}
+}
+
+func TestMarshalAndParsePalette(t *testing.T) {
+	raw, err := branding.MarshalPalette(map[string]string{"primary-soft": "#EEF", "accent": " #0e9488 "})
+	if err != nil {
+		t.Fatalf("MarshalPalette: %v", err)
+	}
+	back := branding.ParsePalette(raw)
+	if back["accent"] != "#0e9488" {
+		t.Errorf("accent = %q", back["accent"])
+	}
+	if back["primary-soft"] != "#eeeeff" {
+		t.Errorf("primary-soft = %q, a three-digit hex should be expanded", back["primary-soft"])
+	}
+
+	// The editor is told what is wrong rather than losing the value.
+	if _, err := branding.MarshalPalette(map[string]string{"nope": "#fff"}); err == nil {
+		t.Error("an unknown token was accepted for storage")
+	}
+	if _, err := branding.MarshalPalette(map[string]string{"accent": "blue"}); err == nil {
+		t.Error("a non-hex colour was accepted for storage")
+	}
+
+	// Stored nonsense must not stop a brand from rendering.
+	if got := branding.ParsePalette("{ not json"); len(got) != 0 {
+		t.Errorf("broken JSON yielded %v", got)
+	}
+	if got := branding.ParsePalette(`{"accent":"blue","nope":"#fff","primary":"#1d4ed8"}`); len(got) != 1 {
+		t.Errorf("unusable entries survived parsing: %v", got)
+	}
+}
+
+// config repeats the token list because it cannot import this package. If the
+// two ever drift, a colour valid in peek.toml stops applying, or vice versa.
+func TestPaletteTokensMatchBranding(t *testing.T) {
+	if len(config.PaletteTokens) != len(branding.PaletteKeys) {
+		t.Fatalf("config has %d tokens, branding has %d", len(config.PaletteTokens), len(branding.PaletteKeys))
+	}
+	for i, key := range branding.PaletteKeys {
+		if config.PaletteTokens[i] != key {
+			t.Errorf("token %d: config %q, branding %q", i, config.PaletteTokens[i], key)
+		}
 	}
 }

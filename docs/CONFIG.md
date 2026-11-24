@@ -225,8 +225,26 @@ le motif de route apparié, pas l'URL.
 |---|---|---|
 | `service_name` | `Peek` | Affiché partout, y compris dans le titre de l'onglet. |
 | `primary_color`, `accent_color` | `#4f46e5`, `#0ea5e9` | Une palette complète est engendrée, avec un contrôle de contraste WCAG AA qui avertit plutôt que de corriger en silence. |
+| `[branding.colors]` | vide | Épingle un jeton de palette à la main, pour une charte qui spécifie ses nuances. Voir ci-dessous. |
 | `hide_powered_by` | `false` | |
 | `support_url`, `legal_url`, `privacy_url` | vide | Les liens du pied de page. |
+
+### Épingler une nuance
+
+```toml
+[branding.colors]
+primary-hover = "#1b3fa8"
+on-primary    = "#ffffff"
+```
+
+Les huit jetons : `primary`, `primary-hover`, `primary-active`,
+`primary-soft`, `primary-ring`, `on-primary`, `accent`, `accent-soft`. Ce qui
+n'est pas épinglé reste dérivé de la primaire et de l'accent.
+
+Un jeton inconnu ou une valeur qui n'est pas une couleur **empêchent le
+démarrage** : un réglage de couleur ignoré en silence est un appel au support
+trois semaines plus tard. Le contraste est mesuré sur la palette finale, donc
+épingler `on-primary` ne contourne pas le contrôle WCAG AA.
 
 Voir [BRANDING.md](BRANDING.md).
 

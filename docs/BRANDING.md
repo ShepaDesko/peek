@@ -65,6 +65,43 @@ est signalée, pas masquée. C'est aussi la raison pour laquelle
 `--peek-on-primary` est une variable et non du blanc écrit en dur — une marque
 ne peut pas rendre l'interface inaccessible par accident.
 
+## Fixer une nuance à la main
+
+Deux couleurs et huit dérivées, c'est la bonne valeur par défaut : un client
+donne deux codes hex et obtient une palette cohérente dont le contraste est
+vérifié. Mais une charte graphique sérieuse spécifie ses nuances, et un survol
+dérivé à trois pour cent de celui du livre de marque est exactement ce que
+remarque le client qui a payé le livre de marque.
+
+Chaque jeton peut donc être épinglé, dans `peek.toml` :
+
+```toml
+[branding.colors]
+primary-hover  = "#1b3fa8"
+primary-active = "#16358d"
+```
+
+…ou par organisation dans **Administration → Personnalisation**, qui écrit la
+même chose en base. Les deux se superposent jeton par jeton — le fichier est le
+repli, la base gagne là où elle a un avis — donc une organisation peut en
+épingler un seul sans avoir à redonner ceux que `peek.toml` a déjà posés.
+
+Les huit noms : `primary`, `primary-hover`, `primary-active`, `primary-soft`,
+`primary-ring`, `on-primary`, `accent`, `accent-soft`. Ce qui n'est pas épinglé
+reste dérivé.
+
+Deux garde-fous :
+
+- **le contraste est mesuré après coup**, sur la palette telle qu'elle finit.
+  Épingler `on-primary` ne contourne donc pas l'AA : si le résultat tombe sous
+  4,5:1, l'avertissement arrive quand même, et il vous dit cette fois de
+  changer la couleur du texte plutôt que la primaire ;
+- un jeton **inconnu** ou une valeur qui n'est pas une couleur sont **refusés
+  au démarrage** quand ils viennent de `peek.toml`, et signalés dans
+  l'éditeur quand ils viennent de l'interface. Jamais ignorés en silence : une
+  marque qui a demandé une couleur et ne l'a pas eue doit l'apprendre
+  autrement que par une capture d'écran.
+
 ## Comment cela arrive au navigateur
 
 ```http
