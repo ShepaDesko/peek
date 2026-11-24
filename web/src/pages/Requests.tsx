@@ -151,18 +151,22 @@ export function AskSecret({ t, policy }: { t: Translate; policy: Policy | null }
           <p className="peek-muted text-sm leading-relaxed">{label || prompt}</p>
         </header>
 
+        {/* The field keeps the whole width on a phone and the button goes
+            under it: next to each other they left a quarter of the link
+            visible. */}
         <Field label={t("ask.link")} htmlFor="deposit-link">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               id="deposit-link"
               readOnly
-              className="peek-input flex-1 font-mono text-xs"
+              className="peek-input font-mono text-xs sm:flex-1"
               value={done.deposit}
             />
             <CopyButton
               value={done.deposit}
               label={t("reveal.copy")}
               copiedLabel={t("reveal.copied")}
+              className="peek-btn peek-btn-ghost max-sm:w-full"
             />
           </div>
         </Field>
@@ -178,17 +182,18 @@ export function AskSecret({ t, policy }: { t: Translate; policy: Policy | null }
         ) : null}
 
         <Field label={t("ask.follow")} htmlFor="tracking-link" hint={t("ask.follow.hint")}>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               id="tracking-link"
               readOnly
-              className="peek-input flex-1 font-mono text-xs"
+              className="peek-input font-mono text-xs sm:flex-1"
               value={done.tracking}
             />
             <CopyButton
               value={done.tracking}
               label={t("reveal.copy")}
               copiedLabel={t("reveal.copied")}
+              className="peek-btn peek-btn-ghost max-sm:w-full"
             />
           </div>
         </Field>
@@ -709,17 +714,18 @@ export function RequestStatus({
 
         {!closed && depositLink ? (
           <Field label={t("qstatus.link")} htmlFor="deposit-again">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
                 id="deposit-again"
                 readOnly
-                className="peek-input flex-1 font-mono text-xs"
+                className="peek-input font-mono text-xs sm:flex-1"
                 value={depositLink}
               />
               <CopyButton
                 value={depositLink}
                 label={t("reveal.copy")}
                 copiedLabel={t("reveal.copied")}
+                className="peek-btn peek-btn-ghost max-sm:w-full"
               />
             </div>
           </Field>

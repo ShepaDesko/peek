@@ -143,13 +143,19 @@ ouvert, cadenas fermé, clé, copie — y sont aussi, en SVG en ligne.
       Playwright en 375 px vérifie que ni la page ni la carte ne défilent
       latéralement, que le nom de colonne est bien dessiné, et que la table
       est toujours une table pour un lecteur d'écran.
+- [x] Le produit entier regardé à 375 px : création, accusé, destinataire,
+      dépôt, demande, suivi, tableau de bord et les quatre onglets de
+      l'administration. Ce qui cassait : les lignes « champ + bouton Copier »,
+      où le lien n'avait plus qu'un quart de la largeur. Elles s'empilent
+      maintenant sous 640 px, aux six endroits où elles existent.
 
 ## Ce qui reste
 
-- [ ] Le reste du produit sur téléphone. Ont été regardées à 375 px : la
-      création, l'accusé, la page destinataire, le dépôt, le tableau de bord et
-      l'onglet Utilisateurs. Les formulaires longs — Personnalisation,
-      Instance, Mon compte — n'ont été vus qu'en large.
+- [ ] **L'éditeur de personnalisation n'expose pas les jetons de palette.** Le
+      serveur accepte un `colors` par jeton, `peek.toml` a `[branding.colors]`
+      et la colonne existe en base, mais la page ne propose que primaire,
+      accent et fond : un administrateur qui n'édite pas le fichier ne peut
+      pas régler `on-primary` ou `primary-hover`. À finir.
 - [ ] La page de personnalisation (`/admin`, onglet Personnalisation) est la
       plus dense du produit et mériterait d'être découpée.
 - [ ] Un thème clair audité au survol dans l'aperçu en direct de la

@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -817,4 +819,77 @@ func mustID(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return id
+}
+
+// TestRecipientLearnsNothingAboutTheSender is a privacy guarantee, not a
+// behaviour: whoever opens a link must not be able to tell who sent it.
+//
+// The server knows — creator_id is on the row, it is what makes the sender's
+// dashboard and the audit trail possible — so the guarantee lives entirely in
+// what the two public endpoints choose to return. A field added to either of
+// them without thinking is the way it would break, which is why the key sets
+// are asserted whole rather than one absence at a time.
+func TestRecipientLearnsNothingAboutTheSender(t *testing.T) {
+	h := newHarness(t, nil)
+	admin := h.signIn(t)
+	c := newClient(t, "", "mot de passe du compte X")
+
+	// Created while signed in, so the row carries a creator.
+	rec := admin.do(t, h.internal, http.MethodPost, "/api/v1/secrets", c.createBody(t, nil), nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create returned %d: %s", rec.Code, rec.Body.String())
+	}
+	creator := admin.user["id"].(string)
+	email := admin.user["email"].(string)
+
+	meta := do(t, h.public, http.MethodGet, "/api/v1/secrets/"+c.id, nil, nil)
+	if meta.Code != http.StatusOK {
+		t.Fatalf("metadata returned %d: %s", meta.Code, meta.Body.String())
+	}
+	wantMeta := []string{
+		"attempts_left", "deletable_by_recipient", "expires_at", "has_passphrase",
+		"id", "kdf", "kind", "retrieval_step", "size_bytes", "views_max", "views_remaining",
+	}
+	assertKeys(t, "the metadata a recipient receives", decodeBody(t, meta), wantMeta)
+
+	revealed := h.reveal(t, h.public, c, c.keys.ReadToken)
+	if revealed.Code != http.StatusOK {
+		t.Fatalf("reveal returned %d: %s", revealed.Code, revealed.Body.String())
+	}
+	// download_token is there only when the secret carries files, so it is
+	// not in this list: this one is text.
+	assertKeys(t, "the reveal a recipient receives", decodeBody(t, revealed),
+		[]string{"ciphertext", "destroyed", "kind", "size_bytes", "views_remaining"})
+
+	// And neither response, headers included, carries the sender anywhere —
+	// an identifier in a header would pass the key check above.
+	for _, r := range []*httptest.ResponseRecorder{meta, revealed} {
+		var all strings.Builder
+		if err := r.Header().Write(&all); err != nil {
+			t.Fatal(err)
+		}
+		all.WriteString(r.Body.String())
+		for _, needle := range []string{creator, email, "Admin ACME", "creator", "sender"} {
+			if strings.Contains(strings.ToLower(all.String()), strings.ToLower(needle)) {
+				t.Errorf("a recipient response mentions %q", needle)
+			}
+		}
+	}
+}
+
+// assertKeys compares the top-level keys of a response with the whole list
+// that belongs there, so that an added field fails until somebody has decided
+// a recipient may see it.
+func assertKeys(t *testing.T, what string, body map[string]any, want []string) {
+	t.Helper()
+	got := make([]string, 0, len(body))
+	for key := range body {
+		got = append(got, key)
+	}
+	sort.Strings(got)
+	sorted := append([]string(nil), want...)
+	sort.Strings(sorted)
+	if !slices.Equal(got, sorted) {
+		t.Errorf("%s has fields %v, want exactly %v", what, got, sorted)
+	}
 }

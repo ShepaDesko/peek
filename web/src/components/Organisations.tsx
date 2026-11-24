@@ -331,19 +331,20 @@ function RecordCard({ record, t }: { record: DnsRecord; t: Translate }) {
           { label: t("orgs.record.name"), value: record.name },
           { label: t("orgs.record.value"), value: record.value },
         ].map((row) => (
-          <div key={row.label} className="flex items-center gap-2">
-            <dt className="peek-muted w-16 shrink-0">{row.label}</dt>
-            <dd className="flex min-w-0 flex-1 items-center gap-2">
+          <div key={row.label} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <dt className="peek-muted sm:w-16 sm:shrink-0">{row.label}</dt>
+            <dd className="flex min-w-0 flex-col gap-2 sm:flex-1 sm:flex-row sm:items-center">
               <input
                 readOnly
                 aria-label={row.label}
-                className="peek-input flex-1 font-mono text-xs"
+                className="peek-input font-mono text-xs sm:flex-1"
                 value={row.value}
               />
               <CopyButton
                 value={row.value}
                 label={t("reveal.copy")}
                 copiedLabel={t("reveal.copied")}
+                className="peek-btn peek-btn-ghost max-sm:w-full"
               />
             </dd>
           </div>

@@ -63,6 +63,22 @@ honorés que depuis les proxys déclarés ; partout ailleurs l'adresse du pair
 gagne. Les limites de débit, les filtres et les entrées d'audit sont donc
 écrits contre une adresse que l'attaquant ne choisit pas.
 
+**Le destinataire ne sait pas qui a envoyé.** Le serveur, lui, le sait —
+`creator_id` est sur la ligne, c'est ce qui rend possibles le tableau de bord
+de l'expéditeur et le journal d'audit — mais aucun des deux points d'entrée
+qu'un destinataire appelle ne le dit. La fiche d'un secret renvoie son
+identifiant, son type, sa taille, ses compteurs, son expiration et les
+paramètres de dérivation ; la révélation renvoie le chiffré, le type, la
+taille, les lectures restantes et, s'il y a des pièces jointes, un jeton de
+téléchargement. Rien d'autre. L'e-mail de notification, quand l'instance en
+envoie un, dit « Un secret vous a été partagé via *le service* » et part de
+l'adresse de l'instance, sans `Reply-To` et sans nom. Le seul chemin par
+lequel un destinataire apprend l'identité de l'expéditeur, c'est que celui-ci
+l'écrive dans le message libre : c'est son choix, affiché tel quel.
+`TestRecipientLearnsNothingAboutTheSender` compare la liste complète des
+champs des deux réponses, de sorte qu'un champ ajouté sans y penser casse le
+test plutôt que la promesse.
+
 **Rien ne quitte la machine par défaut.** Pas de CDN, pas de service de
 polices, pas d'analytique, pas de télémétrie. Du trafic sortant, il n'y en a
 que pour SMTP, un fournisseur d'identité, les webhooks et la vérification de

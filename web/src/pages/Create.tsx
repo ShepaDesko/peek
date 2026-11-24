@@ -799,17 +799,25 @@ export default function Create({ t, policy, policyError }: Props) {
 
 function LinkRow({ label, value, t }: { label: string; value: string; t: Translate }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="peek-muted w-40 shrink-0 text-xs font-semibold" aria-hidden="true">
+    // The three parts stack on a phone. Side by side, a ten-rem label, a field
+    // and a button leave about sixty pixels for the link itself, which is the
+    // one thing on the page somebody needs to see.
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <span className="peek-muted text-xs font-semibold sm:w-40 sm:shrink-0" aria-hidden="true">
         {label}
       </span>
       <input
         readOnly
         aria-label={label}
-        className="peek-input flex-1 font-mono text-xs"
+        className="peek-input font-mono text-xs sm:flex-1"
         value={value}
       />
-      <CopyButton value={value} label={t("reveal.copy")} copiedLabel={t("reveal.copied")} />
+      <CopyButton
+        value={value}
+        label={t("reveal.copy")}
+        copiedLabel={t("reveal.copied")}
+        className="peek-btn peek-btn-ghost max-sm:w-full"
+      />
     </div>
   );
 }

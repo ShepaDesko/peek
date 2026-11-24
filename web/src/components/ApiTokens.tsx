@@ -96,14 +96,19 @@ export default function ApiTokens({ t, lang }: { t: Translate; lang: Lang }) {
       {issued ? (
         <Banner tone="warning" title={t("tokens.created.title")}>
           <p>{t("tokens.created.body")}</p>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               readOnly
               aria-label={t("tokens.created.title")}
-              className="peek-input flex-1 font-mono text-xs"
+              className="peek-input font-mono text-xs sm:flex-1"
               value={issued}
             />
-            <CopyButton value={issued} label={t("reveal.copy")} copiedLabel={t("reveal.copied")} />
+            <CopyButton
+              value={issued}
+              label={t("reveal.copy")}
+              copiedLabel={t("reveal.copied")}
+              className="peek-btn peek-btn-ghost max-sm:w-full"
+            />
           </div>
           <p className="mt-2 text-xs">{t("tokens.created.usage")}</p>
           <pre className="mt-1 overflow-x-auto text-xs">
