@@ -23,13 +23,13 @@ SQLite est la base par défaut et ne demande rien à installer.
 ### Debian, Ubuntu
 
 ```bash
-sudo apt install ./peek_1.0.0_linux_amd64.deb
+sudo apt install ./peek_*_linux_amd64.deb
 ```
 
 ### RHEL, Rocky, Alma
 
 ```bash
-sudo dnf install ./peek-1.0.0.amd64.rpm
+sudo dnf install ./peek-*.amd64.rpm
 ```
 
 ### Le script
@@ -54,7 +54,7 @@ sudo sh install.sh --pubkey "RWQ…"
 ### L'archive, sans gestionnaire de paquets
 
 ```bash
-tar xzf peek_1.0.0_linux_amd64.tar.gz
+tar xzf peek_*_linux_amd64.tar.gz
 sudo install -m 0755 peek /usr/bin/peek
 sudo install -m 0644 packaging/systemd/peek.service /usr/lib/systemd/system/
 sudo install -m 0644 packaging/systemd/peek-backup.service /usr/lib/systemd/system/

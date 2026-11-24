@@ -88,8 +88,8 @@ curl -fsSL https://raw.githubusercontent.com/ShepaDesko/peek/main/packaging/inst
 ou depuis un paquet téléchargé :
 
 ```bash
-sudo apt install ./peek_1.0.0_linux_amd64.deb   # Debian, Ubuntu
-sudo dnf install ./peek-1.0.0.amd64.rpm         # RHEL, Rocky, Alma
+sudo apt install ./peek_*_linux_amd64.deb   # Debian, Ubuntu
+sudo dnf install ./peek-*.amd64.rpm         # RHEL, Rocky, Alma
 sudo peek setup
 ```
 
