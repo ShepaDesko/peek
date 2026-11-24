@@ -59,6 +59,53 @@ jobs:
       - name: build
         run: CGO_ENABLED=0 go build -trimpath ./cmd/...
 
+  # Everything the product says about PostgreSQL — a shared database, several
+  # nodes, one rate-limit bucket for the cluster, the single-read guarantee
+  # holding across them — runs on this driver and on no other. The store suite
+  # was written to run against both backends from the start, but it only does
+  # so when a DSN is in the environment, and nothing ever put one there: the
+  # whole multi-node half of the README was advertised and never exercised.
+  postgres:
+    name: PostgreSQL — the store on the other driver
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: peek
+          POSTGRES_PASSWORD: peek
+          POSTGRES_DB: peek
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U peek"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Each test takes a private schema, so the store suite runs twice — once
+      # per backend — without colliding.
+      - name: the store suite, both backends
+        env:
+          PEEK_TEST_POSTGRES_DSN: postgres://peek:peek@127.0.0.1:5432/peek?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -count=1 -v ./internal/store/... | tee /tmp/store.log
+          # Green proves nothing on its own: without the DSN the suite skips
+          # every PostgreSQL subtest and still passes, which is exactly how
+          # this driver went untested for so long.
+          grep -q -- "--- PASS: .*/postgres" /tmp/store.log || {
+            echo "no PostgreSQL subtest passed — the DSN did not reach the suite"
+            exit 1
+          }
+
   web:
     name: Web — lint, types, tests
     runs-on: ubuntu-latest
