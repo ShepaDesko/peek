@@ -179,6 +179,7 @@ make dev
 | [THREAT-MODEL.md](docs/THREAT-MODEL.md) | Ce que le zero-knowledge protège, et ce qu'il ne protège pas |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Organisation du code et parcours d'une requête |
 | [BRANDING.md](docs/BRANDING.md) | Mettre une instance aux couleurs d'un client |
+| [DESIGN.md](docs/DESIGN.md) | La direction artistique de l'interface, et ce qui reste à y passer |
 | [API.md](docs/API.md) | Les points d'entrée HTTP tels qu'implémentés |
 | [RELEASING.md](docs/RELEASING.md) | Couper une version, la clé de signature |
 | [DECISIONS.md](docs/DECISIONS.md) | Les décisions prises, et pourquoi |
