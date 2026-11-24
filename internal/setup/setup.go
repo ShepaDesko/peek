@@ -61,6 +61,49 @@ type Result struct {
 	ServiceAction string
 }
 
+// rootBeside makes a configuration that is not at the packaged path describe a
+// self-contained instance: its key, its data and its backups live beside the
+// file that names them.
+//
+// Every one of those paths is a package default that no flag reaches, so
+// without this `peek setup --config ~/peek.toml` as an ordinary user wrote the
+// file it was asked for and then died on "mkdir /etc/peek: permission denied",
+// having already left a half-made configuration behind. The packaged path is
+// untouched: an instance installed from the .deb keeps /etc/peek and
+// /var/lib/peek.
+//
+// Only values still equal to their default are moved. Anything the operator
+// has already chosen — in an existing file, or through a flag the wizard
+// prefers — stays where they put it.
+func rootBeside(cfg *config.Config, configPath string) {
+	dir := filepath.Dir(configPath)
+	if dir == filepath.Dir(config.DefaultPath) {
+		return
+	}
+	beside := func(name string) string {
+		return filepath.ToSlash(filepath.Join(dir, name))
+	}
+	d := config.Default()
+	if cfg.MasterKeyFile == d.MasterKeyFile {
+		cfg.MasterKeyFile = beside("master.key")
+	}
+	if cfg.DataDir == d.DataDir {
+		cfg.DataDir = filepath.ToSlash(dir)
+	}
+	if cfg.Database.DSN == d.Database.DSN {
+		cfg.Database.DSN = beside("peek.db")
+	}
+	if cfg.Storage.Path == d.Storage.Path {
+		cfg.Storage.Path = beside("files")
+	}
+	if cfg.Backup.Dir == d.Backup.Dir {
+		cfg.Backup.Dir = beside("backups")
+	}
+	if cfg.TLS.ACMEDir == d.TLS.ACMEDir {
+		cfg.TLS.ACMEDir = beside("acme")
+	}
+}
+
 type wizard struct {
 	in   *bufio.Reader
 	out  io.Writer
@@ -93,6 +136,10 @@ func Run(opts Options) (*Result, error) {
 		// and keep the old one aside.
 		w.sayf("warning: %s could not be parsed (%v); starting from the defaults\n", opts.ConfigPath, err)
 		cfg = config.Default()
+	}
+
+	if fresh {
+		rootBeside(&cfg, opts.ConfigPath)
 	}
 
 	if !fresh && !opts.Force && !opts.NonInteractive {

@@ -22,6 +22,11 @@ import (
 // DefaultPath is where the packages install the configuration file.
 const DefaultPath = "/etc/peek/peek.toml"
 
+// DefaultMasterKeyFile is where the packages keep the master key. It is a
+// constant because `peek setup` has to be able to tell "the operator chose
+// this" from "nobody chose anything yet".
+const DefaultMasterKeyFile = "/etc/peek/master.key"
+
 // Config is the whole instance configuration.
 type Config struct {
 	// PublicURL is the URL users see. Links, cookies, CSP and OIDC redirects
@@ -566,7 +571,7 @@ func Default() Config {
 		MultiOrg:        false,
 		UpdateCheck:     true,
 		UpdateChannel:   "stable",
-		MasterKeyFile:   "/etc/peek/master.key",
+		MasterKeyFile:   DefaultMasterKeyFile,
 		DataDir:         "/var/lib/peek",
 		Server: Server{
 			InternalListen: "127.0.0.1:8080",
