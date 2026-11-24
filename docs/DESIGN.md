@@ -132,9 +132,10 @@ ouvert, cadenas fermé, clé, copie — y sont aussi, en SVG en ligne.
 
 ## Ce qui reste
 
-- [ ] Les téléphones : tout a été vérifié à 1180 px. Les tables denses
-      débordent dans un `overflow-x-auto`, ce qui marche mais n'est pas un
-      choix.
+- [ ] Les tables denses, sur téléphone. Le reste a été regardé à 375 px — la
+      création, l'accusé, la page destinataire tiennent sans débordement — mais
+      le tableau de bord et l'administration défilent latéralement dans un
+      `overflow-x-auto` : ça marche, ce n'est pas un choix.
 - [ ] La page de personnalisation (`/admin`, onglet Personnalisation) est la
       plus dense du produit et mériterait d'être découpée.
 - [ ] Un thème clair audité au survol dans l'aperçu en direct de la
