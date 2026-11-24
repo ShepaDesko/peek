@@ -536,13 +536,14 @@ func runKey(ctx context.Context, args []string) error {
 	// the word of this command.
 	if exists && !*initOnly {
 		sealed, err := sealedCounts(ctx, cfg)
-		if err != nil {
+		switch {
+		case err != nil:
 			fmt.Fprintf(os.Stderr, "note: cannot read the database to see what is sealed (%v)\n", err)
-		} else if sealed.Total > 0 && !*force {
+		case sealed.Total > 0 && !*force:
 			return fail("rotating would make unreadable: %d second factor(s) and %d notification address(es).\n"+
 				"Re-encryption with the new key is not implemented, so those users would have to enrol again\n"+
 				"and those notifications would stop. Pass --force if that is what you want.", sealed.TOTP, sealed.Notify)
-		} else if sealed.Total > 0 {
+		case sealed.Total > 0:
 			fmt.Printf("rotating anyway: %d second factor(s) and %d notification address(es) become unreadable\n",
 				sealed.TOTP, sealed.Notify)
 		}
