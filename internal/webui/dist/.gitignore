@@ -1,0 +1,5 @@
+# The compiled interface is a build artefact: make web-build fills this
+# directory, and go:embed picks it up. Only this file is committed, so that
+# go build works on a fresh checkout without Node installed.
+*
+!.gitignore
