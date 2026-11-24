@@ -116,8 +116,6 @@ type Options struct {
 	Config     *config.Config
 	External   bool
 	Version    string
-	// SendTestEmail asks for a real test message instead of a connection test.
-	SendTestEmail string
 }
 
 // Run performs every check.
@@ -142,7 +140,7 @@ func Run(ctx context.Context, opts Options) *Report {
 	checkProxyTrust(r, cfg)
 	checkTLS(ctx, r, cfg)
 	checkClock(r)
-	checkMail(r, cfg, opts.SendTestEmail)
+	checkMail(r, cfg)
 	checkBackups(r, cfg)
 	checkSSO(ctx, r, cfg)
 	checkWebhooks(ctx, r, cfg)
@@ -554,7 +552,7 @@ func checkClock(r *Report) {
 	r.add("clock", OK, detail)
 }
 
-func checkMail(r *Report, cfg *config.Config, testTo string) {
+func checkMail(r *Report, cfg *config.Config) {
 	if cfg.Mail.Host == "" {
 		r.add("SMTP", SKIP, "not configured: e-mail features are off")
 		return
@@ -596,12 +594,12 @@ func checkMail(r *Report, cfg *config.Config, testTo string) {
 			return
 		}
 	}
-	detail := fmt.Sprintf("%s reachable, encryption %s", addr, cfg.Mail.Encryption)
-	if testTo != "" {
-		r.add("SMTP", WARN, detail, "sending a test message is wired to the mail templates in milestone M6")
-		return
-	}
-	r.add("SMTP", OK, detail)
+	// A connection test, not a message: sending a real one belongs to the
+	// administration page, which has the templates and the brand. This used
+	// to carry a second branch promising that sending "is wired in milestone
+	// M6" — unreachable, since nothing ever asked for it, and untrue since
+	// the day the test-message button shipped.
+	r.add("SMTP", OK, fmt.Sprintf("%s reachable, encryption %s", addr, cfg.Mail.Encryption))
 }
 
 // checkExternal tests the deployment from the outside in: does the public URL

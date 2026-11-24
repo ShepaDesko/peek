@@ -208,7 +208,7 @@ func Run(opts Options) (*Result, error) {
 		cfg.Database.DSN = w.ask("SQLite file", pick(opts.DBDSN, defaultIfOther(cfg.Database.DSN, "/var/lib/peek/peek.db")))
 	case "postgres":
 		cfg.Database.DSN = w.ask("PostgreSQL DSN", pick(opts.DBDSN, "postgres://peek:password@127.0.0.1:5432/peek?sslmode=require"))
-		w.say("\nnote: the PostgreSQL driver lands in milestone M9. Until then the service will refuse to start with it.\n")
+		w.say("\nnote: create the database and the role first; Peek applies its schema at first start.\n")
 	}
 	cfg.DataDir = w.ask("Data directory", pick(opts.DataDir, cfg.DataDir))
 	cfg.Storage.Path = filepath.ToSlash(filepath.Join(cfg.DataDir, "files"))
@@ -224,7 +224,7 @@ func Run(opts Options) (*Result, error) {
 
 	// --- Policy -------------------------------------------------------------
 	cfg.Security.AnonymousCreate = opts.AnonymousCreate ||
-		w.confirm("\nAllow creating secrets without an account? (accounts arrive in milestone M5)", true)
+		w.confirm("\nAllow creating secrets without an account?", true)
 	if cfg.Security.AnonymousCreate && mode != "internal" {
 		w.say("  tip: restrict who may create with security.create_allowed_cidrs in peek.toml.\n")
 	}

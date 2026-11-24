@@ -10,8 +10,10 @@ import (
 // Limiter is a per-client-IP token bucket.
 //
 // In-memory is the right shape for a single node, which is the default
-// deployment. Multi-node instances share limits through the database in
-// milestone M9; the interface here is what that implementation will satisfy.
+// deployment. A multi-node instance needs one bucket for the whole cluster
+// instead, and gets it from sharedLimiter in limiter.go — newLimiter picks
+// between the two on the driver, because sharing costs a round trip per
+// request and a single node has nothing to share with.
 type Limiter struct {
 	mu       sync.Mutex
 	buckets  map[string]*bucket
