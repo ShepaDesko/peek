@@ -116,8 +116,23 @@ couches — la marque de l'instance gagne donc toujours, sans `!important` et
 sans recompilation. Changez une couleur, redémarrez, rechargez : c'est
 appliqué.
 
-Le mode sombre suit la préférence système et le visiteur peut le basculer ; son
-choix n'est mémorisé que dans son navigateur.
+**Le thème sombre est la valeur par défaut**, et non la préférence système. La
+page destinataire est un panneau unique sur un fond vide, et sur un fond clair
+ce panneau n'a rien contre quoi s'appuyer ; le produit se juge aussi sur une
+capture d'écran, et autant que ce soit celle dans laquelle l'instance a été
+dessinée.
+
+```toml
+[branding]
+default_theme = "dark"     # ou "light", ou "system" pour suivre la machine
+```
+
+Le serveur écrit ce défaut dans `/branding.css`, qui se charge avant le
+bundle : la première image est donc déjà la bonne, sans clignotement. Le
+visiteur garde le bouton, et son choix — mémorisé dans son navigateur et nulle
+part ailleurs — passe devant le défaut de l'instance, parce que la règle
+engendrée est posée sur `:root:not([data-theme])` et que le bouton, lui, pose
+cet attribut.
 
 ## Ce que l'éditeur ajoute
 

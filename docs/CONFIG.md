@@ -226,6 +226,7 @@ le motif de route apparié, pas l'URL.
 | `service_name` | `Peek` | Affiché partout, y compris dans le titre de l'onglet. |
 | `primary_color`, `accent_color` | `#4f46e5`, `#0ea5e9` | Une palette complète est engendrée, avec un contrôle de contraste WCAG AA qui avertit plutôt que de corriger en silence. |
 | `[branding.colors]` | vide | Épingle un jeton de palette à la main, pour une charte qui spécifie ses nuances. Voir ci-dessous. |
+| `default_theme` | `dark` | Ce que voit un visiteur qui n'a jamais touché le bouton : `dark`, `light`, ou `system` pour suivre sa machine. Son choix, lui, est mémorisé dans son navigateur et gagne toujours. |
 | `hide_powered_by` | `false` | |
 | `support_url`, `legal_url`, `privacy_url` | vide | Les liens du pied de page. |
 

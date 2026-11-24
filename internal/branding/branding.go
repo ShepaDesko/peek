@@ -25,14 +25,14 @@ type Theme struct {
 	LegalURL      string            `json:"legal_url"`
 	PrivacyURL    string            `json:"privacy_url"`
 	Language      string            `json:"language"`
+	DefaultTheme  string            `json:"default_theme"`
 	Palette       map[string]string `json:"palette"`
 	// Warnings lists contrast problems an administrator should fix. They are
 	// surfaced, not silently corrected.
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-// FromConfig builds the theme from peek.toml. Database-stored branding
-// (milestone M6) will layer on top of this.
+// FromConfig builds the theme from peek.toml. Stored branding layers on top.
 func FromConfig(cfg *config.Config) Theme {
 	b := cfg.Branding
 	t := Theme{
@@ -44,6 +44,7 @@ func FromConfig(cfg *config.Config) Theme {
 		LegalURL:      b.LegalURL,
 		PrivacyURL:    b.PrivacyURL,
 		Language:      orDefault(cfg.DefaultLanguage, "fr"),
+		DefaultTheme:  orDefault(b.DefaultTheme, "dark"),
 	}
 	t.Palette, t.Warnings = BuildPalette(t.PrimaryColor, t.AccentColor, cfg.Branding.Colors)
 	return t

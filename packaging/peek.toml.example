@@ -125,10 +125,23 @@ file = ""                        # empty: stdout, captured by journald
 service_name = "Peek"
 primary_color = "#4f46e5"
 accent_color = "#0ea5e9"
+# dark (the default), light, or system to follow the visitor's machine. Their
+# own choice, made with the toggle, always wins over this.
+default_theme = "dark"
 hide_powered_by = false
 support_url = ""
 legal_url = ""
 privacy_url = ""
+
+# Pin individual palette tokens, for a brand book that specifies its shades.
+# Anything left out is derived from primary_color and accent_color, which is
+# what almost every instance wants. The contrast of the result is still
+# measured, so this cannot be used to ship text nobody can read.
+#
+# [branding.colors]
+# primary-hover  = "#453ec9"
+# primary-active = "#3c36ad"
+# on-primary     = "#ffffff"
 
 [backup]
 enabled = true

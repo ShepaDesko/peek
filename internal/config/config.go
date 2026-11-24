@@ -433,6 +433,11 @@ type Branding struct {
 	SupportURL    string `toml:"support_url"`
 	LegalURL      string `toml:"legal_url"`
 	PrivacyURL    string `toml:"privacy_url"`
+	// DefaultTheme is what a visitor who has never touched the toggle sees:
+	// "dark" (the default), "light", or "system" to follow their machine.
+	// Dark is the default because the recipient page is one panel on an empty
+	// ground, and that panel needs something to sit against.
+	DefaultTheme string `toml:"default_theme"`
 	// Colors pins individual palette tokens, token name to hex colour, for a
 	// brand book that specifies its shades. Anything left out is derived from
 	// the primary and the accent, which is what almost every instance wants:
@@ -895,6 +900,12 @@ func (c *Config) Validate() error {
 // opposite case: it is read once at startup by somebody who can fix it, and a
 // silently ignored colour there is a support call three weeks later.
 func (c *Config) validateBrandingColors(add func(string, ...any)) {
+	switch strings.TrimSpace(c.Branding.DefaultTheme) {
+	case "", "dark", "light", "system":
+	default:
+		add("branding.default_theme: %q is not one of dark, light, system", c.Branding.DefaultTheme)
+	}
+
 	for _, key := range sortedMapKeys(c.Branding.Colors) {
 		value := strings.TrimSpace(c.Branding.Colors[key])
 		known := false

@@ -137,6 +137,55 @@ var TextKeys = []string{
 type Texts map[string]map[string]string
 
 // ParseTexts reads the stored JSON, keeping only known keys and languages.
+// Themes are the values branding.default_theme accepts.
+var Themes = []string{"dark", "light", "system"}
+
+// lightSurface is the light half of the interface's own palette. It lives here
+// as well as in the stylesheet because the generated sheet has to be able to
+// paint it before the bundle loads; the two are checked against each other by
+// TestLightSurfaceMatchesStylesheet.
+const lightSurface = `  color-scheme: light;
+  --peek-scheme: light;
+  --peek-bg: #f6f7fb;
+  --peek-surface: #ffffff;
+  --peek-border: #e2e5ee;
+  --peek-text: #15182a;
+  --peek-muted: #5b6079;
+  --peek-primary-soft: #eceafc;
+  --peek-danger: #b42318;
+  --peek-warning: #a05e03;
+  --peek-success: #087443;
+`
+
+// defaultThemeCSS makes the instance's default theme true at the first paint.
+//
+// Dark is what the bundle's own base already says, so that case emits
+// nothing. The other two write the light surface, and both do it under
+// :root:not([data-theme]) — the toggle sets that attribute, so a visitor who
+// has chosen a theme always beats the instance default, which is the one
+// ordering that cannot be got wrong here.
+func defaultThemeCSS(theme string) string {
+	switch theme {
+	case "light":
+		return "\n:root:not([data-theme]) {\n" + lightSurface + "}\n"
+	case "system":
+		return "\n@media (prefers-color-scheme: light) {\n  :root:not([data-theme]) {\n" +
+			indent(lightSurface) + "  }\n}\n"
+	default:
+		return ""
+	}
+}
+
+// indent shifts a block of declarations one level deeper, for the nesting a
+// media query adds.
+func indent(block string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
+		b.WriteString("  " + line + "\n")
+	}
+	return b.String()
+}
+
 // ParsePalette reads stored colour overrides, token to hex colour.
 //
 // Unusable JSON, an unknown token or a value that is not a colour yield
@@ -262,22 +311,25 @@ func clampText(v string) string {
 
 // Resolved is the brand the interface receives.
 type Resolved struct {
-	ServiceName   string            `json:"service_name"`
-	PrimaryColor  string            `json:"primary_color"`
-	AccentColor   string            `json:"accent_color"`
-	Background    string            `json:"background_color,omitempty"`
-	Font          string            `json:"font"`
-	FontStack     string            `json:"font_stack"`
-	Radius        string            `json:"corner_radius"`
-	RadiusValue   string            `json:"corner_radius_value"`
-	ButtonStyle   string            `json:"button_style"`
-	HidePoweredBy bool              `json:"hide_powered_by"`
-	SupportURL    string            `json:"support_url"`
-	LegalURL      string            `json:"legal_url"`
-	PrivacyURL    string            `json:"privacy_url"`
-	ContactEmail  string            `json:"contact_email,omitempty"`
-	Language      string            `json:"language"`
-	Palette       map[string]string `json:"palette"`
+	ServiceName   string `json:"service_name"`
+	PrimaryColor  string `json:"primary_color"`
+	AccentColor   string `json:"accent_color"`
+	Background    string `json:"background_color,omitempty"`
+	Font          string `json:"font"`
+	FontStack     string `json:"font_stack"`
+	Radius        string `json:"corner_radius"`
+	RadiusValue   string `json:"corner_radius_value"`
+	ButtonStyle   string `json:"button_style"`
+	HidePoweredBy bool   `json:"hide_powered_by"`
+	SupportURL    string `json:"support_url"`
+	LegalURL      string `json:"legal_url"`
+	PrivacyURL    string `json:"privacy_url"`
+	ContactEmail  string `json:"contact_email,omitempty"`
+	Language      string `json:"language"`
+	// DefaultTheme is what a visitor who has never used the toggle sees:
+	// dark, light, or whatever their system asks for.
+	DefaultTheme string            `json:"default_theme"`
+	Palette      map[string]string `json:"palette"`
 	// Colors is the subset of Palette an administrator pinned by hand, so the
 	// editor can show which tokens are overridden and which are derived.
 	Colors map[string]string `json:"colors,omitempty"`
@@ -307,6 +359,7 @@ func Resolve(cfg *config.Config, stored *store.Branding, assets []store.Branding
 		LegalURL:      base.LegalURL,
 		PrivacyURL:    base.PrivacyURL,
 		Language:      base.Language,
+		DefaultTheme:  base.DefaultTheme,
 	}
 
 	if stored != nil {
@@ -376,6 +429,7 @@ func (r Resolved) CSS(customCSS string) string {
 		fmt.Fprintf(&b, "  --peek-bg: %s;\n", r.Background)
 	}
 	b.WriteString("}\n")
+	b.WriteString(defaultThemeCSS(r.DefaultTheme))
 
 	// The brand decides the shape of the primary button, within two presets.
 	if r.ButtonStyle == "outline" {

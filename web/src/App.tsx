@@ -81,6 +81,11 @@ export default function App() {
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>(() => storedLang() ?? browserLang() ?? "fr");
   const [theme, setTheme] = useState<Theme>(() => readTheme());
+  // What is actually painted, which is not the same thing as `theme`: that one
+  // may say "system", and even an explicit choice only reaches the document in
+  // the effect below. Reading the DOM during render gave the toggle the value
+  // from before the click, so its label was always one click behind.
+  const [painted, setPainted] = useState<"light" | "dark">("dark");
   const session = useSession();
 
   useEffect(() => {
@@ -145,6 +150,7 @@ export default function App() {
 
   useEffect(() => {
     applyTheme(theme);
+    setPainted(effectiveTheme());
   }, [theme]);
 
   // A fresh instance sends its administrator to the first-run page rather than
@@ -229,12 +235,12 @@ export default function App() {
               type="button"
               className="peek-btn peek-btn-ghost px-2 py-1 text-xs"
               onClick={() => {
-                const next = effectiveTheme() === "dark" ? "light" : "dark";
+                const next = painted === "dark" ? "light" : "dark";
                 setTheme(next);
                 writeTheme(next);
               }}
             >
-              {effectiveTheme() === "dark" ? t("app.theme.light") : t("app.theme.dark")}
+              {painted === "dark" ? t("app.theme.light") : t("app.theme.dark")}
             </button>
             {signedIn ? (
               <button
@@ -436,5 +442,13 @@ function applyTheme(theme: Theme): void {
 function effectiveTheme(): "light" | "dark" {
   const attr = document.documentElement.getAttribute("data-theme");
   if (attr === "light" || attr === "dark") return attr;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  // No explicit choice: ask the stylesheet rather than re-deciding here. The
+  // answer can come from three places — the base, the instance default the
+  // server writes into /branding.css, or that default following the system —
+  // and the toggle has to agree with whichever one won, or its label lies.
+  const scheme = getComputedStyle(document.documentElement)
+    .getPropertyValue("--peek-scheme")
+    .trim();
+  if (scheme === "light" || scheme === "dark") return scheme;
+  return "dark";
 }

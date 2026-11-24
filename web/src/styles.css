@@ -21,39 +21,47 @@
  * instance brand always wins over these defaults without !important.
  */
 @layer base {
+  /*
+   * Dark is the default, not the system preference.
+   *
+   * It used to follow prefers-color-scheme, which sounds right and reads
+   * wrong here: the recipient page is a single panel on an empty ground, and
+   * on a light ground that panel has nothing to sit against. The product is
+   * also judged on one screenshot, and that screenshot should be the one the
+   * instance was designed in. A visitor who wants light still gets it from
+   * the toggle, and an instance can change the default with
+   * `branding.default_theme`, which the server writes into /branding.css so
+   * the first paint is already right.
+   *
+   * --peek-scheme says which way we ended up, whatever decided it: the base
+   * below, the attribute the toggle sets, or the generated stylesheet. The
+   * interface reads it rather than re-deriving the answer and getting a
+   * different one.
+   */
   :root {
+    color-scheme: dark;
+    --peek-scheme: dark;
+
     --peek-primary: #4f46e5;
     --peek-primary-hover: #453ec9;
     --peek-primary-active: #3c36ad;
-    --peek-primary-soft: #eceafc;
+    --peek-primary-soft: #1d2140;
     --peek-on-primary: #ffffff;
     --peek-accent: #0ea5e9;
 
-    --peek-bg: #f6f7fb;
-    --peek-surface: #ffffff;
-    --peek-border: #e2e5ee;
-    --peek-text: #15182a;
-    --peek-muted: #5b6079;
-    --peek-danger: #b42318;
-    --peek-warning: #a05e03;
-    --peek-success: #087443;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --peek-bg: #0b0d16;
-      --peek-surface: #15192a;
-      --peek-border: #262b40;
-      --peek-text: #eef0f8;
-      --peek-muted: #a3a9c2;
-      --peek-primary-soft: #1d2140;
-      --peek-danger: #ff7b6b;
-      --peek-warning: #f2b544;
-      --peek-success: #4ade80;
-    }
+    --peek-bg: #0b0d16;
+    --peek-surface: #15192a;
+    --peek-border: #262b40;
+    --peek-text: #eef0f8;
+    --peek-muted: #a3a9c2;
+    --peek-danger: #ff7b6b;
+    --peek-warning: #f2b544;
+    --peek-success: #4ade80;
   }
 
   html[data-theme="dark"] {
+    color-scheme: dark;
+    --peek-scheme: dark;
     --peek-bg: #0b0d16;
     --peek-surface: #15192a;
     --peek-border: #262b40;
@@ -66,11 +74,14 @@
   }
 
   html[data-theme="light"] {
+    color-scheme: light;
+    --peek-scheme: light;
     --peek-bg: #f6f7fb;
     --peek-surface: #ffffff;
     --peek-border: #e2e5ee;
     --peek-text: #15182a;
     --peek-muted: #5b6079;
+    --peek-primary-soft: #eceafc;
     --peek-danger: #b42318;
     --peek-warning: #a05e03;
     --peek-success: #087443;
