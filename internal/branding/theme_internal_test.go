@@ -3,6 +3,7 @@ package branding
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -98,5 +99,33 @@ func TestDefaultThemeCSS(t *testing.T) {
 	}
 	if strings.Count(system, "{") != strings.Count(system, "}") {
 		t.Errorf("unbalanced braces: %q", system)
+	}
+}
+
+// A tinted background must be derived from the surface that is actually
+// painted. --peek-primary-soft cannot do it: BuildPalette computes it at 88 %
+// white whatever the theme, because it exists for the light one. Used as a
+// background it is a pale plate, and on the dark theme the text over it is
+// pale too — around 1.3:1, and only while the pointer rests there, which is
+// why neither a screenshot nor an axe run that does not hover ever saw it.
+//
+// Rule 6 of docs/DESIGN.md. This test is what keeps it from coming back.
+func TestNoPaleTokenUsedAsABackground(t *testing.T) {
+	offender := regexp.MustCompile(`background(-color)?:[^;}]*--peek-(primary|accent)-soft`)
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "styles.css"))
+	if err != nil {
+		t.Skipf("stylesheet not readable: %v", err)
+	}
+	for _, hit := range offender.FindAllString(string(raw), -1) {
+		t.Errorf("web/src/styles.css: %q — derive it from var(--peek-surface) instead", hit)
+	}
+
+	// Both button presets, since the outline one writes its own rules.
+	for _, style := range []string{"solid", "outline"} {
+		css := Resolved{ButtonStyle: style, Palette: map[string]string{"primary": "#4f46e5"}}.CSS("")
+		for _, hit := range offender.FindAllString(css, -1) {
+			t.Errorf("generated stylesheet (%s buttons): %q", style, hit)
+		}
 	}
 }

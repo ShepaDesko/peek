@@ -43,12 +43,50 @@ test("the creation page has no accessibility violations", async ({ page }) => {
   await audit(page, "the creation page");
 });
 
-test("the creation page in dark mode has no accessibility violations", async ({ page }) => {
-  // Contrast is the rule a brand colour breaks, and dark mode has its own
-  // palette: auditing only the light one tests half the product.
-  await page.emulateMedia({ colorScheme: "dark" });
+/**
+ * Paints a theme the way a visitor does, with the toggle in the header.
+ *
+ * Not emulateMedia: the instance default is dark and no longer follows the
+ * system, so asking the browser for a colour scheme changes nothing. The
+ * attribute the toggle sets is what decides, and --peek-scheme is how the
+ * interface says which way it ended up.
+ */
+async function paint(page: Page, theme: "light" | "dark"): Promise<void> {
+  const painted = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--peek-scheme").trim(),
+    );
+  if ((await painted()) === theme) return;
+  // The button is labelled with the theme it switches to.
+  await page.getByRole("button", { name: theme === "light" ? "Thème clair" : "Thème sombre" }).click();
+  await expect.poll(painted, { timeout: 3000 }).toBe(theme);
+}
+
+test("the creation page in light mode has no accessibility violations", async ({ page }) => {
+  // Contrast is the rule a brand colour breaks, and each theme has its own
+  // palette: auditing only the default one tests half the product.
   await page.goto("/");
-  await audit(page, "the creation page in dark mode");
+  await paint(page, "light");
+  await audit(page, "the creation page in light mode");
+});
+
+test("hovering a ghost button keeps its label readable", async ({ page }) => {
+  // The generated stylesheet computes --peek-primary-soft at 88 % white
+  // whatever the theme, because it exists for the light one. A hover rule
+  // that took it as a background put a pale plate behind the pale label of
+  // the dark theme — and axe never hovers of its own accord, which is why
+  // every other audit here passed while it was broken.
+  await page.goto("/");
+  for (const theme of ["dark", "light"] as const) {
+    await paint(page, theme);
+    const ghosts = page.locator(".peek-btn-ghost:visible");
+    const count = await ghosts.count();
+    expect(count, `ghost buttons found on the ${theme} theme`).toBeGreaterThan(0);
+    for (let i = 0; i < Math.min(count, 4); i++) {
+      await ghosts.nth(i).hover();
+      await audit(page, `a hovered ghost button, ${theme} theme`);
+    }
+  }
 });
 
 test("the receipt page has no accessibility violations", async ({ page }) => {

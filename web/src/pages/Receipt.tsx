@@ -4,7 +4,7 @@ import { b64urlDecode } from "../crypto";
 import { api, type Receipt as ReceiptData } from "../lib/api";
 import { formatDateTime, formatWhen } from "../lib/format";
 import type { Lang, Translate } from "../lib/i18n";
-import { Banner, Card, CopyButton, Row, Spinner } from "../ui";
+import { Banner, Card, CopyButton, IconCopy, Row, Spinner } from "../ui";
 import { describeError } from "./Create";
 
 interface Props {
@@ -97,31 +97,36 @@ export default function Receipt({ id, fragment, t, lang }: Props) {
 
   return (
     <div className="space-y-5">
-      <Card className="space-y-4">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("receipt.title")}</h1>
+      {/* The page has one action — copy the link — and it is the only place
+          the link ever appears. So the title is a title, the link is the one
+          field, and the copy button is the size of the decision. */}
+      <Card className="space-y-5">
+        <header className="space-y-2">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("receipt.title")}</h1>
           <p className="peek-muted text-sm leading-relaxed">{t("receipt.subtitle")}</p>
         </header>
 
         <div className="space-y-2">
-          <p className="text-sm font-semibold">{t("receipt.link")}</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              readOnly
-              value={shareURL}
-              onFocus={(e) => e.currentTarget.select()}
-              className="peek-input font-mono text-xs"
-              aria-label={t("receipt.link")}
-            />
-            <CopyButton
-              value={shareURL}
-              label={t("receipt.copy")}
-              copiedLabel={t("receipt.copied")}
-              className="peek-btn peek-btn-primary shrink-0"
-            />
-          </div>
+          <label htmlFor="share-link" className="block text-sm font-semibold">
+            {t("receipt.link")}
+          </label>
+          <input
+            id="share-link"
+            readOnly
+            value={shareURL}
+            onFocus={(e) => e.currentTarget.select()}
+            className="peek-input font-mono text-xs"
+          />
           <p className="peek-muted text-xs leading-relaxed">{t("receipt.keepLink")}</p>
         </div>
+
+        <CopyButton
+          value={shareURL}
+          label={t("receipt.copy")}
+          copiedLabel={t("receipt.copied")}
+          icon={<IconCopy />}
+          className="peek-btn peek-btn-primary peek-btn-lg"
+        />
 
         {receipt?.has_passphrase ? (
           <Banner tone="warning">{t("receipt.passphraseReminder")}</Banner>
@@ -131,22 +136,21 @@ export default function Receipt({ id, fragment, t, lang }: Props) {
         {error ? <Banner tone="danger">{error}</Banner> : null}
       </Card>
 
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Card className="space-y-3">
+      <div className="grid gap-5 sm:grid-cols-[1fr_auto]">
+        <Card className="space-y-4">
           <h2 className="text-sm font-semibold">{t("receipt.status")}</h2>
           {receipt ? (
             <>
-              <p
-                className="peek-chip"
-                style={{
-                  color: gone ? "var(--peek-muted)" : "var(--peek-success)",
-                  borderColor: "var(--peek-border)",
-                }}
-              >
-                {t(STATUS_KEY[status])}
-              </p>
-              <dl className="divide-y" style={{ borderColor: "var(--peek-border)" }}>
-                <Row label={t("receipt.views")}>
+              {/* The state in rows and in figures, like the recipient's
+                  panel: whoever opens this page is looking for whether it has
+                  been read, and the count is the answer. */}
+              <dl className="peek-rows">
+                <Row label={t("receipt.status")}>
+                  <span style={{ color: gone ? "var(--peek-muted)" : "var(--peek-success)" }}>
+                    {t(STATUS_KEY[status])}
+                  </span>
+                </Row>
+                <Row label={t("receipt.views")} figure>
                   {receipt.views_used} / {receipt.views_max}
                 </Row>
                 <Row label={t("receipt.expires")}>{formatWhen(receipt.expires_at, lang)}</Row>

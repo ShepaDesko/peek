@@ -14,7 +14,7 @@ import { ApiError, api, type SecretMeta } from "../lib/api";
 import { formatWhen } from "../lib/format";
 import type { Lang, Translate } from "../lib/i18n";
 import { isCryptoAvailable, isSecureContext } from "../lib/secure";
-import { Banner, Card, CopyButton, Field, Spinner } from "../ui";
+import { Banner, Card, CopyButton, Field, IconKey, IconUnlock, Row, Spinner } from "../ui";
 import { describeError } from "./Create";
 
 interface Props {
@@ -272,15 +272,11 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
           {/* The state as rows, not chips: somebody scanning for how many
               reads are left should land on a number. */}
           <dl className="peek-rows">
-            <div>
-              <dt>{t("reveal.remaining.label")}</dt>
-              <dd className="peek-figure">{remaining}</dd>
-            </div>
+            <Row label={t("reveal.remaining.label")} figure>
+              {remaining}
+            </Row>
             {meta?.expires_at ? (
-              <div>
-                <dt>{t("reveal.expires.label")}</dt>
-                <dd>{formatWhen(meta.expires_at, lang)}</dd>
-              </div>
+              <Row label={t("reveal.expires.label")}>{formatWhen(meta.expires_at, lang)}</Row>
             ) : null}
           </dl>
 
@@ -336,52 +332,5 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
         {t("create.subtitle")}
       </p>
     </form>
-  );
-}
-
-/* Two icons, drawn here rather than pulled in: a padlock being opened for the
-   action, and a key for the promise under it. An icon set would be a
-   dependency and a download for two shapes. */
-
-function IconUnlock() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect
-        x="4.5"
-        y="10.5"
-        width="15"
-        height="10"
-        rx="2.4"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
-      <path
-        d="M8.2 10.5V7.8a3.8 3.8 0 0 1 7.3-1.3"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function IconKey() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      className="mt-0.5 shrink-0"
-    >
-      <circle cx="8.5" cy="12" r="3.6" stroke="currentColor" strokeWidth="1.7" />
-      <path
-        d="M12.1 12H20M17 12v3.1M14.6 12v2.2"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }

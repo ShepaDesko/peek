@@ -199,7 +199,7 @@ export default function ApiTokens({ t, lang }: { t: Translate; lang: Lang }) {
         <Field label={t("tokens.expiry")} htmlFor="token-ttl">
           <select
             id="token-ttl"
-            className="peek-input"
+            className="peek-input peek-select"
             value={ttl}
             onChange={(e) => setTtl(Number(e.target.value))}
           >

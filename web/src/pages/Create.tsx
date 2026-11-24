@@ -23,7 +23,7 @@ import {
 } from "../lib/password";
 import type { Translate } from "../lib/i18n";
 import { isCryptoAvailable, isSecureContext } from "../lib/secure";
-import { Banner, Card, CopyButton, Field, Spinner, Toggle } from "../ui";
+import { Banner, Card, CopyButton, Field, IconKey, Spinner, Toggle } from "../ui";
 
 interface Props {
   t: Translate;
@@ -355,7 +355,9 @@ export default function Create({ t, policy, policyError }: Props) {
   if (policyError) {
     return (
       <Card>
-        <h1 className="text-xl font-semibold">{t("create.disabled.title")}</h1>
+        <h1 className="text-2xl leading-tight font-bold tracking-tight">
+          {t("create.disabled.title")}
+        </h1>
         <p className="peek-muted mt-2 text-sm leading-relaxed">{policyError}</p>
       </Card>
     );
@@ -365,7 +367,7 @@ export default function Create({ t, policy, policyError }: Props) {
     return (
       <Card className="space-y-5">
         <header className="space-y-1">
-          <h1 className="text-xl font-semibold">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">
             {t("create.result.title", { n: results.length })}
           </h1>
           <p className="peek-muted text-sm leading-relaxed">{t("create.result.hint")}</p>
@@ -411,22 +413,7 @@ export default function Create({ t, policy, policyError }: Props) {
               caption under the title, which is where a reader's eye goes
               last; the key marks it as a guarantee rather than a subtitle. */}
           <p className="peek-muted flex items-start gap-2 text-sm leading-relaxed">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-              className="mt-1 shrink-0"
-            >
-              <circle cx="8.5" cy="12" r="3.6" stroke="currentColor" strokeWidth="1.7" />
-              <path
-                d="M12.1 12H20M17 12v3.1M14.6 12v2.2"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-              />
-            </svg>
+            <IconKey />
             {t("create.subtitle")}
           </p>
         </header>
@@ -575,7 +562,7 @@ export default function Create({ t, policy, policyError }: Props) {
               id="files"
               type="file"
               multiple
-              className="peek-input"
+              className="peek-input peek-file"
               onChange={(e) => {
                 void addFiles(e.target.files);
                 e.target.value = "";
@@ -633,7 +620,7 @@ export default function Create({ t, policy, policyError }: Props) {
             <Field label={t("create.expiry")} htmlFor="ttl">
               <select
                 id="ttl"
-                className="peek-input"
+                className="peek-input peek-select"
                 value={ttl}
                 onChange={(e) => setTtl(Number(e.target.value))}
               >
@@ -648,7 +635,7 @@ export default function Create({ t, policy, policyError }: Props) {
             <Field label={t("create.views")} htmlFor="views">
               <select
                 id="views"
-                className="peek-input"
+                className="peek-input peek-select"
                 value={views}
                 onChange={(e) => setViews(Number(e.target.value))}
               >
@@ -741,7 +728,7 @@ export default function Create({ t, policy, policyError }: Props) {
                   <Field label={t("create.expiry")} htmlFor={`ttl-${r.key}`}>
                     <select
                       id={`ttl-${r.key}`}
-                      className="peek-input"
+                      className="peek-input peek-select"
                       value={r.ttl}
                       onChange={(e) => patchRecipient(r.key, { ttl: Number(e.target.value) })}
                     >
@@ -755,7 +742,7 @@ export default function Create({ t, policy, policyError }: Props) {
                   <Field label={t("create.views")} htmlFor={`views-${r.key}`}>
                     <select
                       id={`views-${r.key}`}
-                      className="peek-input"
+                      className="peek-input peek-select"
                       value={r.views}
                       onChange={(e) => patchRecipient(r.key, { views: Number(e.target.value) })}
                     >

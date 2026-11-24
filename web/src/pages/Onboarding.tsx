@@ -43,8 +43,10 @@ export function Bootstrap({ t, onSignedIn }: BaseProps) {
   return (
     <form onSubmit={submit} className="mx-auto max-w-md">
       <Card className="space-y-4">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("bootstrap.title")}</h1>
+        <header className="space-y-2">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">
+            {t("bootstrap.title")}
+          </h1>
           <p className="peek-muted text-sm leading-relaxed">{t("bootstrap.hint")}</p>
         </header>
 
@@ -84,7 +86,7 @@ export function Bootstrap({ t, onSignedIn }: BaseProps) {
 
         {error ? <Banner tone="danger">{error}</Banner> : null}
 
-        <button type="submit" className="peek-btn peek-btn-primary w-full" disabled={busy}>
+        <button type="submit" className="peek-btn peek-btn-primary peek-btn-lg" disabled={busy}>
           {busy ? <Spinner label={t("app.loading")} /> : t("bootstrap.submit")}
         </button>
       </Card>
@@ -146,7 +148,9 @@ export function AcceptInvitation({ t, onSignedIn }: BaseProps) {
   if (!preview) {
     return (
       <Card className="mx-auto max-w-md space-y-2">
-        <h1 className="text-xl font-semibold">{t("invitation.invalidTitle")}</h1>
+        <h1 className="text-2xl leading-tight font-bold tracking-tight">
+          {t("invitation.invalidTitle")}
+        </h1>
         <p className="peek-muted text-sm leading-relaxed">{error ?? t("invitation.invalid")}</p>
       </Card>
     );
@@ -155,8 +159,10 @@ export function AcceptInvitation({ t, onSignedIn }: BaseProps) {
   return (
     <form onSubmit={submit} className="mx-auto max-w-md">
       <Card className="space-y-4">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("invitation.title")}</h1>
+        <header className="space-y-2">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">
+            {t("invitation.title")}
+          </h1>
           <p className="peek-muted text-sm leading-relaxed">
             {t("invitation.hint", {
               email: preview.email,
@@ -193,7 +199,7 @@ export function AcceptInvitation({ t, onSignedIn }: BaseProps) {
 
         {error ? <Banner tone="danger">{error}</Banner> : null}
 
-        <button type="submit" className="peek-btn peek-btn-primary w-full" disabled={busy}>
+        <button type="submit" className="peek-btn peek-btn-primary peek-btn-lg" disabled={busy}>
           {busy ? <Spinner label={t("app.loading")} /> : t("invitation.submit")}
         </button>
       </Card>
@@ -225,7 +231,7 @@ export function ResetPassword({ t }: { t: Translate }) {
   if (done) {
     return (
       <Card className="mx-auto max-w-md space-y-3">
-        <h1 className="text-xl font-semibold">{t("reset.doneTitle")}</h1>
+        <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("reset.doneTitle")}</h1>
         <p className="peek-muted text-sm leading-relaxed">{t("reset.doneBody")}</p>
         <button
           type="button"
@@ -241,8 +247,8 @@ export function ResetPassword({ t }: { t: Translate }) {
   return (
     <form onSubmit={submit} className="mx-auto max-w-md">
       <Card className="space-y-4">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("reset.title")}</h1>
+        <header className="space-y-2">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("reset.title")}</h1>
           <p className="peek-muted text-sm leading-relaxed">{t("reset.hint")}</p>
         </header>
 
@@ -266,7 +272,7 @@ export function ResetPassword({ t }: { t: Translate }) {
 
         <button
           type="submit"
-          className="peek-btn peek-btn-primary w-full"
+          className="peek-btn peek-btn-primary peek-btn-lg"
           disabled={busy || !token}
         >
           {busy ? <Spinner label={t("app.loading")} /> : t("reset.submit")}

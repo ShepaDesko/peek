@@ -9,7 +9,7 @@ import {
 } from "../lib/api";
 import { formatWhen } from "../lib/format";
 import type { Lang, Translate } from "../lib/i18n";
-import { Banner, Card, CopyButton, Field, Spinner } from "../ui";
+import { Banner, Card, CopyButton, Field, Row, Spinner } from "../ui";
 import Organisations from "../components/Organisations";
 import Branding from "./Branding";
 import { describeError } from "./Create";
@@ -44,7 +44,7 @@ export default function Admin({ t, lang, me, onBrandChanged }: Props) {
   return (
     <div className="space-y-5">
       <Card className="space-y-4">
-        <h1 className="text-xl font-semibold">{t("admin.title")}</h1>
+        <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("admin.title")}</h1>
         <div role="tablist" className="flex flex-wrap gap-2">
           {tabs
             .filter((item) => item.visible)
@@ -186,7 +186,7 @@ function UsersTab({
           <Field label={t("admin.users.role")} htmlFor="invite-role">
             <select
               id="invite-role"
-              className="peek-input w-auto"
+              className="peek-input peek-select w-auto"
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
             >
@@ -250,29 +250,16 @@ function UsersTab({
       </Card>
 
       <Card className="overflow-x-auto p-0">
-        <table className="w-full text-sm">
+        <table className="peek-table">
           <caption className="sr-only">{t("admin.tab.users")}</caption>
           <thead>
-            <tr
-              className="peek-muted border-b text-left"
-              style={{ borderColor: "var(--peek-border)" }}
-            >
-              <th scope="col" className="px-4 py-3 font-medium">
-                {t("login.email")}
-              </th>
-              <th scope="col" className="px-4 py-3 font-medium">
-                {t("admin.users.role")}
-              </th>
-              <th scope="col" className="px-4 py-3 font-medium">
-                {t("admin.users.status")}
-              </th>
-              <th scope="col" className="px-4 py-3 font-medium">
-                {t("account.totp.short")}
-              </th>
-              <th scope="col" className="px-4 py-3 font-medium">
-                {t("account.lastLogin")}
-              </th>
-              <th scope="col" className="px-4 py-3 font-medium">
+            <tr>
+              <th scope="col">{t("login.email")}</th>
+              <th scope="col">{t("admin.users.role")}</th>
+              <th scope="col">{t("admin.users.status")}</th>
+              <th scope="col">{t("account.totp.short")}</th>
+              <th scope="col">{t("account.lastLogin")}</th>
+              <th scope="col">
                 <span className="sr-only">{t("dashboard.col.actions")}</span>
               </th>
             </tr>
@@ -281,20 +268,16 @@ function UsersTab({
             {users.map((user) => {
               const self = user.id === me.user?.id;
               return (
-                <tr
-                  key={user.id}
-                  className="border-b last:border-0"
-                  style={{ borderColor: "var(--peek-border)" }}
-                >
-                  <td className="px-4 py-3">
+                <tr key={user.id}>
+                  <td>
                     {user.email}
                     {self ? (
                       <span className="peek-muted ml-2 text-xs">{t("admin.users.you")}</span>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <select
-                      className="peek-input w-auto py-1 text-xs"
+                      className="peek-input peek-select w-auto py-1 text-xs"
                       value={user.role}
                       disabled={self}
                       aria-label={t("admin.users.role")}
@@ -307,14 +290,16 @@ function UsersTab({
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <span className="peek-chip">
                       {t(`status.${user.status}` as Parameters<Translate>[0])}
                     </span>
                   </td>
-                  <td className="px-4 py-3">{user.has_totp ? t("app.yes") : t("app.no")}</td>
-                  <td className="peek-muted px-4 py-3">{formatWhen(user.last_login_at, lang)}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td>{user.has_totp ? t("app.yes") : t("app.no")}</td>
+                  <td className="peek-muted whitespace-nowrap">
+                    {formatWhen(user.last_login_at, lang)}
+                  </td>
+                  <td className="text-right">
                     {self ? null : (
                       <div className="flex justify-end gap-2">
                         <button
@@ -424,44 +409,25 @@ function AuditTab({
         <p className="peek-muted text-sm">{t("admin.audit.empty")}</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="peek-table">
             <caption className="sr-only">{t("admin.tab.audit")}</caption>
             <thead>
-              <tr
-                className="peek-muted border-b text-left"
-                style={{ borderColor: "var(--peek-border)" }}
-              >
-                <th scope="col" className="px-2 py-2 font-medium">
-                  {t("admin.audit.when")}
-                </th>
-                <th scope="col" className="px-2 py-2 font-medium">
-                  {t("admin.audit.event")}
-                </th>
-                <th scope="col" className="px-2 py-2 font-medium">
-                  {t("admin.audit.secret")}
-                </th>
-                <th scope="col" className="px-2 py-2 font-medium">
-                  {t("admin.audit.ip")}
-                </th>
-                <th scope="col" className="px-2 py-2 font-medium">
-                  {t("admin.audit.detail")}
-                </th>
+              <tr>
+                <th scope="col">{t("admin.audit.when")}</th>
+                <th scope="col">{t("admin.audit.event")}</th>
+                <th scope="col">{t("admin.audit.secret")}</th>
+                <th scope="col">{t("admin.audit.ip")}</th>
+                <th scope="col">{t("admin.audit.detail")}</th>
               </tr>
             </thead>
             <tbody>
               {events.map((e) => (
-                <tr
-                  key={e.id}
-                  className="border-b last:border-0"
-                  style={{ borderColor: "var(--peek-border)" }}
-                >
-                  <td className="peek-muted whitespace-nowrap px-2 py-2">
-                    {formatWhen(e.at, lang)}
-                  </td>
-                  <td className="px-2 py-2 font-mono text-xs">{e.event}</td>
-                  <td className="px-2 py-2 font-mono text-xs">{e.secret_id ?? "—"}</td>
-                  <td className="peek-muted px-2 py-2 text-xs">{e.ip ?? "—"}</td>
-                  <td className="peek-muted px-2 py-2 text-xs">
+                <tr key={e.id}>
+                  <td className="peek-muted whitespace-nowrap">{formatWhen(e.at, lang)}</td>
+                  <td className="font-mono text-xs">{e.event}</td>
+                  <td className="font-mono text-xs">{e.secret_id ?? "—"}</td>
+                  <td className="peek-muted text-xs">{e.ip ?? "—"}</td>
+                  <td className="peek-muted text-xs">
                     {e.detail
                       ? Object.entries(e.detail)
                           .map(([k, v]) => `${k}=${v}`)
@@ -499,27 +465,22 @@ function InstanceTab({ t, onError }: { t: Translate; onError: (message: string |
   return (
     <Card className="space-y-3">
       <h2 className="font-semibold">{t("admin.tab.instance")}</h2>
-      <dl className="divide-y text-sm" style={{ borderColor: "var(--peek-border)" }}>
-        <div className="flex justify-between py-2">
-          <dt className="peek-muted">{t("admin.instance.version")}</dt>
-          <dd className="font-mono">{info.version}</dd>
-        </div>
-        <div className="flex justify-between py-2">
-          <dt className="peek-muted">{t("admin.instance.crypto")}</dt>
-          <dd className="font-mono">{info.crypto_version}</dd>
-        </div>
-        <div className="flex justify-between py-2">
-          <dt className="peek-muted">{t("admin.instance.driver")}</dt>
-          <dd className="font-mono">{info.driver}</dd>
-        </div>
-        <div className="flex justify-between py-2">
-          <dt className="peek-muted">{t("admin.instance.active")}</dt>
-          <dd>{info.active_secrets}</dd>
-        </div>
-        <div className="flex justify-between py-2">
-          <dt className="peek-muted">{t("admin.instance.split")}</dt>
-          <dd>{info.public_listener ? t("app.yes") : t("app.no")}</dd>
-        </div>
+      <dl className="peek-rows">
+        <Row label={t("admin.instance.version")} mono>
+          {info.version}
+        </Row>
+        <Row label={t("admin.instance.crypto")} mono>
+          {info.crypto_version}
+        </Row>
+        <Row label={t("admin.instance.driver")} mono>
+          {info.driver}
+        </Row>
+        <Row label={t("admin.instance.active")} figure>
+          {info.active_secrets}
+        </Row>
+        <Row label={t("admin.instance.split")}>
+          {info.public_listener ? t("app.yes") : t("app.no")}
+        </Row>
       </dl>
       <p className="peek-muted text-xs leading-relaxed">{t("admin.instance.hint")}</p>
     </Card>

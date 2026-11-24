@@ -69,7 +69,9 @@ export default function Dashboard({ t, lang }: Props) {
       <Card className="space-y-4">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <h1 className="text-xl font-semibold">{t("dashboard.title")}</h1>
+            <h1 className="text-2xl leading-tight font-bold tracking-tight">
+              {t("dashboard.title")}
+            </h1>
             <p className="peek-muted text-sm">
               {t("dashboard.counts", { live: counts.live, closed: counts.closed })}
             </p>
@@ -115,57 +117,39 @@ export default function Dashboard({ t, lang }: Props) {
         </Card>
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full text-sm">
+          <table className="peek-table">
             <caption className="sr-only">{t("dashboard.title")}</caption>
             <thead>
-              <tr
-                className="peek-muted border-b text-left"
-                style={{ borderColor: "var(--peek-border)" }}
-              >
-                <th scope="col" className="px-4 py-3 font-medium">
-                  {t("dashboard.col.secret")}
-                </th>
-                <th scope="col" className="px-4 py-3 font-medium">
-                  {t("receipt.status")}
-                </th>
-                <th scope="col" className="px-4 py-3 font-medium">
-                  {t("receipt.views")}
-                </th>
-                <th scope="col" className="px-4 py-3 font-medium">
-                  {t("receipt.created")}
-                </th>
-                <th scope="col" className="px-4 py-3 font-medium">
+              <tr>
+                <th scope="col">{t("dashboard.col.secret")}</th>
+                <th scope="col">{t("receipt.status")}</th>
+                <th scope="col">{t("receipt.views")}</th>
+                <th scope="col">{t("receipt.created")}</th>
+                <th scope="col">
                   <span className="sr-only">{t("dashboard.col.actions")}</span>
                 </th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr
-                  key={item.id}
-                  className="border-b last:border-0"
-                  style={{ borderColor: "var(--peek-border)" }}
-                >
-                  <td className="px-4 py-3">
+                <tr key={item.id}>
+                  <td>
                     <span className="font-mono text-xs">{item.id}</span>
                     <span className="peek-muted ml-2 text-xs">
                       {item.kind} · {formatBytes(item.size_bytes)}
                       {item.has_passphrase ? ` · ${t("dashboard.passphrase")}` : ""}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className="peek-chip"
-                      style={{ color: STATUS_TONE[item.status] ?? "var(--peek-muted)" }}
-                    >
-                      {t(`receipt.status.${item.status}` as Parameters<Translate>[0])}
-                    </span>
+                  <td style={{ color: STATUS_TONE[item.status] ?? "var(--peek-muted)" }}>
+                    {t(`receipt.status.${item.status}` as Parameters<Translate>[0])}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="peek-num">
                     {item.views_used} / {item.views_max}
                   </td>
-                  <td className="peek-muted px-4 py-3">{formatWhen(item.created_at, lang)}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="peek-muted whitespace-nowrap">
+                    {formatWhen(item.created_at, lang)}
+                  </td>
+                  <td className="text-right">
                     {item.status === "active" ? (
                       <button
                         type="button"

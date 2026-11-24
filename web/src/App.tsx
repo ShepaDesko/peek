@@ -235,7 +235,7 @@ export default function App() {
             </label>
             <select
               id="lang"
-              className="peek-input w-auto py-1 text-xs"
+              className="peek-input peek-select w-auto py-1 text-xs"
               value={lang}
               onChange={(e) => {
                 const next = e.target.value as Lang;
@@ -439,7 +439,7 @@ function Routes({
 function SignInFirst({ t }: { t: ReturnType<typeof translator> }) {
   return (
     <Card className="mx-auto max-w-md space-y-3">
-      <h1 className="text-xl font-semibold">{t("login.title")}</h1>
+      <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("login.title")}</h1>
       <p className="peek-muted text-sm leading-relaxed">{t("login.subtitle")}</p>
       <button
         type="button"

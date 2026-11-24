@@ -1,9 +1,10 @@
 # Direction artistique
 
-La page destinataire et le formulaire de création ont été refaits. **Tout le
-reste doit les rejoindre** : tableau de bord, administration, page d'accusé,
-connexion, demandes de secret. Ce document décrit ce qui a été décidé, pour
-qu'on n'ait pas à le redécider.
+Toute l'interface est passée à cette direction : la page destinataire, le
+dépôt, le formulaire de création, la page d'accusé, les demandes de secret, la
+connexion, le tableau de bord et l'administration. Ce document décrit ce qui a
+été décidé, pour qu'on n'ait pas à le redécider, et **tout écran ajouté doit
+s'y conformer**.
 
 La règle qui prime sur toutes les autres : **la couleur appartient au client**.
 L'identité de Peek tient dans la structure, la typographie et la composition —
@@ -25,7 +26,8 @@ Une capture d'écran de Peek doit être reconnaissable.
 | Surface | Qui la voit | Traitement |
 |---|---|---|
 | `/s/`, `/q/` | un inconnu, souvent sur téléphone | **Page dédiée** : pas de navigation, marque du client au-dessus, panneau scellé centré dans la fenêtre |
-| Création, accusé | l'expéditeur, pressé | Coquille de l'application, mais un titre et une action à leur taille |
+| Création, accusé, demande | l'expéditeur, pressé | Coquille de l'application, mais un titre et une action à leur taille |
+| Connexion, invitation, réinitialisation | quelqu'un qui n'est pas encore entré | Carte centrée, `max-w-md`, un titre et une action à leur taille |
 | Tableau de bord, administration | un habitué | Coquille dense. Les jetons s'appliquent, la mise en scène non |
 
 Une page destinataire n'est pas une page d'application avec moins de contenu :
@@ -63,6 +65,22 @@ Dans `web/src/styles.css`, en `@layer components` :
 | `.peek-glow` | La lueur de marque derrière le panneau, décorative, `aria-hidden` |
 | `.peek-rows` | L'état en lignes `dt`/`dd` avec filets ; `dd.peek-figure` pour le nombre |
 | `.peek-btn-lg` | L'action unique d'une page : pleine largeur, 3,4 rem |
+| `.peek-table` | La table des surfaces denses : en-tête en capitales discrètes, filets identiques à `.peek-rows` |
+| `.peek-num` | Une colonne de chiffres, en chasse tabulaire |
+| `.peek-select` | Le chevron du `<select>`, à la place de celui du système |
+| `.peek-file` | Le bouton d'un `<input type="file">`, via `::file-selector-button` |
+
+Et deux jetons dérivés, déclarés une fois dans `@layer base` :
+
+| Jeton | À quoi |
+|---|---|
+| `--peek-tint` | Un fond teinté de marque, calculé **à partir de la surface peinte** |
+| `--peek-primary-ink` | La couleur de marque utilisée comme texte, tirée de 35 % vers `--peek-text` |
+
+Côté React, `Row` (dans `web/src/ui.tsx`) est la ligne d'état : elle s'emploie
+dans un `<dl className="peek-rows">`, avec `figure` pour le nombre qu'on
+cherche et `mono` pour une valeur technique. Les quatre marques — cadenas
+ouvert, cadenas fermé, clé, copie — y sont aussi, en SVG en ligne.
 
 ## Les règles qui se cassent si on les oublie
 
@@ -81,26 +99,46 @@ Dans `web/src/styles.css`, en `@layer components` :
    en change avec `branding.default_theme`.
 6. **Un fond coloré ne prend jamais un jeton pré-calculé pour l'autre thème.**
    `--peek-primary-soft` est calculé par le serveur à 88 % de blanc : il est
-   clair sur les deux thèmes. Un fond doit se dériver de la surface :
-   `color-mix(in srgb, var(--peek-primary) 14%, var(--peek-surface))`.
-7. **Les contrôles natifs trahissent le navigateur.** `<select>` et
-   `<input type="file">` sont les deux endroits où l'interface a l'air
-   inachevée. À reprendre.
+   clair sur les deux thèmes. Un fond teinté prend `var(--peek-tint)`, un
+   texte de marque `var(--peek-primary-ink)` — les deux se dérivent de la
+   surface réellement peinte. `TestNoPaleTokenUsedAsABackground`, dans
+   `internal/branding`, refuse la rechute, feuille engendrée comprise.
+7. **Les contrôles natifs se rhabillent, ils ne se remplacent pas.** Un
+   `<select>` garde son chevron, un champ fichier garde son bouton système :
+   `.peek-select` et `.peek-file` les reprennent sans toucher à l'élément
+   lui-même, pour que le clavier, l'étiquette et le lecteur d'écran restent
+   ceux de la plateforme. La liste qu'ouvre le navigateur, elle, suit
+   `color-scheme`, déclaré avec la palette.
 
-## Ce qui reste à faire
+## Ce qui a été fait
 
-Dans l'ordre où ça se voit :
+- [x] **Le survol des boutons fantômes, illisible en thème sombre.**
+      `.peek-btn-ghost:hover` prenait `--peek-primary-soft` en fond en gardant
+      `--peek-text` en texte : clair sur clair dès qu'une instance a une
+      marque. Même famille sur `.peek-toggle-soft` (1,8:1) et sur le bouton
+      primaire en style `outline` de la feuille engendrée. Les trois passent
+      maintenant par les jetons dérivés. Deux gardes : un test Go sur les deux
+      feuilles, et un test Playwright qui **survole chaque bouton fantôme, sur
+      les deux thèmes, puis lance axe** — axe ne survole pas de lui-même,
+      c'est pour ça que les dix-huit audits passaient.
+- [x] La page d'accusé : un titre, le lien, l'action à sa taille, l'état en
+      lignes et en chiffres.
+- [x] Le dépôt (`/q/`) : panneau et sceau, comme la page destinataire — c'est
+      l'autre objet scellé du produit.
+- [x] Les `select` et le champ fichier.
+- [x] Les pages de connexion, d'invitation et de demande de secret.
+- [x] Le tableau de bord et l'administration : `.peek-table` partout, les
+      pastilles d'état remplacées par la valeur elle-même.
 
-- [ ] **Le survol des boutons fantômes est illisible en thème sombre.** Au
-      survol, `.peek-btn-ghost` prend `--peek-primary-soft` en fond et garde
-      `--peek-text` en texte : clair sur clair. Même famille que le bug déjà
-      documenté sur les contrôles segmentés. Appliquer la règle 6 ci-dessus, et
-      ajouter un test qui **survole puis lance axe** — axe ne survole pas de
-      lui-même, c'est pour ça que les 18 tests passent.
-- [ ] La page d'accusé expéditeur.
-- [ ] Le tableau de bord et l'administration.
-- [ ] Les `select` et le champ fichier du formulaire de création.
-- [ ] Les pages de connexion et de demande de secret.
+## Ce qui reste
+
+- [ ] Les téléphones : tout a été vérifié à 1180 px. Les tables denses
+      débordent dans un `overflow-x-auto`, ce qui marche mais n'est pas un
+      choix.
+- [ ] La page de personnalisation (`/admin`, onglet Personnalisation) est la
+      plus dense du produit et mériterait d'être découpée.
+- [ ] Un thème clair audité au survol dans l'aperçu en direct de la
+      personnalisation, où la palette du client est appliquée pour de bon.
 
 ## Les maquettes
 

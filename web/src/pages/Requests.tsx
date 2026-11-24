@@ -37,7 +37,7 @@ import {
 import { formatWhen } from "../lib/format";
 import type { Lang, Translate } from "../lib/i18n";
 import { isCryptoAvailable, isSecureContext } from "../lib/secure";
-import { Banner, Card, CopyButton, Field, Spinner } from "../ui";
+import { Banner, Card, CopyButton, Field, IconKey, IconLock, Spinner } from "../ui";
 import { describeError } from "./Create";
 
 /**
@@ -146,8 +146,8 @@ export function AskSecret({ t, policy }: { t: Translate; policy: Policy | null }
   if (done) {
     return (
       <Card className="space-y-5">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("ask.title")}</h1>
+        <header className="space-y-2">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("ask.title")}</h1>
           <p className="peek-muted text-sm leading-relaxed">{label || prompt}</p>
         </header>
 
@@ -206,9 +206,12 @@ export function AskSecret({ t, policy }: { t: Translate; policy: Policy | null }
   return (
     <form onSubmit={submit} className="space-y-5">
       <Card className="space-y-5">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("ask.title")}</h1>
-          <p className="peek-muted text-sm leading-relaxed">{t("ask.subtitle")}</p>
+        <header className="space-y-2">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("ask.title")}</h1>
+          <p className="peek-muted flex items-start gap-2 text-sm leading-relaxed">
+            <IconKey />
+            {t("ask.subtitle")}
+          </p>
         </header>
 
         <Field label={t("ask.prompt")} htmlFor="prompt">
@@ -238,7 +241,7 @@ export function AskSecret({ t, policy }: { t: Translate; policy: Policy | null }
           <Field label={t("create.expiry")} htmlFor="ask-ttl">
             <select
               id="ask-ttl"
-              className="peek-input"
+              className="peek-input peek-select"
               value={ttl}
               onChange={(e) => setTtl(Number(e.target.value))}
             >
@@ -266,7 +269,7 @@ export function AskSecret({ t, policy }: { t: Translate; policy: Policy | null }
             <Field label={t("ask.deposits")} htmlFor="ask-deposits">
               <select
                 id="ask-deposits"
-                className="peek-input"
+                className="peek-input peek-select"
                 value={deposits}
                 onChange={(e) => setDeposits(Number(e.target.value))}
               >
@@ -288,7 +291,7 @@ export function AskSecret({ t, policy }: { t: Translate; policy: Policy | null }
 
         <button
           type="submit"
-          className="peek-btn peek-btn-primary w-full sm:w-auto"
+          className="peek-btn peek-btn-primary peek-btn-lg sm:w-auto sm:min-w-64 sm:px-8"
           disabled={busy || !ready}
         >
           {busy ? <Spinner label={t("ask.submitting")} /> : t("ask.submit")}
@@ -438,66 +441,98 @@ export function Deposit({
     );
   }
 
+  // A request that is closed: the seal withdraws, like a spent link.
   if (phase === "gone") {
     return (
-      <Card className="space-y-2">
-        <h1 className="text-xl font-semibold">{t("deposit.gone.title")}</h1>
-        <p className="peek-muted text-sm leading-relaxed">{t("deposit.gone.body")}</p>
-        {error ? <Banner tone="danger">{error}</Banner> : null}
-      </Card>
+      <div className="peek-panel">
+        <div aria-hidden="true" className="peek-seal peek-seal-spent" />
+        <div className="space-y-3 p-6 pt-8 sm:p-7 sm:pt-9">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">
+            {t("deposit.gone.title")}
+          </h1>
+          <p className="peek-muted text-sm leading-relaxed">{t("deposit.gone.body")}</p>
+          {error ? <Banner tone="danger">{error}</Banner> : null}
+        </div>
+      </div>
     );
   }
 
+  // Sent: the secret is sealed now, and the seal is the confirmation.
   if (phase === "done") {
     return (
-      <Card className="space-y-2">
-        <h1 className="text-xl font-semibold">{t("deposit.done.title")}</h1>
-        <p className="peek-muted text-sm leading-relaxed">{t("deposit.done.body")}</p>
-      </Card>
+      <div className="peek-panel">
+        <div aria-hidden="true" className="peek-seal" />
+        <div className="space-y-3 p-6 pt-8 sm:p-7 sm:pt-9">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">
+            {t("deposit.done.title")}
+          </h1>
+          <p className="peek-muted text-sm leading-relaxed">{t("deposit.done.body")}</p>
+        </div>
+      </div>
     );
   }
 
+  // The deposit is the other sealed object of the product, so it is the other
+  // page that carries the seal and the panel rather than the application's
+  // card: somebody who lands here was sent a link and has one thing to do.
   return (
-    <form onSubmit={submit} className="space-y-5">
-      <Card className="space-y-5">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("deposit.title")}</h1>
-        </header>
+    <form onSubmit={submit} className="space-y-4">
+      <div className="peek-panel">
+        <div aria-hidden="true" className="peek-seal" />
+        <div className="space-y-4 p-6 pt-8 sm:p-7 sm:pt-9">
+          <header className="space-y-2">
+            <h1 className="text-2xl leading-tight font-bold tracking-tight sm:text-[1.7rem]">
+              {t("deposit.title")}
+            </h1>
+          </header>
 
-        <div className="rounded-xl border p-3" style={{ borderColor: "var(--peek-border)" }}>
-          <p className="peek-muted text-xs font-semibold tracking-wide uppercase">
-            {t("deposit.prompt")}
-          </p>
-          <p className="mt-1 text-sm leading-relaxed">{prompt}</p>
+          <div className="rounded-xl border p-3" style={{ borderColor: "var(--peek-border)" }}>
+            <p className="peek-muted text-xs font-semibold tracking-wide uppercase">
+              {t("deposit.prompt")}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed">{prompt}</p>
+          </div>
+
+          <Field label={t("deposit.secret")} htmlFor="answer">
+            <textarea
+              id="answer"
+              required
+              rows={4}
+              className="peek-input font-mono"
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </Field>
+
+          {error ? (
+            <Banner tone="danger" title={t("deposit.error")}>
+              {error}
+            </Banner>
+          ) : null}
+
+          <button
+            type="submit"
+            className="peek-btn peek-btn-primary peek-btn-lg"
+            disabled={phase === "sending" || !isCryptoAvailable() || !isSecureContext()}
+          >
+            {phase === "sending" ? (
+              <Spinner label={t("deposit.submitting")} />
+            ) : (
+              <>
+                <IconLock />
+                {t("deposit.submit")}
+              </>
+            )}
+          </button>
         </div>
+      </div>
 
-        <Field label={t("deposit.secret")} htmlFor="answer">
-          <textarea
-            id="answer"
-            required
-            rows={4}
-            className="peek-input font-mono"
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            spellCheck={false}
-            autoComplete="off"
-          />
-        </Field>
-
-        {error ? (
-          <Banner tone="danger" title={t("deposit.error")}>
-            {error}
-          </Banner>
-        ) : null}
-
-        <button
-          type="submit"
-          className="peek-btn peek-btn-primary w-full sm:w-auto"
-          disabled={phase === "sending" || !isCryptoAvailable() || !isSecureContext()}
-        >
-          {phase === "sending" ? <Spinner label={t("deposit.submitting")} /> : t("deposit.submit")}
-        </button>
-      </Card>
+      <p className="peek-muted flex items-start justify-center gap-2 text-center text-xs leading-relaxed">
+        <IconKey />
+        {t("create.subtitle")}
+      </p>
     </form>
   );
 }
@@ -661,7 +696,7 @@ export function RequestStatus({
     <div className="space-y-5">
       <Card className="space-y-4">
         <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("qstatus.title")}</h1>
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("qstatus.title")}</h1>
           {receipt ? (
             <p className="peek-muted text-sm">
               {t("qstatus.remaining", { n: receipt.deposits_remaining })} ·{" "}

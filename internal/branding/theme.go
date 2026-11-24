@@ -433,15 +433,21 @@ func (r Resolved) CSS(customCSS string) string {
 
 	// The brand decides the shape of the primary button, within two presets.
 	if r.ButtonStyle == "outline" {
+		// The label and the hover background are derived from the painted
+		// surface, not taken from --peek-primary-soft: that token is computed
+		// at 88 % white for the light theme, and on the dark one it was a pale
+		// plate behind a dark brand colour that the surrounding interface had
+		// already made unreadable.
 		b.WriteString(`
 .peek-btn-primary {
   background: transparent;
-  color: var(--peek-primary);
+  color: var(--peek-primary-ink);
   border-color: var(--peek-primary);
 }
 
 .peek-btn-primary:hover:not(:disabled) {
-  background: var(--peek-primary-soft);
+  background: var(--peek-tint);
+  color: var(--peek-primary-ink);
 }
 `)
 	}

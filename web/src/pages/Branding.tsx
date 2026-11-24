@@ -145,7 +145,9 @@ export default function Branding({ t, lang, onChanged }: Props) {
         <Card className="space-y-4">
           <header className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
-              <h1 className="text-xl font-semibold">{t("branding.title")}</h1>
+              <h1 className="text-2xl leading-tight font-bold tracking-tight">
+                {t("branding.title")}
+              </h1>
               <p className="peek-muted text-sm leading-relaxed">{t("branding.hint")}</p>
             </div>
             <div className="flex gap-2">
@@ -222,7 +224,7 @@ export default function Branding({ t, lang, onChanged }: Props) {
             <Field label={t("branding.font")} htmlFor="font">
               <select
                 id="font"
-                className="peek-input"
+                className="peek-input peek-select"
                 value={draft.font}
                 onChange={(e) => update({ font: e.target.value })}
               >
@@ -236,7 +238,7 @@ export default function Branding({ t, lang, onChanged }: Props) {
             <Field label={t("branding.corners")} htmlFor="radius">
               <select
                 id="radius"
-                className="peek-input"
+                className="peek-input peek-select"
                 value={draft.corner_radius}
                 onChange={(e) => update({ corner_radius: e.target.value })}
               >
@@ -250,7 +252,7 @@ export default function Branding({ t, lang, onChanged }: Props) {
             <Field label={t("branding.buttons")} htmlFor="button-style">
               <select
                 id="button-style"
-                className="peek-input"
+                className="peek-input peek-select"
                 value={draft.button_style}
                 onChange={(e) => update({ button_style: e.target.value })}
               >

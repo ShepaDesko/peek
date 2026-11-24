@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "web"],
       "port": 5173
+    },
+    {
+      "name": "peek",
+      "runtimeExecutable": "bin/peek.exe",
+      "runtimeArgs": ["serve", "--config", "peek.dev.toml"],
+      "port": 8080
     }
   ]
 }

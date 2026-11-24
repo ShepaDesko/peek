@@ -28,8 +28,8 @@ export default function Account({ t, lang, me, refresh }: Props) {
   return (
     <div className="space-y-5">
       <Card className="space-y-2">
-        <h1 className="text-xl font-semibold">{t("account.title")}</h1>
-        <dl className="divide-y" style={{ borderColor: "var(--peek-border)" }}>
+        <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("account.title")}</h1>
+        <dl className="peek-rows">
           <Row label={t("account.email")}>{me.user?.email}</Row>
           <Row label={t("account.role")}>
             {t(`role.${me.user?.role}` as Parameters<Translate>[0])}

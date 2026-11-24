@@ -109,8 +109,10 @@ export default function Login({ t, onSignedIn, pending, passkeysEnabled }: Props
     return (
       <form onSubmit={submitCode} className="mx-auto max-w-md">
         <Card className="space-y-4">
-          <header className="space-y-1">
-            <h1 className="text-xl font-semibold">{t("login.mfa.title")}</h1>
+          <header className="space-y-2">
+            <h1 className="text-2xl leading-tight font-bold tracking-tight">
+              {t("login.mfa.title")}
+            </h1>
             <p className="peek-muted text-sm leading-relaxed">{t("login.mfa.hint")}</p>
           </header>
 
@@ -129,7 +131,7 @@ export default function Login({ t, onSignedIn, pending, passkeysEnabled }: Props
 
           {error ? <Banner tone="danger">{error}</Banner> : null}
 
-          <button type="submit" className="peek-btn peek-btn-primary w-full" disabled={busy}>
+          <button type="submit" className="peek-btn peek-btn-primary peek-btn-lg" disabled={busy}>
             {busy ? <Spinner label={t("app.loading")} /> : t("login.mfa.submit")}
           </button>
           <p className="peek-muted text-xs">{t("login.mfa.recovery")}</p>
@@ -142,8 +144,10 @@ export default function Login({ t, onSignedIn, pending, passkeysEnabled }: Props
     return (
       <form onSubmit={submitForgot} className="mx-auto max-w-md">
         <Card className="space-y-4">
-          <header className="space-y-1">
-            <h1 className="text-xl font-semibold">{t("login.forgot.title")}</h1>
+          <header className="space-y-2">
+            <h1 className="text-2xl leading-tight font-bold tracking-tight">
+              {t("login.forgot.title")}
+            </h1>
             <p className="peek-muted text-sm leading-relaxed">{t("login.forgot.hint")}</p>
           </header>
 
@@ -184,8 +188,8 @@ export default function Login({ t, onSignedIn, pending, passkeysEnabled }: Props
   return (
     <form onSubmit={submitPassword} className="mx-auto max-w-md">
       <Card className="space-y-4">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("login.title")}</h1>
+        <header className="space-y-2">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("login.title")}</h1>
           <p className="peek-muted text-sm leading-relaxed">
             {ssoOnly ? t("login.sso.subtitle") : t("login.subtitle")}
           </p>
@@ -200,7 +204,10 @@ export default function Login({ t, onSignedIn, pending, passkeysEnabled }: Props
 
         {sso?.enabled ? (
           <>
-            <a className="peek-btn peek-btn-primary w-full justify-center" href={ssoStartURL(sso)}>
+            <a
+              className="peek-btn peek-btn-primary peek-btn-lg justify-center"
+              href={ssoStartURL(sso)}
+            >
               {t("login.sso.button").replace("{provider}", sso.label ?? "")}
             </a>
             {ssoOnly ? null : (
@@ -248,7 +255,7 @@ export default function Login({ t, onSignedIn, pending, passkeysEnabled }: Props
 
             {error ? <Banner tone="danger">{error}</Banner> : null}
 
-            <button type="submit" className="peek-btn peek-btn-primary w-full" disabled={busy}>
+            <button type="submit" className="peek-btn peek-btn-primary peek-btn-lg" disabled={busy}>
               {busy ? <Spinner label={t("app.loading")} /> : t("login.submit")}
             </button>
 

@@ -49,6 +49,22 @@
     --peek-on-primary: #ffffff;
     --peek-accent: #0ea5e9;
 
+    /*
+     * Two tokens derived from whatever surface is actually painted, and the
+     * only ones a component may use for a tinted background or for brand
+     * coloured text.
+     *
+     * --peek-primary-soft cannot do that job: the generated stylesheet
+     * computes it at 88 % white whatever the theme, because it exists for the
+     * light one. A component that takes it as a background puts pale behind
+     * pale text as soon as an instance has a brand. These two mix against
+     * --peek-surface and --peek-text, so they move with the theme on their
+     * own, and they are declared once here rather than per theme for that
+     * reason.
+     */
+    --peek-tint: color-mix(in srgb, var(--peek-primary) 14%, var(--peek-surface));
+    --peek-primary-ink: color-mix(in srgb, var(--peek-primary) 65%, var(--peek-text));
+
     --peek-bg: #0b0d16;
     --peek-surface: #15192a;
     --peek-border: #262b40;
@@ -146,6 +162,59 @@ body {
     font-size: 0.95rem;
   }
 
+  /*
+   * The two native controls that give away which browser you are in.
+   *
+   * A <select> keeps its own chevron, its own metrics and, on Windows, its own
+   * border radius whatever the stylesheet says; a file input renders a grey
+   * system button in the middle of the form. Both are replaced here rather
+   * than wrapped in a widget of our own: the control stays a real <select> or
+   * a real <input type="file">, so the keyboard, the label, the validation
+   * and the screen reader behave exactly as the platform intends.
+   *
+   * The chevron is one fixed grey rather than a token: a data URI cannot read
+   * a custom property, and the alternative — a wrapper element with a
+   * pseudo-element — puts the mark at the wrapper's right edge, which is the
+   * wrong place for every select that is not full width. #878ea6 sits at
+   * 4.9:1 on the dark surface and 3.2:1 on the light one, both above the 3:1
+   * that WCAG 2.2 asks of a control's own indicator.
+   *
+   * The list the browser opens is the platform's, and `color-scheme` on :root
+   * is what makes it dark; that is why it is declared with the palette.
+   */
+  .peek-select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23878ea6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.8rem center;
+    background-size: 10px 6px;
+  }
+
+  .peek-file {
+    padding: 0.4rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+
+  .peek-file::file-selector-button {
+    margin-right: 0.75rem;
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--peek-border);
+    border-radius: 8px;
+    background: var(--peek-tint);
+    color: var(--peek-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.12s;
+  }
+
+  .peek-file::file-selector-button:hover {
+    background: color-mix(in srgb, var(--peek-primary) 22%, var(--peek-surface));
+  }
+
   .peek-input:focus {
     border-color: var(--peek-primary);
   }
@@ -192,7 +261,9 @@ body {
   }
 
   .peek-btn-ghost:hover:not(:disabled) {
-    background: var(--peek-primary-soft);
+    /* Derived from the surface, never from --peek-primary-soft: see the two
+       tokens in @layer base. This rule was the illegible one on dark. */
+    background: var(--peek-tint);
   }
 
   /* A segmented control: the administration tabs, the dashboard filters, the
@@ -227,17 +298,21 @@ body {
     color: var(--peek-on-primary);
   }
 
+  /* The quieter selected state: the brand is in the tint and in the ink, not
+     in a filled button. Both are derived, so it holds on either theme — the
+     previous version paired the pale token with plain --peek-primary and read
+     at 1.8:1 on dark. */
   .peek-toggle-soft {
-    background: var(--peek-primary-soft);
-    color: var(--peek-primary);
-    border-color: transparent;
+    background: var(--peek-tint);
+    color: var(--peek-primary-ink);
+    border-color: color-mix(in srgb, var(--peek-primary) 22%, transparent);
     transition: none;
   }
 
   .peek-toggle-soft:hover:not(:disabled) {
-    background: var(--peek-primary-soft);
-    color: var(--peek-primary);
-    border-color: color-mix(in srgb, var(--peek-primary) 35%, transparent);
+    background: var(--peek-tint);
+    color: var(--peek-primary-ink);
+    border-color: color-mix(in srgb, var(--peek-primary) 45%, transparent);
   }
 
   .peek-btn-danger {
@@ -360,6 +435,48 @@ body {
     height: 3.4rem;
     font-size: 1rem;
     border-radius: calc(var(--peek-radius, 14px) - 1px);
+  }
+
+  /*
+   * The dense surfaces: the dashboard and the administration.
+   *
+   * They take the tokens and not the staging — no seal, no glow, no
+   * full-width action — and this class is the whole of their treatment. The
+   * header is a rule and a quieter label; the row rule is the same one the
+   * state rows use, so a table and a panel read as the same product. Figures
+   * get .peek-num: a column of counts that does not line up is the detail
+   * that makes a table look unfinished.
+   */
+  .peek-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .peek-table thead th {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--peek-border);
+    color: var(--peek-muted);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .peek-table tbody td {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--peek-border);
+    vertical-align: middle;
+  }
+
+  .peek-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .peek-num {
+    font-variant-numeric: tabular-nums;
   }
 
   .peek-chip {
