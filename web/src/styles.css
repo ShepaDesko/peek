@@ -254,6 +254,114 @@ body {
     color: var(--peek-muted);
   }
 
+  /*
+   * The recipient's panel.
+   *
+   * A secret is a sealed thing, and the page says so with the one device the
+   * rest of the interface does not use: a band of the brand colour across the
+   * top of the panel, with a line of perforation under it. No text in the
+   * band — the service name is above the panel, where the logo is, and
+   * writing it twice is what the first draft did.
+   *
+   * It is two gradients and a border. No image, no font, nothing fetched.
+   */
+  .peek-panel {
+    background: var(--peek-surface);
+    border: 1px solid var(--peek-border);
+    border-radius: calc(var(--peek-radius, 14px) + 6px);
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgb(0 0 0 / 28%);
+  }
+
+  /* One element, two background layers: the solid band on top, the
+     perforation under it. The first version did this with a pseudo-element
+     pushed down 6px, which the panel's overflow then clipped — the band
+     disappeared and only the dotted line survived. Backgrounds cannot run
+     out of the box they are painted in. */
+  .peek-seal {
+    height: 9px;
+    background-repeat: no-repeat;
+    background-image:
+      repeating-linear-gradient(
+        to right,
+        color-mix(in srgb, var(--peek-primary) 55%, transparent) 0 7px,
+        transparent 7px 14px
+      ),
+      linear-gradient(var(--peek-primary), var(--peek-primary));
+    background-size:
+      100% 3px,
+      100% 6px;
+    background-position:
+      0 6px,
+      0 0;
+  }
+
+  /* A seal that has been broken, or that was never going to open: the brand
+     colour withdraws. It is the one place the page stops being branded, and
+     that is the point — there is nothing left to put a name on. */
+  .peek-seal-spent {
+    background-image:
+      repeating-linear-gradient(to right, var(--peek-border) 0 7px, transparent 7px 14px),
+      linear-gradient(var(--peek-border), var(--peek-border));
+  }
+
+  /* The glow sits behind the panel and never over text, so it is decorative
+     and hidden from assistive technology at the call site. */
+  .peek-glow {
+    position: absolute;
+    left: 50%;
+    top: -90px;
+    width: min(660px, 100%);
+    height: 380px;
+    transform: translateX(-50%);
+    background: var(--peek-primary);
+    opacity: 0.15;
+    filter: blur(90px);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  /* The state of a secret, as rows rather than chips: a reader scanning for
+     "how many reads are left" should find a number, not a pill. */
+  .peek-rows {
+    border-top: 1px solid var(--peek-border);
+  }
+
+  .peek-rows > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid var(--peek-border);
+  }
+
+  .peek-rows dt {
+    font-size: 0.82rem;
+    color: var(--peek-muted);
+  }
+
+  .peek-rows dd {
+    margin: 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .peek-rows dd.peek-figure {
+    font-size: 1.2rem;
+    font-weight: 680;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The one action on the page deserves more than the default button. */
+  .peek-btn-lg {
+    width: 100%;
+    height: 3.4rem;
+    font-size: 1rem;
+    border-radius: calc(var(--peek-radius, 14px) - 1px);
+  }
+
   .peek-chip {
     display: inline-flex;
     align-items: center;

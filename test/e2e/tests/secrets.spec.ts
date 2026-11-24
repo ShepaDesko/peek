@@ -22,6 +22,19 @@ async function openFresh(page: Page, link: string): Promise<void> {
   await page.goto(link);
 }
 
+/**
+ * The reads left, read off the recipient page.
+ *
+ * It used to be one string ("Lectures restantes : 1") and is now a row: the
+ * label in a `dt`, the number in a `dd`. Asserting the pair rather than the
+ * sentence keeps the test about what the page tells the recipient, so the
+ * next change of presentation does not have to come back here.
+ */
+async function expectReadsLeft(page: Page, remaining: number): Promise<void> {
+  const row = page.locator("dl > div", { hasText: "Lectures restantes" });
+  await expect(row.locator("dd")).toHaveText(String(remaining));
+}
+
 /** Fills the creation form and returns the sender's receipt page URL. */
 async function createSecret(
   page: Page,
@@ -56,7 +69,7 @@ test("create, reveal once, and the link is dead afterwards", async ({ page }) =>
   const link = await shareLink(page);
 
   await openFresh(page, link);
-  await expect(page.getByText("Lectures restantes : 1")).toBeVisible();
+  await expectReadsLeft(page, 1);
   await page.getByRole("button", { name: "Révéler le secret" }).click();
 
   await page.getByRole("button", { name: "Afficher" }).click();
@@ -117,7 +130,7 @@ test("a wrong passphrase costs no read, and too many destroy the secret", async 
   await expect(page.getByText("Passphrase incorrecte, ou lien incomplet.")).toBeVisible();
   await expect(page.getByText("Tentatives restantes : 2")).toBeVisible();
   // No read was spent.
-  await expect(page.getByText("Lectures restantes : 1")).toBeVisible();
+  await expectReadsLeft(page, 1);
 
   // The right passphrase still works after a failure.
   await page.getByLabel("Passphrase", { exact: true }).fill("canal-separe-2026");
@@ -146,7 +159,7 @@ test("a multi-read secret counts down and then disappears", async ({ page }) => 
 
   for (const remaining of [3, 2, 1]) {
     await openFresh(page, link);
-    await expect(page.getByText(`Lectures restantes : ${remaining}`)).toBeVisible();
+    await expectReadsLeft(page, remaining);
     await page.getByRole("button", { name: "Révéler le secret" }).click();
     await page.getByRole("button", { name: "Afficher" }).click();
     await expect(page.getByText(SECRET)).toBeVisible();

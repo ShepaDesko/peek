@@ -81,6 +81,12 @@ const fr = {
   "reveal.warning": "Ce secret ne s'affiche qu'un nombre limité de fois.",
   "reveal.remaining": "Lectures restantes : {n}",
   "reveal.expires": "Expire {when}",
+  // The same two facts as a label and a value, because the recipient page
+  // shows them as rows. Deriving these by cutting the strings above apart
+  // works in French and English today and breaks on the first translator who
+  // puts the number first.
+  "reveal.remaining.label": "Lectures restantes",
+  "reveal.expires.label": "Expire",
   "reveal.button": "Révéler le secret",
   "reveal.revealing": "Déchiffrement…",
   "reveal.passphrase": "Passphrase",
@@ -588,6 +594,8 @@ const en: Record<Key, string> = {
   "reveal.warning": "This secret can only be displayed a limited number of times.",
   "reveal.remaining": "Reads left: {n}",
   "reveal.expires": "Expires {when}",
+  "reveal.remaining.label": "Reads left",
+  "reveal.expires.label": "Expires",
   "reveal.button": "Reveal the secret",
   "reveal.revealing": "Decrypting…",
   "reveal.passphrase": "Passphrase",

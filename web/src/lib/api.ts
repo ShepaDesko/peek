@@ -86,7 +86,11 @@ export interface Branding {
   legal_url: string;
   privacy_url: string;
   language: string;
+  /** dark, light, or system: what a visitor who never used the toggle sees. */
+  default_theme?: string;
   palette: Record<string, string>;
+  /** Uploaded images by kind, already cache-busted. Absent until one exists. */
+  assets?: Record<string, string>;
   warnings?: string[];
 }
 

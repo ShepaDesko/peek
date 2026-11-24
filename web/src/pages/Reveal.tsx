@@ -150,11 +150,16 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
 
   if (phase === "gone") {
     return (
-      <Card className="space-y-2">
-        <h1 className="text-xl font-semibold">{t("reveal.gone.title")}</h1>
-        <p className="peek-muted text-sm leading-relaxed">{t("reveal.gone.body")}</p>
-        {error ? <Banner tone="danger">{error}</Banner> : null}
-      </Card>
+      <div className="peek-panel">
+        <div aria-hidden="true" className="peek-seal peek-seal-spent" />
+        <div className="space-y-3 p-6 pt-8 sm:p-7 sm:pt-9">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">
+            {t("reveal.gone.title")}
+          </h1>
+          <p className="peek-muted text-sm leading-relaxed">{t("reveal.gone.body")}</p>
+          {error ? <Banner tone="danger">{error}</Banner> : null}
+        </div>
+      </div>
     );
   }
 
@@ -162,9 +167,10 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
     const text = payload.kind === "url" ? (payload.url ?? "") : (payload.text ?? "");
     const files = payload.files ?? [];
     return (
-      <div className="space-y-5">
-        <Card className="space-y-4">
-          <h1 className="text-xl font-semibold">{t("reveal.title")}</h1>
+      <div className="peek-panel">
+        <div aria-hidden="true" className="peek-seal" />
+        <div className="space-y-4 p-6 pt-8 sm:p-7 sm:pt-9">
+          <h1 className="text-2xl leading-tight font-bold tracking-tight">{t("reveal.title")}</h1>
 
           {payload.message ? (
             <div className="rounded-xl border p-3" style={{ borderColor: "var(--peek-border)" }}>
@@ -210,7 +216,16 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
                   >
                     {visible ? text : "•".repeat(Math.min(text.length, 48))}
                   </pre>
+                  {/* Copying is what the recipient came for, so it is the
+                      button that looks like one. Reading it on screen is the
+                      exception — a shoulder is a threat this page cannot see. */}
                   <div className="flex flex-wrap gap-2">
+                    <CopyButton
+                      value={text}
+                      label={t("reveal.copy")}
+                      copiedLabel={t("reveal.copied")}
+                      className="peek-btn peek-btn-primary min-w-40 flex-1"
+                    />
                     <button
                       type="button"
                       className="peek-btn peek-btn-ghost"
@@ -218,11 +233,6 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
                     >
                       {visible ? t("reveal.hide") : t("reveal.show")}
                     </button>
-                    <CopyButton
-                      value={text}
-                      label={t("reveal.copy")}
-                      copiedLabel={t("reveal.copied")}
-                    />
                   </div>
                 </>
               ) : null}
@@ -240,7 +250,7 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
           {deleted ? <Banner tone="success">{t("reveal.deleted")}</Banner> : null}
           {lastView ? <Banner tone="warning">{t("reveal.consumed")}</Banner> : null}
           {error ? <Banner tone="danger">{error}</Banner> : null}
-        </Card>
+        </div>
       </div>
     );
   }
@@ -248,60 +258,130 @@ export default function Reveal({ id, fragment, t, lang }: Props) {
   // Ready: the retrieval step. Nothing has been consumed yet.
   const remaining = meta?.views_remaining ?? 1;
   return (
-    <form onSubmit={reveal} className="space-y-5">
-      <Card className="space-y-4">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold">{t("reveal.title")}</h1>
-          <p className="peek-muted text-sm leading-relaxed">{t("reveal.warning")}</p>
-        </header>
+    <form onSubmit={reveal} className="space-y-4">
+      <div className="peek-panel">
+        <div aria-hidden="true" className="peek-seal" />
+        <div className="space-y-4 p-6 pt-8 sm:p-7 sm:pt-9">
+          <header className="space-y-2">
+            <h1 className="text-2xl leading-tight font-bold tracking-tight sm:text-[1.7rem]">
+              {t("reveal.title")}
+            </h1>
+            <p className="peek-muted text-sm leading-relaxed">{t("reveal.warning")}</p>
+          </header>
 
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className="peek-chip">{t("reveal.remaining", { n: remaining })}</span>
-          {meta?.expires_at ? (
-            <span className="peek-chip">
-              {t("reveal.expires", { when: formatWhen(meta.expires_at, lang) })}
-            </span>
-          ) : null}
-        </div>
-
-        {remaining === 1 ? <Banner tone="warning">{t("reveal.lastView")}</Banner> : null}
-
-        {meta?.has_passphrase ? (
-          <Field
-            label={t("reveal.passphrase")}
-            htmlFor="passphrase"
-            hint={t("reveal.passphrase.hint")}
-          >
-            <input
-              id="passphrase"
-              type="password"
-              required
-              autoFocus
-              className="peek-input"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              autoComplete="off"
-            />
-          </Field>
-        ) : null}
-
-        {error ? (
-          <Banner tone="danger">
-            {error}
-            {attemptsLeft !== null ? (
-              <p className="mt-1 text-xs">{t("reveal.attempts", { n: attemptsLeft })}</p>
+          {/* The state as rows, not chips: somebody scanning for how many
+              reads are left should land on a number. */}
+          <dl className="peek-rows">
+            <div>
+              <dt>{t("reveal.remaining.label")}</dt>
+              <dd className="peek-figure">{remaining}</dd>
+            </div>
+            {meta?.expires_at ? (
+              <div>
+                <dt>{t("reveal.expires.label")}</dt>
+                <dd>{formatWhen(meta.expires_at, lang)}</dd>
+              </div>
             ) : null}
-          </Banner>
-        ) : null}
+          </dl>
 
-        <button
-          type="submit"
-          className="peek-btn peek-btn-primary w-full"
-          disabled={phase === "revealing" || !isCryptoAvailable() || !isSecureContext()}
-        >
-          {phase === "revealing" ? <Spinner label={t("reveal.revealing")} /> : t("reveal.button")}
-        </button>
-      </Card>
+          {remaining === 1 ? <Banner tone="warning">{t("reveal.lastView")}</Banner> : null}
+
+          {meta?.has_passphrase ? (
+            <Field
+              label={t("reveal.passphrase")}
+              htmlFor="passphrase"
+              hint={t("reveal.passphrase.hint")}
+            >
+              <input
+                id="passphrase"
+                type="password"
+                required
+                autoFocus
+                className="peek-input"
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+                autoComplete="off"
+              />
+            </Field>
+          ) : null}
+
+          {error ? (
+            <Banner tone="danger">
+              {error}
+              {attemptsLeft !== null ? (
+                <p className="mt-1 text-xs">{t("reveal.attempts", { n: attemptsLeft })}</p>
+              ) : null}
+            </Banner>
+          ) : null}
+
+          <button
+            type="submit"
+            className="peek-btn peek-btn-primary peek-btn-lg"
+            disabled={phase === "revealing" || !isCryptoAvailable() || !isSecureContext()}
+          >
+            {phase === "revealing" ? (
+              <Spinner label={t("reveal.revealing")} />
+            ) : (
+              <>
+                <IconUnlock />
+                {t("reveal.button")}
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      <p className="peek-muted flex items-start justify-center gap-2 text-center text-xs leading-relaxed">
+        <IconKey />
+        {t("create.subtitle")}
+      </p>
     </form>
+  );
+}
+
+/* Two icons, drawn here rather than pulled in: a padlock being opened for the
+   action, and a key for the promise under it. An icon set would be a
+   dependency and a download for two shapes. */
+
+function IconUnlock() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect
+        x="4.5"
+        y="10.5"
+        width="15"
+        height="10"
+        rx="2.4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M8.2 10.5V7.8a3.8 3.8 0 0 1 7.3-1.3"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconKey() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className="mt-0.5 shrink-0"
+    >
+      <circle cx="8.5" cy="12" r="3.6" stroke="currentColor" strokeWidth="1.7" />
+      <path
+        d="M12.1 12H20M17 12v3.1M14.6 12v2.2"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

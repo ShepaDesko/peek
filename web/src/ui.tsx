@@ -63,6 +63,13 @@ export function Banner({
   role?: "alert" | "status";
 }) {
   const color = bannerColor[tone];
+  // The text takes the tone's colour, except for `info`: that one is the
+  // brand's primary, which can be any colour a customer chose and only has to
+  // carry white text on a button, not body text on a surface. The other three
+  // are fixed tokens picked for AA against both surfaces, so they are safe.
+  // Without this a warning with no title rendered in ordinary body grey and
+  // read as a note rather than a warning.
+  const toned = tone !== "info";
   return (
     <div
       role={role ?? (tone === "danger" ? "alert" : "status")}
@@ -70,6 +77,7 @@ export function Banner({
       style={{
         borderColor: `color-mix(in srgb, ${color} 45%, transparent)`,
         background: `color-mix(in srgb, ${color} 10%, transparent)`,
+        color: toned ? color : undefined,
       }}
     >
       {title ? (

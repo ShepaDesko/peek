@@ -170,6 +170,13 @@ export default function App() {
   const serviceName = branding?.service_name ?? "Peek";
   const me = session.me;
   const signedIn = !!me?.authenticated;
+  // The two pages a stranger lands on get a page of their own rather than the
+  // application's chrome: no navigation to somewhere they cannot go, the
+  // customer's identity above the panel at a size worth uploading a logo for,
+  // and the panel itself centred in the viewport instead of pinned under a
+  // bar. Everything else keeps the dense, signed-in shell.
+  const focused = route.name === "reveal" || route.name === "deposit";
+  const logo = painted === "dark" ? brandLogo(branding, "dark") : brandLogo(branding, "light");
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -179,18 +186,29 @@ export default function App() {
       <a href="#content" className="peek-skip">
         {t("app.skip")}
       </a>
-      <header className="border-b" style={{ borderColor: "var(--peek-border)" }}>
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-3 px-4 py-4">
-          <a href="/" className="flex items-center gap-2 font-semibold">
-            <span
-              aria-hidden="true"
-              className="inline-block size-6 rounded-md"
-              style={{ background: "var(--peek-primary)" }}
-            />
-            {serviceName}
-          </a>
+      <header
+        className={focused ? "" : "border-b"}
+        style={focused ? undefined : { borderColor: "var(--peek-border)" }}
+      >
+        <div
+          className={
+            focused
+              ? "mx-auto flex w-full max-w-5xl items-center justify-end gap-2 px-4 py-4"
+              : "mx-auto flex w-full max-w-5xl flex-wrap items-center gap-3 px-4 py-4"
+          }
+        >
+          {focused ? null : (
+            <a href="/" className="flex items-center gap-2 font-semibold">
+              <span
+                aria-hidden="true"
+                className="inline-block size-6 rounded-md"
+                style={{ background: "var(--peek-primary)" }}
+              />
+              {serviceName}
+            </a>
+          )}
 
-          {signedIn ? (
+          {focused ? null : signedIn ? (
             <nav
               aria-label={t("app.dashboard")}
               className="flex flex-wrap items-center gap-1 text-sm"
@@ -259,7 +277,36 @@ export default function App() {
         </div>
       </header>
 
-      <main id="content" className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
+      <main
+        id="content"
+        className={
+          focused
+            ? "relative mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-4 py-10"
+            : "mx-auto w-full max-w-5xl flex-1 px-4 py-8"
+        }
+      >
+        {focused ? (
+          <>
+            <div aria-hidden="true" className="peek-glow" />
+            {logo ? (
+              <img
+                src={logo}
+                alt={serviceName}
+                className="relative max-h-10 w-auto max-w-[260px]"
+              />
+            ) : (
+              <div className="relative flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-8 w-[5px] rounded-full"
+                  style={{ background: "var(--peek-primary)" }}
+                />
+                <span className="text-lg font-bold tracking-tight">{serviceName}</span>
+              </div>
+            )}
+          </>
+        ) : null}
+
         {cryptoReady ? null : (
           <Card className="mb-5">
             <Banner tone="danger" title={t("insecure.title")}>
@@ -269,24 +316,35 @@ export default function App() {
           </Card>
         )}
 
-        {session.loading && route.name !== "reveal" ? (
-          <Card>
-            <Spinner label={t("app.loading")} />
-          </Card>
-        ) : (
-          <Routes
-            route={route}
-            t={t}
-            lang={lang}
-            policy={policy}
-            policyError={policyError}
-            session={{ ...session, onBrandChanged: () => setBrandVersion((v) => v + 1) }}
-          />
-        )}
+        <div className={focused ? "relative w-full" : "contents"}>
+          {session.loading && route.name !== "reveal" ? (
+            <Card>
+              <Spinner label={t("app.loading")} />
+            </Card>
+          ) : (
+            <Routes
+              route={route}
+              t={t}
+              lang={lang}
+              policy={policy}
+              policyError={policyError}
+              session={{ ...session, onBrandChanged: () => setBrandVersion((v) => v + 1) }}
+            />
+          )}
+        </div>
       </main>
 
-      <footer className="border-t" style={{ borderColor: "var(--peek-border)" }}>
-        <div className="peek-muted mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-4 text-xs">
+      <footer
+        className={focused ? "" : "border-t"}
+        style={focused ? undefined : { borderColor: "var(--peek-border)" }}
+      >
+        <div
+          className={
+            focused
+              ? "peek-muted mx-auto flex w-full max-w-5xl flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 pb-6 text-xs"
+              : "peek-muted mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-4 text-xs"
+          }
+        >
           {branding?.support_url ? (
             <a href={branding.support_url} className="underline">
               {t("app.support")}
@@ -302,7 +360,9 @@ export default function App() {
               {t("app.privacy")}
             </a>
           ) : null}
-          {branding?.hide_powered_by ? null : <span className="ml-auto">{t("app.poweredBy")}</span>}
+          {branding?.hide_powered_by ? null : (
+            <span className={focused ? "" : "ml-auto"}>{t("app.poweredBy")}</span>
+          )}
         </div>
       </footer>
     </div>
@@ -409,6 +469,18 @@ function NavLink({ href, label, active }: { href: string; label: string; active:
       {label}
     </a>
   );
+}
+
+/** brandLogo picks the uploaded logo for the theme being painted, if any. */
+function brandLogo(branding: Branding | null, scheme: "light" | "dark"): string | undefined {
+  const assets = branding?.assets;
+  if (!assets) return undefined;
+  // A dark page wants the light-on-dark logo. When a brand uploaded only one,
+  // that one is used rather than nothing: a slightly wrong logo beats the
+  // service name in text where a logo was provided.
+  return scheme === "dark"
+    ? (assets.logo_dark ?? assets.logo_light)
+    : (assets.logo_light ?? assets.logo_dark);
 }
 
 const THEME_KEY = "peek.theme";
